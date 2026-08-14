@@ -1,0 +1,41 @@
+[
+  {
+    "id": "cactus-mesa",
+    "title": "Cactus Mesa",
+    "cells": 16,
+    "colours": 10,
+    "thumb": [
+      "#f6a26a",
+      "#c96b4b",
+      "#693558",
+      "#2b6046",
+      "#d9666a"
+    ]
+  },
+  {
+    "id": "dusk-harbour",
+    "title": "Dusk Harbour",
+    "cells": 16,
+    "colours": 10,
+    "thumb": [
+      "#303e6c",
+      "#8f6aa4",
+      "#f8e5cd",
+      "#f7c56b",
+      "#3f5d8c"
+    ]
+  },
+  {
+    "id": "koi-pond",
+    "title": "Koi Pond",
+    "cells": 18,
+    "colours": 9,
+    "thumb": [
+      "#4f9f52",
+      "#f49f74",
+      "#2b7d81",
+      "#d5cec0",
+      "#1c5a63"
+    ]
+  }
+]

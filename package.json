@@ -1,0 +1,32 @@
+{
+  "name": "paintblob",
+  "version": "0.1.0",
+  "description": "A frameless desktop paint-by-number toy with big satisfying paint blobs.",
+  "main": "electron/main.cjs",
+  "type": "module",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "seed": "node tools/make-demo-puzzles.mjs",
+    "mapify": "node tools/mapify.mjs",
+    "generate": "node tools/generate-image.mjs",
+    "verify": "node tools/verify-puzzle.mjs",
+    "preview": "node tools/preview.mjs",
+    "smoke": "electron . --smoke",
+    "test": "node --test tools/pipeline.test.mjs && node tools/verify-puzzle.mjs"
+  },
+  "keywords": [
+    "paint-by-number",
+    "electron",
+    "idle",
+    "desktop-toy"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "playwright-core": "^1.49.0"
+  },
+  "dependencies": {
+    "pngjs": "^7.0.0"
+  }
+}

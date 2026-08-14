@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'" />
+  <title>paintblob</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header id="bar">
+      <span class="dot" id="barDot"></span>
+      <span class="title">paintblob</span>
+      <span class="subtitle" id="barSubtitle"></span>
+      <span class="spacer"></span>
+      <button class="icon" data-act="pictures" title="Pictures">▦</button>
+      <button class="icon" data-act="trophies" title="Achievements">★</button>
+      <button class="icon" data-act="settings" title="Settings">⚙</button>
+      <button class="icon" data-act="pin" title="Always on top">◉</button>
+      <button class="icon" data-act="minimise" title="Minimise">–</button>
+      <button class="icon danger" data-act="close" title="Close">✕</button>
+    </header>
+
+    <div id="stage">
+      <canvas id="board"></canvas>
+
+      <div id="finish" class="finish hidden">
+        <div class="finish-card">
+          <div class="finish-title">Finished</div>
+          <div class="finish-name" id="finishName"></div>
+          <div class="finish-stats" id="finishStats"></div>
+          <button class="primary" data-act="next">Next picture</button>
+        </div>
+      </div>
+
+      <div id="toasts"></div>
+    </div>
+
+    <footer id="tray">
+      <div class="progress"><div class="progress-fill" id="progressFill"></div></div>
+      <div id="tubs" class="tubs"></div>
+    </footer>
+
+    <div id="grip" title="Resize"></div>
+
+    <section id="panel" class="panel hidden">
+      <header class="panel-bar">
+        <span id="panelTitle">Pictures</span>
+        <button class="icon" data-act="panel-close">✕</button>
+      </header>
+      <div id="panelBody" class="panel-body"></div>
+    </section>
+  </div>
+
+  <script type="module" src="game.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+out/
+.env
+*.log
+.DS_Store
+
+# Raw generated art before it is mapified. Keep the mapped output, not the source.
+puzzles/_raw/
