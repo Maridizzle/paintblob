@@ -56,32 +56,53 @@ jobs:
             dist/*.exe
 
   publish:
-    if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Attach installers to the release
+      - name: Attach installers to a release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
-          cat > notes.md <<'NOTES'
-          Builds are unsigned, so the first launch needs a nudge:
+          # Tag pushes name themselves. A manual run takes its version from
+          # package.json and lets gh create the tag, so a release can still be
+          # cut from environments where pushing tags is not permitted.
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="v$(node -p "require('./package.json').version")"
+          else
+            TAG="$GITHUB_REF_NAME"
+          fi
 
-          - **macOS** — right-click the app and choose Open, then Open again.
-          - **Windows** — SmartScreen shows "More info" then "Run anyway".
-          - **Linux** — the AppImage wants libfuse2 on newer distributions.
-            Install it, or run with `APPIMAGE_EXTRACT_AND_RUN=1`.
+          cat > notes.md <<'NOTES'
+          Download the one for your computer, then open it like any other app.
+
+          - **macOS** — `.dmg` (`arm64` for Apple Silicon, `x64` for Intel)
+          - **Windows** — `.exe`
+          - **Linux** — `.AppImage`
+
+          These are unsigned, so the first launch needs a nudge: on macOS
+          right-click the app and choose Open, then Open again. On Windows,
+          SmartScreen shows "More info" then "Run anyway". The Linux AppImage
+          wants libfuse2 on newer distributions — install it, or run with
+          `APPIMAGE_EXTRACT_AND_RUN=1`.
           NOTES
 
-          find artifacts -type f -print
-          gh release create "$GITHUB_REF_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "paintblob $GITHUB_REF_NAME" \
-            --notes-file notes.md \
-            $(find artifacts -type f | sort)
+          FILES=$(find artifacts -type f | sort)
+          echo "$FILES"
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber $FILES
+          else
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "paintblob $TAG" \
+              --notes-file notes.md \
+              $FILES
+          fi
