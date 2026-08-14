@@ -23,6 +23,34 @@ works where pushing tags is not permitted.
 npm version patch && git push --follow-tags
 ```
 
+## On Android (and any other phone)
+
+The same `src/` also runs as an installable web app — no separate codebase.
+
+```bash
+npm run build:web    # -> dist-web/, a static site, ~200 kB
+```
+
+Put `dist-web/` on any HTTPS host and open it on the phone, then use the
+browser's **Install app** / **Add to Home Screen**. You get a home-screen
+icon, no browser chrome, and it works with no network at all — a service
+worker precaches everything, and saves and imported pictures live in
+IndexedDB. Dragging the folder onto [Netlify Drop](https://app.netlify.com/drop)
+is the quickest way to get a URL.
+
+Touch is handled properly rather than tolerated: bigger tubs, no stranded
+hover outlines, no pinch-zoom fighting the canvas, safe-area insets for the
+notch, and a lower default blob density since phones have less GPU headroom.
+The window chrome disappears, having no window to manage.
+
+`npm run check:web` runs the whole thing on a Pixel-sized viewport, taps a
+cell with a finger, then switches the network off and reloads to prove the
+offline path.
+
+For a Play Store APK rather than a home-screen install, wrap `dist-web/` in
+[Capacitor](https://capacitorjs.com) or [Bubblewrap](https://github.com/GoogleChromeLabs/bubblewrap) —
+both take the built site as-is and need no changes here.
+
 ## Or run from source
 
 ```bash
@@ -182,15 +210,20 @@ and `jpeg-js` are build-time tools, so they stay out of the installer.
 
 ```
 electron/     main + preload (CommonJS, sandboxed renderer)
-src/          the app — renderer is plain ESM, no build step
+src/          the app — plain ESM, no build step, runs on desktop and mobile
   paint-fx.js the burst
   render.js   two-layer canvas: static picture + live effects
+  platform.js Electron IPC or IndexedDB, behind one nine-method interface
   import.js   decode a dropped image and run it through the pipeline
   geometry.js path parsing and hit testing
   pipeline/   image -> puzzle, pure JS, no Node dependencies
 tools/        CLI wrappers, generators, tests, preview harness
 puzzles/      built puzzle JSON + manifest
 ```
+
+`src/platform.js` is the only file that knows which host it is running on.
+Everything else — the effect, the renderer, the pipeline, the achievements —
+is identical on the desktop app and the phone.
 
 `src/pipeline/` is shared by the app and the command line, so a picture you add
 through the button is identical to one built by `npm run mapify`. Everything

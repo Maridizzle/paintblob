@@ -24,6 +24,11 @@ html, body {
   -webkit-user-select: none;
   user-select: none;
   cursor: default;
+  /* Touch platforms: no rubber-banding, no double-tap zoom, no grey flash on
+     every tap. A tap here is a paint stroke, not a link. */
+  overscroll-behavior: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 #app {
@@ -101,6 +106,8 @@ button {
   display: block;
   border-radius: 9px;
   cursor: crosshair;
+  /* The canvas owns its gestures completely — no scroll, no pinch-zoom. */
+  touch-action: none;
 }
 #board.done { cursor: default; }
 
@@ -409,6 +416,62 @@ button {
   font-size: 14px;
   font-weight: 650;
   color: var(--accent);
+}
+
+/* ------------------------------------------------------------------ mobile */
+
+/* Set by game.js once the platform is known. A browser tab has no window to
+   move, resize, close or pin, so none of that chrome should be present. */
+.is-web .desktop-only { display: none !important; }
+
+.is-web #app {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  /* Fill the screen, staying clear of the notch and the gesture bar. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.is-web #bar { -webkit-app-region: none; }
+
+/* Coarse pointers: fingers need bigger targets than a mouse does, and the
+   tubs are the thing you hit most. */
+@media (pointer: coarse) {
+  .tub {
+    width: 48px;
+    height: 48px;
+    font-size: 14px;
+  }
+  .tub .count {
+    min-width: 18px;
+    height: 18px;
+    font-size: 10.5px;
+  }
+  /* Hover lifts look stuck on touch, where there is no un-hover. */
+  .tub:hover { transform: none; }
+  .tub.selected { transform: translateY(-4px) scale(1.08); }
+  .icon { width: 34px; height: 34px; font-size: 14px; }
+  .segmented button { padding: 10px 13px; font-size: 12px; }
+  .row { padding: 12px 13px; }
+  .primary.add { padding: 14px; font-size: 14px; }
+}
+
+/* Short and narrow — a phone in portrait. Give the picture the room. */
+@media (max-width: 560px) {
+  #stage { padding: 8px; }
+  #tray { padding: 0 8px 10px; }
+  .tubs { gap: 6px; }
+  #bar { padding: 7px 6px 7px 11px; }
+  #bar .subtitle { display: none; }
+  #toasts { left: 12px; right: 12px; bottom: 12px; }
+}
+
+/* Landscape on a phone is mostly bezel-to-bezel picture; shrink the chrome. */
+@media (max-height: 480px) and (pointer: coarse) {
+  #bar { padding: 4px 6px; }
+  #stage { padding: 6px; }
+  .tub { width: 40px; height: 40px; }
 }
 
 /* -------------------------------------------------------------------- grip */

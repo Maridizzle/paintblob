@@ -202,9 +202,20 @@ export class Board {
       }
     }
 
-    for (const burst of bursts) {
-      burst.drawFill(ctx);
-      burst.drawBlobs(ctx);
+    if (bursts.length) {
+      // Blobs are aimed across the whole picture and deliberately overshoot it.
+      // Without this they spill into the letterbox around the picture, which
+      // reads as paint floating on the window. Barely visible when the window
+      // is near-square; glaring on a phone in portrait.
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, this.puzzle.width, this.puzzle.height);
+      ctx.clip();
+      for (const burst of bursts) {
+        burst.drawFill(ctx);
+        burst.drawBlobs(ctx);
+      }
+      ctx.restore();
     }
   }
 }

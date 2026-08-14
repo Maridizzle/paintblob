@@ -4,8 +4,9 @@ import { Sfx } from './audio.js';
 import { Achievements, StreakTracker } from './achievements.js';
 import { prepareCells, cellAt } from './geometry.js';
 import { importImages, imagesFromDrop } from './import.js';
+import { createPlatform } from './platform.js';
 
-const api = window.blob;
+let api;
 const $ = (id) => document.getElementById(id);
 
 const board = new Board($('board'));
@@ -188,7 +189,9 @@ function pointerToCell(e) {
 }
 
 $('board').addEventListener('pointermove', (e) => {
-  if (S.finished) return;
+  // A finger has no hover state. Touch drags would otherwise leave an outline
+  // stranded under wherever the thumb last was.
+  if (S.finished || e.pointerType === 'touch') return;
   const { cell } = pointerToCell(e);
   // Idle frames are throttled to 30fps; force the next one so the hover
   // outline tracks the cursor rather than lagging behind it.
@@ -764,18 +767,27 @@ const ro = new ResizeObserver(() => {
 /* -------------------------------------------------------------------- boot */
 
 async function boot() {
+  api = await createPlatform();
   if (!api) {
     document.body.innerHTML =
-      '<div class="empty">paintblob needs to run inside Electron — try <code>npm start</code>.</div>';
+      '<div class="empty">paintblob needs somewhere to save your progress, and this ' +
+      'browser will not allow it. Private browsing usually blocks storage — try a ' +
+      'normal window.</div>';
     return;
   }
 
+  // Window chrome only means something on the desktop; on a phone the title
+  // bar buttons and resize grip are noise.
+  document.documentElement.classList.add(api.isDesktop ? 'is-desktop' : 'is-web');
+
   S.save = await api.readSave();
   S.save.settings.speed ??= 1;
-  S.save.settings.density ??= 1;
   S.save.stats.mutedCells ??= 0;
   S.save.stats.patientLandings ??= 0;
   S.save.settings.detail ??= 'normal';
+  // Phones have far less GPU headroom than a laptop, and the burst is the most
+  // expensive thing here. Start them lighter; the slider still goes to 1.6.
+  S.save.settings.density ??= matchMedia('(pointer: coarse)').matches ? 0.7 : 1;
 
   sfx = new Sfx({ enabled: S.save.settings.sound !== false, volume: S.save.settings.volume ?? 0.7 });
   achievements = new Achievements(S.save.unlocked);

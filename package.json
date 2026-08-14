@@ -14,6 +14,8 @@
     "verify": "node tools/verify-puzzle.mjs",
     "preview": "node tools/preview.mjs",
     "smoke": "electron . --smoke",
+    "build:web": "node tools/build-web.mjs",
+    "check:web": "node tools/build-web.mjs && node tools/check-web.mjs",
     "test": "node --test tools/pipeline.test.mjs && node tools/verify-puzzle.mjs",
     "dist": "npm run icon && electron-builder",
     "dist:linux": "npm run icon && electron-builder --linux",

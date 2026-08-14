@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// Draws build/icon.png, which electron-builder converts into .icns and .ico.
+// Renders the app icon. electron-builder turns build/icon.png into .icns and
+// .ico; the web build calls renderIcon() directly for its PWA sizes.
 //
 // Generated rather than committed as a binary blob so the colours stay tied to
 // the app's palette and it can be re-rendered at any size. Kept to three bold
-// shapes because the thing spends most of its life 32 pixels wide in a dock.
+// shapes because the thing spends most of its life 32 pixels wide.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,7 +14,6 @@ import { PNG } from 'pngjs';
 import { createImage, fillPoly, blob, roundedRect, toPNGBuffer } from './lib/raster.mjs';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
-const SIZE = Number(process.argv[2]) || 1024;
 
 const hex = (h) => [
   parseInt(h.slice(1, 3), 16),
@@ -21,23 +21,42 @@ const hex = (h) => [
   parseInt(h.slice(5, 7), 16),
 ];
 
-const img = createImage(SIZE, SIZE, [0, 0, 0, 0]);
-const k = SIZE / 1024;
+/**
+ * @param {number} size
+ * @param {boolean} [square] true fills the whole canvas — Android maskable
+ *   icons are cropped to whatever shape the launcher wants, so a baked-in
+ *   radius would get clipped twice and look wrong.
+ */
+export function renderIcon(size, { square = false, padding = 0 } = {}) {
+  const img = createImage(size, size, [0, 0, 0, 0]);
+  const k = size / 1024;
+  const radius = square ? 0 : 224 * k;
 
-// Card background, matching the app chrome. macOS rounds icons itself but a
-// square would look wrong everywhere else, so bake the radius in.
-fillPoly(img, roundedRect(0, 0, SIZE, SIZE, 224 * k, 24), hex('#17151f'));
+  fillPoly(img, roundedRect(0, 0, size, size, radius, 24), hex('#17151f'));
 
-// Three overlapping blobs, drawn back to front. Same wobble generator the
-// paint effect uses, so the icon and the thing it launches actually match.
-fillPoly(img, blob(400 * k, 430 * k, 250 * k, { seed: 7, wobble: 0.16, points: 20 }), hex('#3fb0a8'));
-fillPoly(img, blob(630 * k, 590 * k, 285 * k, { seed: 3, wobble: 0.18, points: 22 }), hex('#ff8f5e'));
-fillPoly(img, blob(392 * k, 706 * k, 118 * k, { seed: 11, wobble: 0.2, points: 16 }), hex('#ffb35c'));
+  // Same wobble generator the paint effect uses, so the icon and the thing it
+  // launches actually match. Inset when padding is asked for, which keeps the
+  // blobs inside a maskable icon's guaranteed-safe circle.
+  const s = 1 - padding * 2;
+  const at = (v) => (padding + (v / 1024) * s) * size;
+  const r = (v) => (v / 1024) * s * size;
 
-// A stray droplet, because the whole point is that paint goes everywhere.
-fillPoly(img, blob(760 * k, 268 * k, 62 * k, { seed: 19, wobble: 0.22, points: 14 }), hex('#ffb35c'));
+  fillPoly(img, blob(at(400), at(430), r(250), { seed: 7, wobble: 0.16, points: 20 }), hex('#3fb0a8'));
+  fillPoly(img, blob(at(630), at(590), r(285), { seed: 3, wobble: 0.18, points: 22 }), hex('#ff8f5e'));
+  fillPoly(img, blob(at(392), at(706), r(118), { seed: 11, wobble: 0.2, points: 16 }), hex('#ffb35c'));
+  fillPoly(img, blob(at(760), at(268), r(62), { seed: 19, wobble: 0.22, points: 14 }), hex('#ffb35c'));
 
-const out = path.join(ROOT, 'build', 'icon.png');
-fs.mkdirSync(path.dirname(out), { recursive: true });
-fs.writeFileSync(out, toPNGBuffer(img, PNG));
-console.log(`${path.relative(ROOT, out)}  ${SIZE}x${SIZE}  ${(fs.statSync(out).size / 1024).toFixed(1)} kB`);
+  return img;
+}
+
+export const iconBuffer = (size, opts) => toPNGBuffer(renderIcon(size, opts), PNG);
+
+function main() {
+  const size = Number(process.argv[2]) || 1024;
+  const out = path.join(ROOT, 'build', 'icon.png');
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.writeFileSync(out, iconBuffer(size));
+  console.log(`${path.relative(ROOT, out)}  ${size}x${size}  ${(fs.statSync(out).size / 1024).toFixed(1)} kB`);
+}
+
+if (process.argv[1] && import.meta.url === `file://${path.resolve(process.argv[1])}`) main();

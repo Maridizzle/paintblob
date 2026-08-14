@@ -31,9 +31,23 @@ jobs:
       - name: Smoke test the app
         run: xvfb-run -a --server-args="-screen 0 800x900x24" npm run smoke -- --no-sandbox
 
+      # The Android/PWA build: taps a cell with a finger on a phone-sized
+      # viewport, then kills the network and reloads to prove the service
+      # worker actually makes it work offline.
+      - run: npm run check:web
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: smoke-screenshot
-          path: puzzles/_raw/smoke.png
+          name: screenshots
+          path: |
+            puzzles/_raw/smoke.png
+            puzzles/_raw/mobile/
           if-no-files-found: ignore
+
+      - name: Upload web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: paintblob-web
+          path: dist-web/
+          if-no-files-found: error
