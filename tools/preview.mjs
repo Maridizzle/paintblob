@@ -139,11 +139,18 @@ await page.addInitScript((data) => {
     settings: { sound: false, volume: 0, alwaysOnTop: true, speed: data.speed, density: 1 },
     bounds: null,
   };
+  const extra = new Map(); // pictures added during the run, kept in memory
   window.blob = {
     readSave: async () => save,
     writeSave: async () => true,
-    listPuzzles: async () => data.manifest,
-    loadPuzzle: async (id) => data.puzzles[id],
+    listPuzzles: async () => [...data.manifest, ...[...extra.values()].map((p) => p.entry)],
+    loadPuzzle: async (id) => data.puzzles[id] ?? extra.get(id)?.puzzle,
+    pickImage: async () => [],
+    savePuzzle: async ({ id, title, puzzle, entry }) => {
+      extra.set(id, { puzzle: { id, title, ...puzzle }, entry: { ...entry, id, title, imported: true } });
+      return { id };
+    },
+    deletePuzzle: async (id) => extra.delete(id),
     minimise() {}, close() {},
     toggleAlwaysOnTop: async () => true,
     resizeBy() {},
@@ -151,7 +158,13 @@ await page.addInitScript((data) => {
 }, { manifest, puzzles, speed });
 
 await page.goto(`http://127.0.0.1:${port}/src/index.html`);
-await page.waitForFunction(() => document.querySelectorAll('#tubs .tub').length > 0, { timeout: 10000 });
+// polling must be a timer, not the default 'raf' — the virtual clock above
+// hijacks requestAnimationFrame, so raf-based polling never fires.
+await page.waitForFunction(
+  () => document.querySelectorAll('#tubs .tub').length > 0,
+  null,
+  { timeout: 10000, polling: 100 },
+);
 await page.waitForTimeout(250);
 
 const puzzle = puzzles[wanted];
@@ -217,6 +230,44 @@ if (second) {
 
 await advance(BURST_MS / speed);
 await stage.screenshot({ path: path.join(outDir, `${wanted}-settled.png`) });
+
+// Drop an image on the window and shoot the Pictures panel, so the import UI
+// gets eyes on it in the same pass as the effect.
+await page.evaluate(async () => {
+  const canvas = new OffscreenCanvas(400, 400);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#efe6d5'; ctx.fillRect(0, 0, 400, 400);
+  ctx.fillStyle = '#d1495b'; ctx.beginPath(); ctx.arc(150, 150, 96, 0, 7); ctx.fill();
+  ctx.fillStyle = '#2a9d8f'; ctx.fillRect(40, 280, 320, 90);
+  ctx.fillStyle = '#e9c46a'; ctx.beginPath(); ctx.arc(290, 120, 64, 0, 7); ctx.fill();
+
+  const transfer = new DataTransfer();
+  transfer.items.add(new File([await canvas.convertToBlob({ type: 'image/png' })],
+    'dropped-shapes.png', { type: 'image/png' }));
+  window.dispatchEvent(new DragEvent('drop', {
+    dataTransfer: transfer, bubbles: true, cancelable: true,
+  }));
+});
+try {
+  await page.waitForFunction(
+    () => /Dropped Shapes/.test(document.getElementById('barSubtitle').textContent),
+    null,
+    { timeout: 15000, polling: 100 },
+  );
+} catch (err) {
+  // A bare Playwright timeout says nothing about why. The renderer's own
+  // complaints are what actually diagnose it.
+  console.error('import step failed');
+  console.error(`  subtitle: ${await page.evaluate(() => document.getElementById('barSubtitle').textContent)}`);
+  for (const p of problems) console.error(`  ${p}`);
+  throw err;
+}
+await page.evaluate(() => window.__clock.step(16));
+
+await page.click('[data-act="pictures"]');
+await page.waitForTimeout(200);
+await page.locator('#app').screenshot({ path: path.join(outDir, 'pictures-panel.png') });
+await page.click('[data-act="panel-close"]');
 
 const filledCount = await page.evaluate(() => {
   const text = document.getElementById('barSubtitle').textContent;

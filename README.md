@@ -77,26 +77,36 @@ sides and the finished picture has no hairline seams. `npm run verify` proves
 it: every pixel must belong to exactly one cell, and every number must land
 inside the cell it labels.
 
-## Making pictures
+## Adding pictures
+
+Open the Pictures panel (`▦`) and hit **Add picture**, or just drag an image
+onto the window. It maps and opens straight away. **Chunky / Normal /
+Detailed** controls how many cells you get.
+
+Because the decoding is Chromium's, this path takes anything the browser can
+display — PNG, JPEG, WebP, AVIF, GIF, BMP. Imported pictures are written to
+your user data directory, not into the app, so they survive updates and can be
+removed again with the `✕` on their row.
+
+### From the command line
 
 ```bash
 # generate and import in one step
 OPENAI_API_KEY=sk-... npm run generate -- "a koi pond at dusk"
 
-# import art you already have (PNG or JPEG)
-npm run mapify -- ~/art/mountain.png --title "Mountain" --cells 70
+# import art you already have
+npm run mapify -- ~/art/mountain.png --title "Mountain" --detail detailed
 ```
 
-Both write `puzzles/<id>.json` and add it to the manifest. The app re-reads the
-manifest every time you open the Pictures panel, so a picture imported while
-the app is running shows up without a restart.
+These write into the repo's `puzzles/` directory, so they ship with a build.
+The CLI decodes with pngjs and jpeg-js, so it takes PNG and JPEG only —
+anything else is rejected with a message telling you what to convert to.
 
-Prefer PNG. JPEG works, but its ringing around hard edges shifts colours near
-boundaries — the same koi pond artwork yields 18 cells as a PNG and 14 as a
-quality-88 JPEG, because smeared edges let neighbouring regions merge. WebP,
-AVIF and SVG are rejected with a message telling you to convert.
+Prefer PNG either way. JPEG ringing around hard edges shifts colours near
+boundaries: the same koi pond artwork yields 18 cells as a PNG and 14 as a
+quality-88 JPEG, because smeared edges let neighbouring regions merge.
 
-Useful knobs, on either command:
+Useful knobs on the CLI (`--detail chunky|normal|detailed` sets all of them):
 
 | flag | default | effect |
 |---|---|---|
@@ -173,10 +183,17 @@ electron/     main + preload (CommonJS, sandboxed renderer)
 src/          the app — renderer is plain ESM, no build step
   paint-fx.js the burst
   render.js   two-layer canvas: static picture + live effects
-  geometry.js path parsing and hit testing, shared with the Node tools
-tools/        the pipeline, generators, tests, preview harness
+  import.js   decode a dropped image and run it through the pipeline
+  geometry.js path parsing and hit testing
+  pipeline/   image -> puzzle, pure JS, no Node dependencies
+tools/        CLI wrappers, generators, tests, preview harness
 puzzles/      built puzzle JSON + manifest
 ```
+
+`src/pipeline/` is shared by the app and the command line, so a picture you add
+through the button is identical to one built by `npm run mapify`. Everything
+Node-specific — file decoding, argument parsing, writing to disk — stays in
+`tools/`.
 
 There is no bundler and no framework. `src/` is loaded directly as ES modules.
 

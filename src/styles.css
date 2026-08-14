@@ -346,6 +346,71 @@ button {
   border-radius: 5px;
 }
 
+/* ------------------------------------------------------------------ import */
+
+.add-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 10px;
+  align-items: center;
+  padding: 4px 2px 11px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  margin-bottom: 4px;
+}
+
+.primary.add {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
+.segmented {
+  display: flex;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--edge);
+}
+.segmented button {
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.03);
+  transition: background 120ms, color 120ms;
+}
+.segmented button + button { border-left: 1px solid var(--edge); }
+.segmented button:hover { background: rgba(255, 255, 255, 0.09); color: var(--text); }
+.segmented button.on { background: var(--accent); color: #221803; }
+
+.add-hint {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* Drop target. Sits above everything, but must never eat the drop event
+   itself — hence pointer-events: none. */
+.drop-hint {
+  position: absolute;
+  inset: 7px;
+  z-index: 50;
+  display: none;
+  place-items: center;
+  border-radius: 12px;
+  border: 2px dashed var(--accent);
+  background: rgba(16, 14, 22, 0.86);
+  backdrop-filter: blur(3px);
+  pointer-events: none;
+}
+#app.dropping .drop-hint { display: grid; }
+
+.drop-hint span {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--accent);
+}
+
 /* -------------------------------------------------------------------- grip */
 
 #grip {

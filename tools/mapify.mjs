@@ -1,33 +1,21 @@
 #!/usr/bin/env node
-// Image -> playable puzzle.
+// Image -> playable puzzle, from the command line.
 //
 //   node tools/mapify.mjs <image> --id koi-pond --title "Koi Pond"
 //
-// This is the whole reason the project works without asking a model to invent
-// polygons: the picture itself is the source of truth. Quantise it, find the
-// connected plateaus, fatten them until they are comfortably clickable, trace
-// their exact borders. Deterministic, offline, and it never hallucinates a
-// region that is not in the artwork.
+// The pipeline itself lives in src/pipeline/, shared with the app's own import
+// button. This file is only the Node wrapper: argument parsing, decoding from
+// disk, and writing the result into puzzles/.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
 import { decodeImage } from './lib/decode.mjs';
-import { quantize, denoiseIndices } from './lib/quantize.mjs';
-import { labelRegions, mergeSmallRegions, labelAnchor } from './lib/regions.mjs';
-import { boundsOf, traceRegion, ringsToPath } from './lib/contour.mjs';
-import { nameColour, toHex, uniquifyNames } from './lib/colour-names.mjs';
+import { buildPuzzle, DEFAULTS, DETAIL_PRESETS, slugify } from '../src/pipeline/build.js';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const PUZZLE_DIR = path.join(ROOT, 'puzzles');
-
-const DEFAULTS = {
-  size: 768,        // working resolution on the long side
-  maxColours: 14,   // paint tubs
-  maxCells: 64,     // clickable regions
-  minAreaFrac: 0.0016,
-  denoise: 1,
-};
 
 function parseArgs(argv) {
   const opts = { ...DEFAULTS, _: [] };
@@ -47,105 +35,16 @@ function parseArgs(argv) {
       case 'denoise': opts.denoise = Number(value); break;
       case 'id': opts.id = value; break;
       case 'title': opts.title = value; break;
+      case 'detail': {
+        const preset = DETAIL_PRESETS[value];
+        if (!preset) throw new Error(`--detail must be one of ${Object.keys(DETAIL_PRESETS).join(', ')}`);
+        Object.assign(opts, preset);
+        break;
+      }
       default: throw new Error(`unknown flag --${flag}`);
     }
   }
   return opts;
-}
-
-/** Box-filter downscale. Averaging beats nearest here: it kills stray pixels
- *  before quantisation instead of promoting them to their own regions. */
-export function resize(rgba, sw, sh, dw, dh) {
-  if (sw === dw && sh === dh) return rgba;
-  const out = new Uint8ClampedArray(dw * dh * 4);
-  const xRatio = sw / dw;
-  const yRatio = sh / dh;
-
-  for (let y = 0; y < dh; y++) {
-    const sy0 = Math.floor(y * yRatio);
-    const sy1 = Math.max(sy0 + 1, Math.floor((y + 1) * yRatio));
-    for (let x = 0; x < dw; x++) {
-      const sx0 = Math.floor(x * xRatio);
-      const sx1 = Math.max(sx0 + 1, Math.floor((x + 1) * xRatio));
-      let r = 0, g = 0, b = 0, a = 0, n = 0;
-      for (let sy = sy0; sy < sy1 && sy < sh; sy++) {
-        for (let sx = sx0; sx < sx1 && sx < sw; sx++) {
-          const o = (sy * sw + sx) * 4;
-          r += rgba[o]; g += rgba[o + 1]; b += rgba[o + 2]; a += rgba[o + 3];
-          n++;
-        }
-      }
-      const o = (y * dw + x) * 4;
-      out[o] = r / n; out[o + 1] = g / n; out[o + 2] = b / n; out[o + 3] = a / n;
-    }
-  }
-  return out;
-}
-
-export function buildPuzzle(rgba, srcW, srcH, opts = {}) {
-  const o = { ...DEFAULTS, ...opts };
-
-  const scale = Math.min(1, o.size / Math.max(srcW, srcH));
-  const width = Math.max(1, Math.round(srcW * scale));
-  const height = Math.max(1, Math.round(srcH * scale));
-  const pixels = resize(rgba, srcW, srcH, width, height);
-
-  const { palette, indices } = quantize(pixels, width, height, o.maxColours);
-  const cleaned = o.denoise > 0
-    ? denoiseIndices(indices, width, height, o.denoise, palette.length)
-    : indices;
-
-  const minArea = Math.max(48, Math.round(width * height * o.minAreaFrac));
-  const merged = mergeSmallRegions(
-    labelRegions(cleaned, width, height),
-    width,
-    height,
-    { minArea, maxCells: o.maxCells },
-  );
-
-  const cells = [];
-  for (let id = 0; id < merged.count; id++) {
-    const bbox = boundsOf(merged.labels, width, height, id);
-    if (!bbox) continue;
-    const rings = traceRegion(merged.labels, width, height, id, bbox);
-    if (!rings.length) continue;
-    const anchor = labelAnchor(merged.labels, width, height, id, bbox);
-    cells.push({
-      c: merged.colours[id],
-      x: Math.round(anchor.x * 10) / 10,
-      y: Math.round(anchor.y * 10) / 10,
-      r: Math.round(anchor.radius * 10) / 10,
-      a: merged.areas[id],
-      d: ringsToPath(rings),
-    });
-  }
-
-  // Renumber the palette so tub 1 is the colour used by the most cells. Players
-  // work top-down through the tubs, and starting on the dominant colour makes
-  // the picture appear fastest — which is the whole hook.
-  const usage = palette.map(() => 0);
-  for (const cell of cells) usage[cell.c]++;
-
-  const order = palette
-    .map((_, i) => i)
-    .filter((i) => usage[i] > 0)
-    .sort((a, b) => usage[b] - usage[a]);
-
-  const remap = new Map(order.map((from, to) => [from, to]));
-  for (const cell of cells) cell.c = remap.get(cell.c);
-
-  const names = uniquifyNames(order.map((i) => nameColour(palette[i])));
-
-  return {
-    width,
-    height,
-    palette: order.map((i, slot) => ({
-      hex: toHex(palette[i]),
-      name: names[slot],
-      cells: usage[i],
-    })),
-    cells,
-  };
 }
 
 function updateManifest(entry) {
@@ -157,6 +56,24 @@ function updateManifest(entry) {
   list.sort((a, b) => a.title.localeCompare(b.title));
   fs.writeFileSync(file, `${JSON.stringify(list, null, 2)}\n`);
   return file;
+}
+
+export function manifestEntry(puzzle, { id, title }) {
+  return {
+    id,
+    title,
+    cells: puzzle.cells.length,
+    colours: puzzle.palette.length,
+    thumb: puzzle.palette.slice(0, 5).map((p) => p.hex),
+  };
+}
+
+export function writePuzzle(puzzle, { id, title }) {
+  fs.mkdirSync(PUZZLE_DIR, { recursive: true });
+  const out = path.join(PUZZLE_DIR, `${id}.json`);
+  fs.writeFileSync(out, JSON.stringify({ id, title, ...puzzle }));
+  updateManifest(manifestEntry(puzzle, { id, title }));
+  return out;
 }
 
 /**
@@ -172,24 +89,10 @@ export function reportPuzzle(puzzle, title, out) {
   console.log(`  ${path.relative(ROOT, out)}  (${(fs.statSync(out).size / 1024).toFixed(1)} kB)`);
 
   if (puzzle.cells.length < 15) {
-    console.log('\n  few cells — try --min-area 0.0008 --colours 16, or busier source art');
+    console.log('\n  few cells — try --detail detailed, or busier source art');
   } else if (puzzle.cells.length > 80) {
-    console.log('\n  lots of cells — try --min-area 0.003 --colours 10 for chunkier regions');
+    console.log('\n  lots of cells — try --detail chunky for fatter regions');
   }
-}
-
-export function writePuzzle(puzzle, { id, title }) {
-  fs.mkdirSync(PUZZLE_DIR, { recursive: true });
-  const out = path.join(PUZZLE_DIR, `${id}.json`);
-  fs.writeFileSync(out, JSON.stringify({ id, title, ...puzzle }));
-  updateManifest({
-    id,
-    title,
-    cells: puzzle.cells.length,
-    colours: puzzle.palette.length,
-    thumb: puzzle.palette.slice(0, 5).map((p) => p.hex),
-  });
-  return out;
 }
 
 async function main() {
@@ -197,14 +100,14 @@ async function main() {
   const src = opts._[0];
   if (!src) {
     console.error('usage: node tools/mapify.mjs <image> [--id slug] [--title "Name"]');
+    console.error('       [--detail chunky|normal|detailed]');
     console.error('       [--size 768] [--colours 14] [--cells 64] [--min-area 0.0016]');
     console.error('accepts PNG or JPEG');
     process.exit(1);
   }
 
   const image = decodeImage(src);
-  const id = (opts.id || path.basename(src, path.extname(src)))
-    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const id = slugify(opts.id || path.basename(src, path.extname(src)));
   const title = opts.title || id.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
   const started = Date.now();

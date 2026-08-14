@@ -4,11 +4,11 @@ import { PNG } from 'pngjs';
 import jpeg from 'jpeg-js';
 
 import { decodeBuffer } from './lib/decode.mjs';
-import { quantize, denoiseIndices } from './lib/quantize.mjs';
-import { labelRegions, mergeSmallRegions, labelAnchor } from './lib/regions.mjs';
-import { boundsOf, traceRegion, ringsToPath } from './lib/contour.mjs';
-import { nameColour, toHex, uniquifyNames } from './lib/colour-names.mjs';
-import { buildPuzzle } from './mapify.mjs';
+import { quantize, denoiseIndices } from '../src/pipeline/quantize.js';
+import { labelRegions, mergeSmallRegions, labelAnchor } from '../src/pipeline/regions.js';
+import { boundsOf, traceRegion, ringsToPath } from '../src/pipeline/contour.js';
+import { nameColour, toHex, uniquifyNames } from '../src/pipeline/colour-names.js';
+import { buildPuzzle } from '../src/pipeline/build.js';
 import { parsePath, pointInRings, ringsBounds } from '../src/geometry.js';
 
 const W = 64;

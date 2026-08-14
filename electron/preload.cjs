@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld('blob', {
 
   listPuzzles: () => ipcRenderer.invoke('puzzles:list'),
   loadPuzzle: (id) => ipcRenderer.invoke('puzzles:load', id),
+  pickImage: () => ipcRenderer.invoke('puzzles:pick-image'),
+  savePuzzle: (payload) => ipcRenderer.invoke('puzzles:save', payload),
+  deletePuzzle: (id) => ipcRenderer.invoke('puzzles:delete', id),
 
   minimise: () => ipcRenderer.send('win:minimise'),
   close: () => ipcRenderer.send('win:close'),

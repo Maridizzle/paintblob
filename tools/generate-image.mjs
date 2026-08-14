@@ -15,7 +15,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { decodeBuffer } from './lib/decode.mjs';
-import { buildPuzzle, writePuzzle, reportPuzzle } from './mapify.mjs';
+import { buildPuzzle } from '../src/pipeline/build.js';
+import { writePuzzle, reportPuzzle } from './mapify.mjs';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const RAW = path.join(ROOT, 'puzzles', '_raw');

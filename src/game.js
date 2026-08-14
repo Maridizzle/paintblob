@@ -3,6 +3,7 @@ import { Burst, audioCue } from './paint-fx.js';
 import { Sfx } from './audio.js';
 import { Achievements, StreakTracker } from './achievements.js';
 import { prepareCells, cellAt } from './geometry.js';
+import { importImages, imagesFromDrop } from './import.js';
 
 const api = window.blob;
 const $ = (id) => document.getElementById(id);
@@ -27,6 +28,7 @@ const S = {
   revealFrom: 0,
   idleSinceBurst: true,
   panel: null,
+  importing: false,
 };
 
 /* ---------------------------------------------------------------- persistence */
@@ -411,11 +413,12 @@ function row(cls = '') {
 }
 
 function renderPictures(body) {
+  body.append(buildAddRow(body));
+
   if (!S.manifest.length) {
     const empty = document.createElement('div');
     empty.className = 'empty';
-    empty.innerHTML = 'No pictures yet.<br>Run <code>npm run seed</code> for the demo set, ' +
-      'or <code>npm run generate</code> to make your own.';
+    empty.textContent = 'No pictures yet. Add one above, or drop an image onto the window.';
     body.append(empty);
     return;
   }
@@ -449,11 +452,115 @@ function renderPictures(body) {
       tick.textContent = '✓';
       el.append(tick);
     }
+    if (p.imported) {
+      const remove = document.createElement('button');
+      remove.className = 'icon danger';
+      remove.title = `Remove ${p.title}`;
+      remove.textContent = '✕';
+      remove.addEventListener('click', async (e) => {
+        e.stopPropagation(); // the row itself loads the picture
+        await api.deletePuzzle(p.id);
+        delete S.save.progress[p.id];
+        S.manifest = await api.listPuzzles();
+        if (S.puzzle?.id === p.id && S.manifest.length) await loadPuzzle(S.manifest[0].id);
+        await openPanel('pictures');
+      });
+      el.append(remove);
+    }
     el.addEventListener('click', async () => {
       closePanel();
       await loadPuzzle(p.id);
     });
     body.append(el);
+  }
+}
+
+/* ------------------------------------------------------------------ import */
+
+function buildAddRow(body) {
+  const wrap = document.createElement('div');
+  wrap.className = 'add-row';
+
+  const button = document.createElement('button');
+  button.className = 'primary add';
+  button.textContent = '＋  Add picture';
+  button.addEventListener('click', async () => {
+    const picked = await api.pickImage();
+    if (!picked.length) return;
+    await runImport(picked.map((f) => ({ name: f.name, blob: new Blob([f.bytes]) })), body);
+  });
+
+  const detail = document.createElement('div');
+  detail.className = 'segmented';
+  for (const key of ['chunky', 'normal', 'detailed']) {
+    const option = document.createElement('button');
+    option.textContent = key[0].toUpperCase() + key.slice(1);
+    option.className = S.save.settings.detail === key ? 'on' : '';
+    option.title = {
+      chunky: 'Fewer, bigger cells',
+      normal: 'A balanced picture',
+      detailed: 'More cells, finer shapes',
+    }[key];
+    option.addEventListener('click', () => {
+      S.save.settings.detail = key;
+      persist();
+      [...detail.children].forEach((c) => c.classList.toggle('on', c === option));
+    });
+    detail.append(option);
+  }
+
+  const hint = document.createElement('div');
+  hint.className = 'add-hint';
+  hint.textContent = 'or drop an image anywhere on the window';
+
+  wrap.append(button, detail, hint);
+  return wrap;
+}
+
+/** Shared by the button and drag-and-drop. */
+async function runImport(files, body) {
+  if (S.importing || !files.length) return;
+  S.importing = true;
+
+  const status = document.createElement('div');
+  status.className = 'empty';
+  const panelOpen = !$('panel').classList.contains('hidden');
+  if (panelOpen && body) {
+    body.textContent = '';
+    body.append(status);
+  }
+
+  const result = await importImages(files, {
+    api,
+    detail: S.save.settings.detail ?? 'normal',
+    taken: new Set(S.manifest.map((p) => p.id)),
+    onProgress: (name, i, total) => {
+      status.textContent = total > 1
+        ? `Mapping ${name}…  (${i + 1} of ${total})`
+        : `Mapping ${name}…`;
+    },
+  });
+
+  S.manifest = await api.listPuzzles();
+  S.importing = false;
+
+  for (const p of result.added) {
+    toast({
+      icon: '🖼️',
+      name: `Added ${p.title}`,
+      desc: `${p.cells} cells · ${p.colours} colours`,
+    });
+  }
+  for (const f of result.failed) {
+    toast({ icon: '⚠️', name: `Could not add ${f.name}`, desc: f.reason });
+  }
+
+  if (result.added.length) {
+    // Drop straight into the newest picture; that is what you wanted.
+    closePanel();
+    await loadPuzzle(result.added.at(-1).id);
+  } else if (panelOpen) {
+    await openPanel('pictures');
   }
 }
 
@@ -623,6 +730,32 @@ document.addEventListener('keydown', (e) => {
   grip.addEventListener('pointercancel', stop);
 }
 
+// Drop an image anywhere on the window to add it. dragenter/dragleave fire for
+// every child element the cursor crosses, so track depth rather than toggling
+// on each event or the hint strobes.
+{
+  let depth = 0;
+  const clear = () => {
+    depth = 0;
+    $('app').classList.remove('dropping');
+  };
+  window.addEventListener('dragover', (e) => e.preventDefault());
+  window.addEventListener('dragenter', (e) => {
+    e.preventDefault();
+    depth++;
+    if (!S.importing) $('app').classList.add('dropping');
+  });
+  window.addEventListener('dragleave', () => {
+    if (--depth <= 0) clear();
+  });
+  window.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    clear();
+    const files = imagesFromDrop(e);
+    if (files.length) await runImport(files, $('panelBody'));
+  });
+}
+
 const ro = new ResizeObserver(() => {
   board.layout();
   board.dirty = true;
@@ -642,6 +775,7 @@ async function boot() {
   S.save.settings.density ??= 1;
   S.save.stats.mutedCells ??= 0;
   S.save.stats.patientLandings ??= 0;
+  S.save.settings.detail ??= 'normal';
 
   sfx = new Sfx({ enabled: S.save.settings.sound !== false, volume: S.save.settings.volume ?? 0.7 });
   achievements = new Achievements(S.save.unlocked);

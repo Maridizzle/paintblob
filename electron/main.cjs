@@ -4,7 +4,7 @@
 // keeping the main and preload scripts CJS avoids Electron's ESM/sandbox
 // caveats entirely — one less thing to break on a version bump.
 
-const { app, BrowserWindow, ipcMain, screen, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, screen, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -180,6 +180,38 @@ async function runSmokeTest(target) {
       return document.getElementById('barSubtitle').textContent;
     })()`);
 
+    // Exercise the add-a-picture path for real: generate an image in the
+    // renderer, drop it on the window, and confirm it round-trips through IPC,
+    // the pipeline, and the user puzzle directory into something playable.
+    const imported = await target.webContents.executeJavaScript(`(async () => {
+      const canvas = new OffscreenCanvas(360, 360);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#f2e9d8'; ctx.fillRect(0, 0, 360, 360);
+      ctx.fillStyle = '#d1495b'; ctx.beginPath(); ctx.arc(130, 140, 84, 0, 7); ctx.fill();
+      ctx.fillStyle = '#2a9d8f'; ctx.fillRect(30, 250, 300, 80);
+      ctx.fillStyle = '#e9c46a'; ctx.beginPath(); ctx.arc(258, 110, 58, 0, 7); ctx.fill();
+
+      const blob = await canvas.convertToBlob({ type: 'image/png' });
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([blob], 'smoke-import.png', { type: 'image/png' }));
+      window.dispatchEvent(new DragEvent('drop', {
+        dataTransfer: transfer, bubbles: true, cancelable: true,
+      }));
+
+      for (let i = 0; i < 60 && !/Smoke Import/.test(document.getElementById('barSubtitle').textContent); i++) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      const subtitle = document.getElementById('barSubtitle').textContent;
+      const listed = (await window.blob.listPuzzles()).some((p) => p.id === 'smoke-import');
+      await window.blob.deletePuzzle('smoke-import');
+      return { subtitle, listed };
+    })()`);
+
+    console.log(`smoke: imported "${imported.subtitle}" (listed: ${imported.listed})`);
+    if (!imported.listed || !/Smoke Import/.test(imported.subtitle)) {
+      errors.push(`add-a-picture failed (subtitle: "${imported.subtitle}", listed: ${imported.listed})`);
+    }
+
     const image = await target.webContents.capturePage();
     const out = smokeOutputPath();
     fs.mkdirSync(path.dirname(out), { recursive: true });
@@ -221,20 +253,104 @@ ipcMain.handle('save:write', (_e, patch) => {
   return true;
 });
 
-ipcMain.handle('puzzles:list', async () => {
-  const dir = path.join(__dirname, '..', 'puzzles');
-  let manifest = [];
+/* ------------------------------------------------------------------ puzzles */
+
+// Two libraries. The bundled one ships with the app and, once packaged, lives
+// inside a read-only asar; anything the player imports has to go somewhere
+// writable instead. Both are merged on read, with imports winning on an id
+// clash so a player can replace a demo picture with their own.
+const bundledDir = () => path.join(__dirname, '..', 'puzzles');
+const importedDir = () => path.join(app.getPath('userData'), 'puzzles');
+
+const VALID_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+function readManifest(dir, imported) {
   try {
-    manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
-  } catch { /* no puzzles seeded yet */ }
-  return manifest;
+    const list = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
+    return list.map((p) => ({ ...p, imported }));
+  } catch {
+    return [];
+  }
+}
+
+function writeImportedManifest(list) {
+  const dir = importedDir();
+  fs.mkdirSync(dir, { recursive: true });
+  const tmp = path.join(dir, 'manifest.json.tmp');
+  fs.writeFileSync(tmp, `${JSON.stringify(list, null, 2)}\n`);
+  fs.renameSync(tmp, path.join(dir, 'manifest.json'));
+}
+
+ipcMain.handle('puzzles:list', async () => {
+  const bundled = readManifest(bundledDir(), false);
+  const imported = readManifest(importedDir(), true);
+  const byId = new Map(bundled.map((p) => [p.id, p]));
+  for (const p of imported) byId.set(p.id, p);
+  return [...byId.values()].sort((a, b) => a.title.localeCompare(b.title));
 });
 
 ipcMain.handle('puzzles:load', async (_e, id) => {
-  // Never let a renderer-supplied id escape the puzzles directory.
-  if (!/^[a-z0-9][a-z0-9-]*$/i.test(id)) throw new Error('bad puzzle id');
-  const file = path.join(__dirname, '..', 'puzzles', `${id}.json`);
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
+  // Never let a renderer-supplied id escape either puzzle directory.
+  if (!VALID_ID.test(id)) throw new Error('bad puzzle id');
+  for (const dir of [importedDir(), bundledDir()]) {
+    const file = path.join(dir, `${id}.json`);
+    if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'));
+  }
+  throw new Error(`no such puzzle: ${id}`);
+});
+
+const MAX_IMAGE_BYTES = 48 * 1024 * 1024;
+
+ipcMain.handle('puzzles:pick-image', async () => {
+  const result = await dialog.showOpenDialog(win, {
+    title: 'Add a picture',
+    buttonLabel: 'Add',
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'bmp'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  });
+  if (result.canceled) return [];
+
+  // Decoding happens in the renderer, where Chromium handles every format it
+  // can display — considerably more than the CLI's PNG/JPEG. All the main
+  // process does is hand over bytes.
+  return result.filePaths.flatMap((file) => {
+    const { size } = fs.statSync(file);
+    if (size > MAX_IMAGE_BYTES) return [];
+    return [{ name: path.basename(file, path.extname(file)), bytes: fs.readFileSync(file) }];
+  });
+});
+
+ipcMain.handle('puzzles:save', async (_e, { id, title, puzzle, entry }) => {
+  if (!VALID_ID.test(id)) throw new Error('bad puzzle id');
+  const dir = importedDir();
+  fs.mkdirSync(dir, { recursive: true });
+
+  const tmp = path.join(dir, `${id}.json.tmp`);
+  fs.writeFileSync(tmp, JSON.stringify({ id, title, ...puzzle }));
+  fs.renameSync(tmp, path.join(dir, `${id}.json`));
+
+  const list = readManifest(dir, true).map(({ imported, ...rest }) => rest);
+  writeImportedManifest([...list.filter((p) => p.id !== id), { ...entry, id, title }]);
+  return { id, dir };
+});
+
+ipcMain.handle('puzzles:delete', async (_e, id) => {
+  if (!VALID_ID.test(id)) throw new Error('bad puzzle id');
+  const dir = importedDir();
+  const file = path.join(dir, `${id}.json`);
+  if (!fs.existsSync(file)) return false; // bundled puzzles are not removable
+  fs.rmSync(file);
+  writeImportedManifest(
+    readManifest(dir, true).filter((p) => p.id !== id).map(({ imported, ...rest }) => rest),
+  );
+
+  const data = readSave();
+  delete data.progress[id];
+  writeSave(data);
+  return true;
 });
 
 ipcMain.on('win:minimise', () => win?.minimize());

@@ -13,7 +13,8 @@ import {
   createImage, fillRect, fillPoly, fillEllipse, fillCircle, fillCapsule,
   blob, toPNGBuffer, mulberry32,
 } from './lib/raster.mjs';
-import { buildPuzzle, writePuzzle } from './mapify.mjs';
+import { buildPuzzle } from '../src/pipeline/build.js';
+import { writePuzzle } from './mapify.mjs';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const RAW = path.join(ROOT, 'puzzles', '_raw');
