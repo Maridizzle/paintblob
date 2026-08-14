@@ -5,15 +5,33 @@
 // something to be exercised against in a test. Everything is hard-edged and
 // fully opaque, which is exactly the kind of input the pipeline is tuned for.
 
+/** `fill` may carry a fourth element to start the canvas transparent. */
 export function createImage(w, h, fill = [255, 255, 255]) {
   const data = new Uint8ClampedArray(w * h * 4);
+  const alpha = fill[3] ?? 255;
   for (let i = 0; i < w * h; i++) {
     data[i * 4] = fill[0];
     data[i * 4 + 1] = fill[1];
     data[i * 4 + 2] = fill[2];
-    data[i * 4 + 3] = 255;
+    data[i * 4 + 3] = alpha;
   }
   return { w, h, data };
+}
+
+/** Rounded rectangle as a polygon, for fillPoly. */
+export function roundedRect(x, y, w, h, r, steps = 12) {
+  const pts = [];
+  const corner = (cx, cy, from) => {
+    for (let i = 0; i <= steps; i++) {
+      const a = from + (i / steps) * (Math.PI / 2);
+      pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]);
+    }
+  };
+  corner(x + w - r, y + h - r, 0);
+  corner(x + r, y + h - r, Math.PI / 2);
+  corner(x + r, y + r, Math.PI);
+  corner(x + w - r, y + r, -Math.PI / 2);
+  return pts;
 }
 
 export function mulberry32(seed) {

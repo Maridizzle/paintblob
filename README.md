@@ -4,11 +4,36 @@ A frameless paint-by-number toy that floats on your desktop. Pick a tub of
 paint, click a cell, and a blob explosion tears across the whole picture before
 sucking itself into that one cell and filling it.
 
+## Install
+
+Grab an installer from [Releases](../../releases) — `.dmg` for macOS, `.exe`
+for Windows, `.AppImage` or `.tar.gz` for Linux. Three demo pictures are built
+in, so it plays straight away.
+
+Builds are unsigned, so the first launch needs a nudge: on macOS right-click
+the app and choose Open, on Windows pick "More info" then "Run anyway". On
+Linux the AppImage wants libfuse2 on newer distributions — install it, or run
+with `APPIMAGE_EXTRACT_AND_RUN=1`.
+
+No release yet? Cut one by pushing a tag, and CI builds all three platforms:
+
 ```bash
+npm version patch && git push --follow-tags
+```
+
+## Or run from source
+
+```bash
+git clone https://github.com/Maridizzle/paintblob
+cd paintblob
 npm install
-npm run seed     # builds three demo pictures, no API key needed
+npm run seed     # builds the three demo pictures, no API key needed
 npm start
 ```
+
+To build your own installer: `npm run dist` (or `dist:mac`, `dist:win`,
+`dist:linux`). Output lands in `dist/`. Cross-compiling to macOS requires a
+Mac; everything else builds anywhere.
 
 ## How it plays
 
@@ -129,13 +154,19 @@ sounds like a phrase. Toggle in Settings, or turn it off and go for the
 npm test              # pipeline unit tests + geometry verification
 npm run verify        # coverage check across every built puzzle
 npm run preview       # screenshot a burst, frame by frame, headless
+npm run smoke         # boot the real Electron window and screenshot it
 npm run dev           # Electron with devtools
+npm run icon          # re-render build/icon.png
 ```
 
 `npm run preview` is the useful one when tuning the effect. It runs the real UI
 in headless Chromium on a virtual clock stepped from Node, so each frame lands
 exactly on its intended phase, and it fails on any console error. Output goes
 to `puzzles/_raw/preview/`.
+
+The packaged app has **no runtime dependencies** — `electron/` uses only
+Electron and Node builtins, and `src/` imports nothing outside itself. `pngjs`
+and `jpeg-js` are build-time tools, so they stay out of the installer.
 
 ```
 electron/     main + preload (CommonJS, sandboxed renderer)

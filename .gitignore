@@ -7,3 +7,6 @@ out/
 
 # Raw generated art before it is mapified. Keep the mapped output, not the source.
 puzzles/_raw/
+
+# Rendered by `npm run icon` as part of packaging.
+build/icon.png

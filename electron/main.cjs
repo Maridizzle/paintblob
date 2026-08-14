@@ -17,10 +17,16 @@ const MIN_SIZE = 380;
 // this proves the real Electron window loads, composites and paints — which is
 // exactly what breaks on an Electron upgrade.
 const SMOKE = process.argv.includes('--smoke');
-const smokeOut = SMOKE
-  ? (process.argv[process.argv.indexOf('--smoke') + 1]?.replace(/^--.*/, '')
-    || path.join(__dirname, '..', 'puzzles', '_raw', 'smoke.png'))
-  : null;
+
+function smokeOutputPath() {
+  const next = process.argv[process.argv.indexOf('--smoke') + 1];
+  if (next && !next.startsWith('--')) return path.resolve(next);
+  // In a packaged build everything under resources/ is a read-only asar, so
+  // the repo-relative default is not writable. Only userData and temp are.
+  return app.isPackaged
+    ? path.join(app.getPath('temp'), 'paintblob-smoke.png')
+    : path.join(__dirname, '..', 'puzzles', '_raw', 'smoke.png');
+}
 
 let win = null;
 let savePath = null;
@@ -175,12 +181,13 @@ async function runSmokeTest(target) {
     })()`);
 
     const image = await target.webContents.capturePage();
-    fs.mkdirSync(path.dirname(smokeOut), { recursive: true });
-    fs.writeFileSync(smokeOut, image.toPNG());
+    const out = smokeOutputPath();
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    fs.writeFileSync(out, image.toPNG());
 
     const painted = Number(/(\d+)\s*\/\s*\d+/.exec(filled)?.[1] ?? 0);
     console.log(`smoke: ${filled}`);
-    console.log(`smoke: wrote ${smokeOut}`);
+    console.log(`smoke: wrote ${out}`);
 
     if (!painted) errors.push(`no cells were painted (subtitle: "${filled}")`);
     if (errors.length) {

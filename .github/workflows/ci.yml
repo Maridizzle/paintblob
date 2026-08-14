@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Unit tests plus the geometry verifier, which re-checks every committed
+      # puzzle for gaps, overlaps and stray number anchors.
+      - run: npm test
+
+      # Rebuild the demo puzzles from scratch and verify those too, so a change
+      # to the pipeline cannot silently diverge from the checked-in output.
+      - run: npm run seed
+      - run: npm run verify
+
+      # Boot the real Electron window, paint some cells, screenshot it. Catches
+      # renderer errors that never show up in a headless canvas test.
+      - name: Smoke test the app
+        run: xvfb-run -a --server-args="-screen 0 800x900x24" npm run smoke -- --no-sandbox
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-screenshot
+          path: puzzles/_raw/smoke.png
+          if-no-files-found: ignore

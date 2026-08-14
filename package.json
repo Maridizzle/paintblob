@@ -10,10 +10,15 @@
     "seed": "node tools/make-demo-puzzles.mjs",
     "mapify": "node tools/mapify.mjs",
     "generate": "node tools/generate-image.mjs",
+    "icon": "node tools/make-icon.mjs",
     "verify": "node tools/verify-puzzle.mjs",
     "preview": "node tools/preview.mjs",
     "smoke": "electron . --smoke",
-    "test": "node --test tools/pipeline.test.mjs && node tools/verify-puzzle.mjs"
+    "test": "node --test tools/pipeline.test.mjs && node tools/verify-puzzle.mjs",
+    "dist": "npm run icon && electron-builder",
+    "dist:linux": "npm run icon && electron-builder --linux",
+    "dist:mac": "npm run icon && electron-builder --mac",
+    "dist:win": "npm run icon && electron-builder --win"
   },
   "keywords": [
     "paint-by-number",
@@ -22,12 +27,49 @@
     "desktop-toy"
   ],
   "license": "MIT",
+  "build": {
+    "appId": "com.maridizzle.paintblob",
+    "productName": "paintblob",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "puzzles/*.json",
+      "package.json"
+    ],
+    "linux": {
+      "target": ["AppImage", "tar.gz"],
+      "category": "Game",
+      "synopsis": "Frameless desktop paint-by-number"
+    },
+    "win": {
+      "target": ["nsis", "portable"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] },
+        { "target": "zip", "arch": ["x64", "arm64"] }
+      ],
+      "category": "public.app-category.games",
+      "darkModeSupport": true
+    },
+    "dmg": {
+      "writeUpdateInfo": false
+    }
+  },
   "devDependencies": {
     "electron": "^33.2.0",
-    "playwright-core": "^1.49.0"
-  },
-  "dependencies": {
+    "electron-builder": "^25.1.8",
     "jpeg-js": "^0.4.4",
+    "playwright-core": "^1.49.0",
     "pngjs": "^7.0.0"
   }
 }
