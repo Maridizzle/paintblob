@@ -15,7 +15,9 @@ the app and choose Open, on Windows pick "More info" then "Run anyway". On
 Linux the AppImage wants libfuse2 on newer distributions — install it, or run
 with `APPIMAGE_EXTRACT_AND_RUN=1`.
 
-No release yet? Cut one by pushing a tag, and CI builds all three platforms:
+To cut a new release, either push a tag, or run the **release** workflow from
+the Actions tab — the manual run takes its version from `package.json`, so it
+works where pushing tags is not permitted.
 
 ```bash
 npm version patch && git push --follow-tags
