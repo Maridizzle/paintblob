@@ -14,9 +14,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PNG } from 'pngjs';
-
-import { buildPuzzle, writePuzzle } from './mapify.mjs';
+import { decodeBuffer } from './lib/decode.mjs';
+import { buildPuzzle, writePuzzle, reportPuzzle } from './mapify.mjs';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const RAW = path.join(ROOT, 'puzzles', '_raw');
@@ -121,25 +120,16 @@ async function main() {
   const rawFile = path.join(RAW, `${id}.png`);
   fs.writeFileSync(rawFile, buffer);
 
-  const png = PNG.sync.read(buffer);
-  const puzzle = buildPuzzle(png.data, png.width, png.height, opts);
+  const image = decodeBuffer(buffer);
+  const puzzle = buildPuzzle(image.data, image.width, image.height, opts);
   const out = writePuzzle(puzzle, { id, title });
 
-  if (!opts.keep) fs.rmSync(rawFile);
+  // Keep the source art around only on request; the puzzle file is the
+  // artefact that matters and puzzles/_raw is gitignored anyway.
+  if (opts.keep) console.log(`  source kept at ${path.relative(ROOT, rawFile)}`);
+  else fs.rmSync(rawFile);
 
-  const areas = puzzle.cells.map((c) => c.a).sort((a, b) => a - b);
-  console.log(`${title}`);
-  console.log(`  ${puzzle.cells.length} cells across ${puzzle.palette.length} tubs`);
-  console.log(`  cell area  min ${areas[0]}  median ${areas[areas.length >> 1]} px`);
-  console.log(`  ${path.relative(ROOT, out)}`);
-
-  // Under ~15 cells the picture finishes in a few clicks; over ~80 and the
-  // numbers get too small to read at the default window size.
-  if (puzzle.cells.length < 15) {
-    console.log('\n  few cells — try --min-area 0.0008 --colours 16, or a busier subject');
-  } else if (puzzle.cells.length > 80) {
-    console.log('\n  lots of cells — try --min-area 0.003 --colours 10 for chunkier regions');
-  }
+  reportPuzzle(puzzle, title, out);
 }
 
 main().catch((err) => {

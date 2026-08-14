@@ -378,18 +378,25 @@ document.addEventListener('visibilitychange', () => {
 
 /* -------------------------------------------------------------------- panels */
 
-function openPanel(kind) {
+async function openPanel(kind) {
   S.panel = kind;
   const body = $('panelBody');
   body.textContent = '';
   $('panelTitle').textContent =
     kind === 'pictures' ? 'Pictures' : kind === 'trophies' ? 'Achievements' : 'Settings';
-
-  if (kind === 'pictures') renderPictures(body);
-  else if (kind === 'trophies') renderTrophies(body);
-  else renderSettings(body);
-
   $('panel').classList.remove('hidden');
+
+  if (kind === 'pictures') {
+    // Re-read the manifest rather than trusting the copy from startup, so a
+    // picture mapified while the app was open shows up without a restart.
+    S.manifest = await api.listPuzzles();
+    if (S.panel !== kind) return; // closed again while we were waiting
+    renderPictures(body);
+  } else if (kind === 'trophies') {
+    renderTrophies(body);
+  } else {
+    renderSettings(body);
+  }
 }
 
 function closePanel() {
@@ -581,7 +588,8 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'pictures': case 'trophies': case 'settings':
-      S.panel === act ? closePanel() : openPanel(act);
+      if (S.panel === act) closePanel();
+      else await openPanel(act);
       break;
     case 'panel-close': closePanel(); break;
     case 'next': $('finish').classList.add('hidden'); await nextPuzzle(); break;
@@ -651,7 +659,7 @@ async function boot() {
   ro.observe($('stage'));
 
   if (!S.manifest.length) {
-    openPanel('pictures');
+    await openPanel('pictures');
     return;
   }
 

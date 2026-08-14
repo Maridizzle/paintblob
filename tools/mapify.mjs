@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// PNG -> playable puzzle.
+// Image -> playable puzzle.
 //
-//   node tools/mapify.mjs <image.png> --id koi-pond --title "Koi Pond"
+//   node tools/mapify.mjs <image> --id koi-pond --title "Koi Pond"
 //
 // This is the whole reason the project works without asking a model to invent
 // polygons: the picture itself is the source of truth. Quantise it, find the
@@ -12,8 +12,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PNG } from 'pngjs';
-
+import { decodeImage } from './lib/decode.mjs';
 import { quantize, denoiseIndices } from './lib/quantize.mjs';
 import { labelRegions, mergeSmallRegions, labelAnchor } from './lib/regions.mjs';
 import { boundsOf, traceRegion, ringsToPath } from './lib/contour.mjs';
@@ -160,6 +159,25 @@ function updateManifest(entry) {
   return file;
 }
 
+/**
+ * Prints what came out and, when the result is unplayable, which knob to turn.
+ * Below ~15 cells a picture is over in a few clicks; above ~80 the numbers get
+ * too small to read at the default window size.
+ */
+export function reportPuzzle(puzzle, title, out) {
+  const areas = puzzle.cells.map((c) => c.a).sort((a, b) => a - b);
+  console.log(`${title}`);
+  console.log(`  ${puzzle.cells.length} cells across ${puzzle.palette.length} tubs`);
+  console.log(`  cell area  min ${areas[0]}  median ${areas[areas.length >> 1]}  max ${areas.at(-1)} px`);
+  console.log(`  ${path.relative(ROOT, out)}  (${(fs.statSync(out).size / 1024).toFixed(1)} kB)`);
+
+  if (puzzle.cells.length < 15) {
+    console.log('\n  few cells — try --min-area 0.0008 --colours 16, or busier source art');
+  } else if (puzzle.cells.length > 80) {
+    console.log('\n  lots of cells — try --min-area 0.003 --colours 10 for chunkier regions');
+  }
+}
+
 export function writePuzzle(puzzle, { id, title }) {
   fs.mkdirSync(PUZZLE_DIR, { recursive: true });
   const out = path.join(PUZZLE_DIR, `${id}.json`);
@@ -178,31 +196,29 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const src = opts._[0];
   if (!src) {
-    console.error('usage: node tools/mapify.mjs <image.png> [--id slug] [--title "Name"]');
+    console.error('usage: node tools/mapify.mjs <image> [--id slug] [--title "Name"]');
     console.error('       [--size 768] [--colours 14] [--cells 64] [--min-area 0.0016]');
+    console.error('accepts PNG or JPEG');
     process.exit(1);
   }
 
-  const png = PNG.sync.read(fs.readFileSync(src));
-  const id = opts.id || path.basename(src, path.extname(src)).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const image = decodeImage(src);
+  const id = (opts.id || path.basename(src, path.extname(src)))
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const title = opts.title || id.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
   const started = Date.now();
-  const puzzle = buildPuzzle(png.data, png.width, png.height, opts);
+  const puzzle = buildPuzzle(image.data, image.width, image.height, opts);
   const out = writePuzzle(puzzle, { id, title });
 
-  const bytes = fs.statSync(out).size;
-  const areas = puzzle.cells.map((c) => c.a).sort((a, b) => a - b);
-  console.log(`${title}  (${Date.now() - started}ms)`);
-  console.log(`  ${png.width}x${png.height} -> ${puzzle.width}x${puzzle.height}`);
-  console.log(`  ${puzzle.cells.length} cells across ${puzzle.palette.length} tubs`);
-  console.log(`  cell area  min ${areas[0]}  median ${areas[areas.length >> 1]}  max ${areas.at(-1)} px`);
-  console.log(`  ${path.relative(ROOT, out)}  (${(bytes / 1024).toFixed(1)} kB)`);
+  console.log(`  ${image.width}x${image.height} -> ${puzzle.width}x${puzzle.height} in ${Date.now() - started}ms`);
+  reportPuzzle(puzzle, title, out);
 }
 
 if (process.argv[1] && import.meta.url === `file://${path.resolve(process.argv[1])}`) {
   main().catch((err) => {
-    console.error(err);
+    // A stack trace helps nobody decide that their WebP needs converting.
+    console.error(err.message);
     process.exit(1);
   });
 }

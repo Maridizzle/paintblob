@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { PNG } from 'pngjs';
+import jpeg from 'jpeg-js';
 
+import { decodeBuffer } from './lib/decode.mjs';
 import { quantize, denoiseIndices } from './lib/quantize.mjs';
 import { labelRegions, mergeSmallRegions, labelAnchor } from './lib/regions.mjs';
 import { boundsOf, traceRegion, ringsToPath } from './lib/contour.mjs';
@@ -179,6 +182,33 @@ test('colour names are readable and unique within a puzzle', () => {
   assert.equal(nameColour([8, 8, 9]), 'Ink');
   assert.equal(toHex([255, 0, 128]), '#ff0080');
   assert.deepEqual(uniquifyNames(['Teal', 'Teal', 'Rose']), ['Teal', 'Teal II', 'Rose']);
+});
+
+test('images are decoded by magic bytes, not by file extension', () => {
+  const pixels = image(16, 16, (x) => (x < 8 ? RED : BLUE));
+
+  const png = new PNG({ width: 16, height: 16 });
+  png.data = Buffer.from(pixels.buffer.slice(0));
+  const asPng = decodeBuffer(PNG.sync.write(png));
+  assert.equal(asPng.width, 16);
+  assert.equal(asPng.height, 16);
+  assert.deepEqual([...asPng.data.slice(0, 3)], RED);
+
+  const encoded = jpeg.encode({ data: Buffer.from(pixels), width: 16, height: 16 }, 92);
+  const asJpeg = decodeBuffer(encoded.data);
+  assert.equal(asJpeg.width, 16);
+  assert.equal(asJpeg.data.length, 16 * 16 * 4, 'must come back as RGBA like pngjs');
+  // Lossy, so only assert it is still recognisably red.
+  assert.ok(asJpeg.data[0] > 180 && asJpeg.data[1] < 90);
+});
+
+test('unsupported formats fail with an actionable message', () => {
+  const webp = Buffer.alloc(16);
+  webp.write('RIFF', 0, 'latin1');
+  webp.write('WEBP', 8, 'latin1');
+  assert.throws(() => decodeBuffer(webp), /webp/i);
+
+  assert.throws(() => decodeBuffer(Buffer.from('<svg xmlns="..."/>')), /expected PNG or JPEG/);
 });
 
 test('parsePath understands the H/V shorthand the tracer emits', () => {

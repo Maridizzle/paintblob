@@ -55,12 +55,21 @@ inside the cell it labels.
 ## Making pictures
 
 ```bash
-# with OpenAI
+# generate and import in one step
 OPENAI_API_KEY=sk-... npm run generate -- "a koi pond at dusk"
 
-# from any PNG you already have
+# import art you already have (PNG or JPEG)
 npm run mapify -- ~/art/mountain.png --title "Mountain" --cells 70
 ```
+
+Both write `puzzles/<id>.json` and add it to the manifest. The app re-reads the
+manifest every time you open the Pictures panel, so a picture imported while
+the app is running shows up without a restart.
+
+Prefer PNG. JPEG works, but its ringing around hard edges shifts colours near
+boundaries — the same koi pond artwork yields 18 cells as a PNG and 14 as a
+quality-88 JPEG, because smeared edges let neighbouring regions merge. WebP,
+AVIF and SVG are rejected with a message telling you to convert.
 
 Useful knobs, on either command:
 
@@ -79,7 +88,13 @@ The generator wraps your subject in a style block asking for flat vector poster
 art with no gradients or texture. That matters more than the subject does:
 gradients and grain shatter into hundreds of slivers that then have to be
 merged away, throwing out detail you paid for. Pass `--raw` to send your prompt
-unadorned.
+unadorned, `--keep` to hold on to the source image.
+
+If you are prompting some other tool by hand, the words that earn their keep
+are: *flat vector poster illustration, bold simple shapes, strictly flat areas
+of solid colour, no gradients, no shading, no texture, no grain, limited
+palette, no text*. Photographs and painterly rendering are the two things that
+work worst — every soft edge becomes cells you did not want.
 
 ## The blob
 
