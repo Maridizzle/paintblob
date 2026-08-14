@@ -34,6 +34,7 @@
       "output": "dist",
       "buildResources": "build"
     },
+    "artifactName": "${name}-${version}-${os}-${arch}.${ext}",
     "files": [
       "electron/**/*",
       "src/**/*",
@@ -57,7 +58,11 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "perMachine": false
+      "perMachine": false,
+      "artifactName": "${name}-${version}-setup-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${name}-${version}-portable-${arch}.${ext}"
     },
     "mac": {
       "target": [

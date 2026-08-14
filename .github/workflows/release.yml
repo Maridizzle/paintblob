@@ -93,16 +93,20 @@ jobs:
           `APPIMAGE_EXTRACT_AND_RUN=1`.
           NOTES
 
-          FILES=$(find artifacts -type f | sort)
-          echo "$FILES"
+          # An array, not a bare string. Installer filenames have contained
+          # spaces ("paintblob Setup 0.2.0.exe"), and unquoted word splitting
+          # turns one of those into two nonexistent paths.
+          mapfile -t FILES < <(find artifacts -type f | sort)
+          printf '  %s\n' "${FILES[@]}"
+          [ "${#FILES[@]}" -gt 0 ] || { echo "no artifacts to publish"; exit 1; }
 
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber $FILES
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "${FILES[@]}"
           else
             gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
               --title "paintblob $TAG" \
               --notes-file notes.md \
-              $FILES
+              "${FILES[@]}"
           fi
