@@ -9,6 +9,9 @@
 // Decoding is the caller's job — Node hands us pngjs/jpeg-js output, the
 // renderer hands us pixels Chromium decoded.
 
+import {
+  estimateGrain, passesForGrain, despeckle, findContentBounds, cropTo,
+} from './denoise.js';
 import { quantize, denoiseIndices } from './quantize.js';
 import { labelRegions, mergeSmallRegions, labelAnchor } from './regions.js';
 import { boundsOf, traceRegion, ringsToPath } from './contour.js';
@@ -72,10 +75,28 @@ export function resize(rgba, sw, sh, dw, dh) {
 export function buildPuzzle(rgba, srcW, srcH, opts = {}) {
   const o = { ...DEFAULTS, ...opts };
 
-  const scale = Math.min(1, o.size / Math.max(srcW, srcH));
-  const width = Math.max(1, Math.round(srcW * scale));
-  const height = Math.max(1, Math.round(srcH * scale));
-  const pixels = resize(rgba, srcW, srcH, width, height);
+  // Trim the desk, shadow or sketchbook edge out of a photograph first, so the
+  // working resolution is spent on the artwork rather than on its surroundings.
+  let source = { data: rgba, width: srcW, height: srcH };
+  if (o.crop !== false) {
+    const bounds = findContentBounds(rgba, srcW, srcH);
+    if (bounds.x0 > 0 || bounds.y0 > 0 || bounds.x1 < srcW - 1 || bounds.y1 < srcH - 1) {
+      source = cropTo(rgba, srcW, bounds);
+    }
+  }
+
+  const scale = Math.min(1, o.size / Math.max(source.width, source.height));
+  const width = Math.max(1, Math.round(source.width * scale));
+  const height = Math.max(1, Math.round(source.height * scale));
+  const resized = resize(source.data, source.width, source.height, width, height);
+
+  // Strip grain before quantising, by however much this particular image
+  // turns out to need. Flat art measures ~0 and is passed through untouched;
+  // a photo of a drawing needs two or three passes before the quantiser can
+  // see colour instead of noise. Measured after the downscale, since that has
+  // already averaged some of it away.
+  const grain = o.smooth ?? passesForGrain(estimateGrain(resized, width, height));
+  const pixels = despeckle(resized, width, height, grain);
 
   const { palette, indices } = quantize(pixels, width, height, o.maxColours);
   const cleaned = o.denoise > 0

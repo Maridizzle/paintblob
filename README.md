@@ -136,6 +136,30 @@ Prefer PNG either way. JPEG ringing around hard edges shifts colours near
 boundaries: the same koi pond artwork yields 18 cells as a PNG and 14 as a
 quality-88 JPEG, because smeared edges let neighbouring regions merge.
 
+### Photographs of real artwork
+
+A phone photo of a drawing is a different problem from generated art, and the
+pipeline detects and handles it rather than asking you to.
+
+Paper texture and sensor noise mean neighbouring pixels differ by several
+levels *everywhere*. Median cut splits boxes along whichever channel is
+widest, so when grain is wider than the drawing's local colour change it
+splits along noise — every palette entry lands near the image average, and a
+vivid drawing comes back grey. The same noise makes quantisation boundaries
+follow the grain rather than the picture, giving fractal tree-ring contours.
+
+So grain is measured first and cleared with as many passes of a 3×3 median as
+it needs. Flat art measures zero and is passed through untouched — the demo
+puzzles are byte-identical with the step in place. A median rather than a
+blur, because blurring across a real edge invents an intermediate colour that
+then becomes its own sliver cell.
+
+Photos also carry the desk, a shadow, or a sketchbook edge around the outside,
+which otherwise become cells you have to paint. Those are cropped — but only
+when the dark run *ends* before ~12% of the way in. Darkness alone cannot tell
+a shadow from a night sky; a border is a thin band, artwork carries on into
+the picture.
+
 Useful knobs on the CLI (`--detail chunky|normal|detailed` sets all of them):
 
 | flag | default | effect |
