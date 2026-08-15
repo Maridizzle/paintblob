@@ -55,8 +55,38 @@ jobs:
             dist/*.zip
             dist/*.exe
 
+  # The installable web build, zipped. Ships alongside the desktop installers
+  # so putting it on a host is a download and a drag, rather than digging a
+  # build artifact out of the Actions tab.
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run check:web   # builds dist-web, then verifies it on a phone
+
+      - name: Zip the site
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          # Zip from inside the directory: hosts expect index.html at the root
+          # of the archive, not nested under dist-web/.
+          (cd dist-web && zip -qr "../paintblob-web-${VERSION}.zip" .)
+          unzip -l "paintblob-web-${VERSION}.zip" | tail -3
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paintblob-web
+          path: paintblob-web-*.zip
+          if-no-files-found: error
+
   publish:
-    needs: build
+    needs: [build, web]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -80,17 +110,27 @@ jobs:
           fi
 
           cat > notes.md <<'NOTES'
-          Download the one for your computer, then open it like any other app.
+          ### On your computer
 
-          - **macOS** — `.dmg` (`arm64` for Apple Silicon, `x64` for Intel)
-          - **Windows** — `.exe`
-          - **Linux** — `.AppImage`
+          Download the one for your machine and open it like any other app.
+
+          - **macOS** — `-mac-arm64.dmg` (Apple Silicon) or `-mac-x64.dmg` (Intel)
+          - **Windows** — `-setup-x64.exe`, or `-portable-x64.exe` to run without installing
+          - **Linux** — `-linux-x86_64.AppImage`
 
           These are unsigned, so the first launch needs a nudge: on macOS
           right-click the app and choose Open, then Open again. On Windows,
           SmartScreen shows "More info" then "Run anyway". The Linux AppImage
           wants libfuse2 on newer distributions — install it, or run with
           `APPIMAGE_EXTRACT_AND_RUN=1`.
+
+          ### On a phone
+
+          `paintblob-web-*.zip` is the whole app as a static site. Drop the zip
+          straight onto [Netlify Drop](https://app.netlify.com/drop), open the
+          URL it gives you on the phone, then use **Install app** / **Add to
+          Home Screen**. It works with no signal after that, and your progress
+          and imported pictures stay on the device.
           NOTES
 
           # An array, not a bare string. Installer filenames have contained
