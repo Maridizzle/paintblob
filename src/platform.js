@@ -53,6 +53,50 @@ const idbDel = (db, store, key) => tx(db, store, 'readwrite', (s) => s.delete(ke
 
 const VALID_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
+/**
+ * Chooses image files through an ordinary file input, on every platform.
+ *
+ * Deliberately not Electron's `dialog.showOpenDialog`. Parenting a native
+ * modal to this window — frameless, transparent, always-on-top and visible on
+ * all workspaces — is a reliable way to take the whole process down with it.
+ * An input element goes through Chromium's own picker, which is the same code
+ * path every web page uses and is not attached to the window at all.
+ *
+ * `capture` is deliberately absent so Android offers the gallery and Files
+ * alongside the camera.
+ */
+function pickImage() {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.multiple = true;
+    input.style.display = 'none';
+    document.body.append(input);
+
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      input.remove();
+      resolve(value);
+    };
+
+    input.addEventListener('change', () => {
+      finish([...input.files].map((file) => ({
+        name: file.name.replace(/\.[^.]+$/, ''),
+        bytes: file,
+      })));
+    });
+    // Cancelling a file picker fires no event on older engines; window focus
+    // returning is the only reliable signal that nothing was chosen.
+    input.addEventListener('cancel', () => finish([]));
+    window.addEventListener('focus', () => setTimeout(() => finish([]), 800), { once: true });
+
+    input.click();
+  });
+}
+
 async function webPlatform() {
   const db = await openDB();
   const base = new URL('.', document.baseURI);
@@ -121,39 +165,7 @@ async function webPlatform() {
       return res.json();
     },
 
-    // A file input rather than a native dialog. `capture` is deliberately
-    // absent so Android offers the gallery and Files alongside the camera.
-    pickImage() {
-      return new Promise((resolve) => {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = 'image/*';
-        input.multiple = true;
-        input.style.display = 'none';
-        document.body.append(input);
-
-        let settled = false;
-        const finish = (value) => {
-          if (settled) return;
-          settled = true;
-          input.remove();
-          resolve(value);
-        };
-
-        input.addEventListener('change', () => {
-          finish([...input.files].map((file) => ({
-            name: file.name.replace(/\.[^.]+$/, ''),
-            bytes: file,
-          })));
-        });
-        // Cancelling a file picker fires no event on older engines; window
-        // focus returning is the only reliable signal that nothing was chosen.
-        input.addEventListener('cancel', () => finish([]));
-        window.addEventListener('focus', () => setTimeout(() => finish([]), 800), { once: true });
-
-        input.click();
-      });
-    },
+    pickImage,
 
     async savePuzzle({ id, title, puzzle, entry }) {
       if (!VALID_ID.test(id)) throw new Error('bad puzzle id');
@@ -183,7 +195,25 @@ async function webPlatform() {
 /* ------------------------------------------------------------------ electron */
 
 function electronPlatform(bridge) {
-  return { isDesktop: true, ...bridge };
+  return {
+    isDesktop: true,
+    ...bridge,
+
+    // Same input-based picker as the web build. An always-on-top window will
+    // happily sit in front of the file chooser, which reads as a freeze, so
+    // the pin is dropped for the duration and restored afterwards.
+    async pickImage() {
+      // Deliberately not awaited. A file chooser may only be opened from a
+      // user gesture, and awaiting an IPC round trip first puts the click on
+      // the far side of that gesture — the picker would simply refuse to open.
+      bridge.suspendAlwaysOnTop?.(true);
+      try {
+        return await pickImage();
+      } finally {
+        bridge.suspendAlwaysOnTop?.(false);
+      }
+    },
+  };
 }
 
 /**

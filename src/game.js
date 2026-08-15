@@ -506,9 +506,16 @@ function buildAddRow(body) {
   button.className = 'primary add';
   button.textContent = '＋  Add picture';
   button.addEventListener('click', async () => {
-    const picked = await api.pickImage();
-    if (!picked.length) return;
-    await runImport(picked.map((f) => ({ name: f.name, blob: new Blob([f.bytes]) })), body);
+    try {
+      const picked = await api.pickImage();
+      if (!picked.length) return;
+      await runImport(picked.map((f) => ({ name: f.name, blob: new Blob([f.bytes]) })), body);
+    } catch (err) {
+      // A rejected file dialog or a failed read would otherwise vanish into an
+      // unhandled rejection and leave the button looking dead.
+      S.importing = false;
+      toast({ icon: '⚠️', name: 'Could not add that picture', desc: err.message });
+    }
   });
 
   const detail = document.createElement('div');
@@ -551,19 +558,27 @@ async function runImport(files, body) {
     body.append(status);
   }
 
-  const result = await importImages(files, {
-    api,
-    detail: S.save.settings.detail ?? 'normal',
-    taken: new Set(S.manifest.map((p) => p.id)),
-    onProgress: (name, i, total) => {
-      status.textContent = total > 1
-        ? `Mapping ${name}…  (${i + 1} of ${total})`
-        : `Mapping ${name}…`;
-    },
-  });
-
-  S.manifest = await api.listPuzzles();
-  S.importing = false;
+  let result = { added: [], failed: [] };
+  try {
+    result = await importImages(files, {
+      api,
+      detail: S.save.settings.detail ?? 'normal',
+      taken: new Set(S.manifest.map((p) => p.id)),
+      onProgress: (name, i, total) => {
+        status.textContent = total > 1
+          ? `Mapping ${name}…  (${i + 1} of ${total})`
+          : `Mapping ${name}…`;
+      },
+    });
+    S.manifest = await api.listPuzzles();
+  } catch (err) {
+    // Anything that escapes the per-file handling. Without this the busy flag
+    // stays set and every later attempt silently does nothing, which looks
+    // exactly like the app having broken.
+    result.failed.push({ name: files[0]?.name ?? 'that picture', reason: err.message });
+  } finally {
+    S.importing = false;
+  }
 
   for (const p of result.added) {
     toast({

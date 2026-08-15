@@ -5,6 +5,9 @@ import jpeg from 'jpeg-js';
 
 import { decodeBuffer } from './lib/decode.mjs';
 import { quantize, denoiseIndices } from '../src/pipeline/quantize.js';
+import {
+  estimateGrain, passesForGrain, despeckle, findContentBounds,
+} from '../src/pipeline/denoise.js';
 import { labelRegions, mergeSmallRegions, labelAnchor } from '../src/pipeline/regions.js';
 import { boundsOf, traceRegion, ringsToPath } from '../src/pipeline/contour.js';
 import { nameColour, toHex, uniquifyNames } from '../src/pipeline/colour-names.js';
@@ -182,6 +185,85 @@ test('colour names are readable and unique within a puzzle', () => {
   assert.equal(nameColour([8, 8, 9]), 'Ink');
   assert.equal(toHex([255, 0, 128]), '#ff0080');
   assert.deepEqual(uniquifyNames(['Teal', 'Teal', 'Rose']), ['Teal', 'Teal II', 'Rose']);
+});
+
+/** Adds uniform noise to every channel, the way paper texture does. */
+function grainy(data, amplitude, seed = 5) {
+  let s = seed;
+  const rnd = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const out = new Uint8ClampedArray(data);
+  for (let i = 0; i < out.length; i += 4) {
+    const n = (rnd() - 0.5) * amplitude;
+    out[i] += n; out[i + 1] += n; out[i + 2] += n;
+  }
+  return out;
+}
+
+test('grain is measured as zero on flat art and high on a photo', () => {
+  const flat = image(W, H, (x) => (x < 32 ? RED : BLUE));
+  assert.equal(estimateGrain(flat, W, H), 0);
+  assert.equal(passesForGrain(estimateGrain(flat, W, H)), 0, 'flat art must not be touched');
+
+  const photo = grainy(flat, 26);
+  assert.ok(estimateGrain(photo, W, H) > 3, 'noise should register');
+  assert.ok(passesForGrain(estimateGrain(photo, W, H)) >= 2);
+});
+
+test('despeckle clears grain without moving a real edge', () => {
+  const flat = image(W, H, (x) => (x < 32 ? RED : BLUE));
+  const cleaned = despeckle(grainy(flat, 26), W, H, 2);
+
+  // Interiors come back to the original flat colour.
+  const at = (x, y) => [...cleaned.subarray((y * W + x) * 4, (y * W + x) * 4 + 3)];
+  for (const [x, y, want] of [[10, 10, RED], [50, 40, BLUE], [20, 55, RED]]) {
+    at(x, y).forEach((v, i) => assert.ok(Math.abs(v - want[i]) <= 6,
+      `(${x},${y}) drifted: ${at(x, y)} vs ${want}`));
+  }
+  // And the boundary is still exactly where it was. Asserted by which side
+  // each pixel belongs to rather than by its exact value: a median of nine
+  // noisy samples leans a few levels toward whichever side is in the
+  // minority, which is fine — the edge has not moved.
+  const nearer = (px, a, b) => {
+    const dist = (c) => Math.abs(px[0] - c[0]) + Math.abs(px[1] - c[1]) + Math.abs(px[2] - c[2]);
+    return dist(a) < dist(b);
+  };
+  assert.ok(nearer(at(31, 30), RED, BLUE), 'last red pixel turned blue — edge moved left');
+  assert.ok(nearer(at(32, 30), BLUE, RED), 'first blue pixel turned red — edge moved right');
+});
+
+test('grain no longer fractures a picture into slivers', () => {
+  // A shallow gradient: the case where noise, not the artwork, decides where
+  // a quantisation boundary falls.
+  const gentle = image(128, 128, (x, y) => [
+    150 + (x / 128) * 30, 150 + (y / 128) * 26, 170 - (x / 128) * 24,
+  ]);
+  const photo = grainy(gentle, 26);
+
+  const raw = buildPuzzle(photo, 128, 128, { size: 128, maxCells: 60, smooth: 0 });
+  const fixed = buildPuzzle(photo, 128, 128, { size: 128, maxCells: 60 });
+
+  const slivers = (p) => p.cells.filter((c) => c.r < 4).length;
+  assert.ok(slivers(fixed) <= slivers(raw),
+    `smoothing should not add slivers (${slivers(raw)} -> ${slivers(fixed)})`);
+
+  const median = (p) => p.cells.map((c) => c.r).sort((a, b) => a - b)[p.cells.length >> 1];
+  assert.ok(median(fixed) > median(raw),
+    `cells should get chunkier (inradius ${median(raw)} -> ${median(fixed)})`);
+});
+
+test('a dark photo border is cropped, dark artwork is not', () => {
+  // A picture inside a near-black frame, as a phone photo of paper has.
+  const framed = image(120, 120, (x, y) => (
+    x < 12 || y < 12 || x > 107 || y > 107 ? [6, 6, 8] : [210, 190, 160]
+  ));
+  const bounds = findContentBounds(framed, 120, 120);
+  assert.ok(bounds.x0 >= 12 && bounds.y0 >= 12, `left/top not cropped: ${JSON.stringify(bounds)}`);
+  assert.ok(bounds.x1 <= 107 && bounds.y1 <= 107, `right/bottom not cropped: ${JSON.stringify(bounds)}`);
+
+  // Deliberately dark artwork — a night sky over a lit foreground — must
+  // survive intact, even though its edges are far darker than its middle.
+  const night = image(120, 120, (x, y) => (y < 50 ? [20, 26, 52] : [200, 180, 150]));
+  assert.deepEqual(findContentBounds(night, 120, 120), { x0: 0, y0: 0, x1: 119, y1: 119 });
 });
 
 test('images are decoded by magic bytes, not by file extension', () => {
