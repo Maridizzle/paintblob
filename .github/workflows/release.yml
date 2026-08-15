@@ -68,6 +68,11 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      # playwright-core never downloads browsers on install, by design. The
+      # dev container has one at a non-standard path; a runner has to be told.
+      - run: npx playwright-core install chromium
+
       - run: npm run check:web   # builds dist-web, then verifies it on a phone
 
       - name: Zip the site

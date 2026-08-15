@@ -14,23 +14,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, devices } from 'playwright-core';
 
+import { findChromium } from './lib/chromium.mjs';
+
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const WEB = path.join(ROOT, 'dist-web');
 const OUT = path.join(ROOT, 'puzzles', '_raw', 'mobile');
 
-function findChromium() {
-  if (process.env.PLAYWRIGHT_CHROMIUM) return process.env.PLAYWRIGHT_CHROMIUM;
-  const base = process.env.PLAYWRIGHT_BROWSERS_PATH || '/opt/pw-browsers';
-  const candidates = fs.existsSync(base)
-    ? fs.readdirSync(base).filter((d) => d.startsWith('chromium')).flatMap((d) => [
-      path.join(base, d, 'chrome-linux', 'chrome'),
-      path.join(base, d, 'chrome-linux', 'headless_shell'),
-    ])
-    : [];
-  const found = candidates.find((p) => fs.existsSync(p));
-  if (!found) throw new Error(`no chromium under ${base}; set PLAYWRIGHT_CHROMIUM`);
-  return found;
-}
 
 const MIME = {
   '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
@@ -70,7 +59,7 @@ const origin = `http://127.0.0.1:${port}/`;
 fs.mkdirSync(OUT, { recursive: true });
 
 const browser = await chromium.launch({
-  executablePath: findChromium(),
+  executablePath: findChromium(chromium),
   headless: !process.argv.includes('--head'),
   args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required', '--mute-audio'],
 });

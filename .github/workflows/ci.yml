@@ -34,6 +34,7 @@ jobs:
       # The Android/PWA build: taps a cell with a finger on a phone-sized
       # viewport, then kills the network and reloads to prove the service
       # worker actually makes it work offline.
+      - run: npx playwright-core install chromium
       - run: npm run check:web
 
       - uses: actions/upload-artifact@v4

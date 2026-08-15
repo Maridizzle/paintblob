@@ -12,29 +12,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 
+import { findChromium } from './lib/chromium.mjs';
+
 // Straight from the effect itself, so frame labels can never drift out of sync
 // with the timeline they describe.
 import { BURST_DURATION, PHASES } from '../src/paint-fx.js';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 
-// Prefer whatever the environment already has rather than downloading a
-// browser. PLAYWRIGHT_CHROMIUM overrides if neither guess is right.
-function findChromium() {
-  if (process.env.PLAYWRIGHT_CHROMIUM) return process.env.PLAYWRIGHT_CHROMIUM;
-  const base = process.env.PLAYWRIGHT_BROWSERS_PATH || '/opt/pw-browsers';
-  const candidates = fs.existsSync(base)
-    ? fs.readdirSync(base)
-      .filter((d) => d.startsWith('chromium'))
-      .flatMap((d) => [
-        path.join(base, d, 'chrome-linux', 'chrome'),
-        path.join(base, d, 'chrome-linux', 'headless_shell'),
-      ])
-    : [];
-  const found = candidates.find((p) => fs.existsSync(p));
-  if (!found) throw new Error(`no chromium found under ${base}; set PLAYWRIGHT_CHROMIUM`);
-  return found;
-}
 
 const MIME = {
   '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
@@ -98,7 +83,7 @@ const { server, port } = await serve();
 fs.mkdirSync(outDir, { recursive: true });
 
 const browser = await chromium.launch({
-  executablePath: findChromium(),
+  executablePath: findChromium(chromium),
   headless: !args.includes('--head'),
   args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio', '--no-sandbox'],
 });
