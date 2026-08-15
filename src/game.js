@@ -2,7 +2,7 @@ import { Board } from './render.js';
 import { Burst, audioCue } from './paint-fx.js';
 import { Sfx } from './audio.js';
 import { Achievements, StreakTracker } from './achievements.js';
-import { prepareCells, cellAt } from './geometry.js';
+import { prepareCells, cellAt, cellNear } from './geometry.js';
 import { importImages, imagesFromDrop } from './import.js';
 import { createPlatform } from './platform.js';
 
@@ -100,6 +100,9 @@ function buildTubs() {
     tub.addEventListener('click', () => selectTub(i, true));
     wrap.append(tub);
   });
+  // Detailed pictures can carry eighteen colours. At full size that eats three
+  // rows of a phone screen, so the tubs shrink rather than the picture.
+  wrap.classList.toggle('many', S.puzzle.palette.length > 12);
   syncTubs();
 }
 
@@ -206,9 +209,10 @@ $('board').addEventListener('pointerdown', (e) => {
   S.idleSinceBurst = false;
 
   const { point, cell } = pointerToCell(e);
-  if (!cell || S.filled.has(cell.id)) return;
 
-  if (cell.colour !== S.selected) {
+  // Aimed squarely at an unpainted cell of another colour: that is a genuine
+  // mistake and deserves the buzz, not a silent correction.
+  if (cell && !S.filled.has(cell.id) && cell.colour !== S.selected) {
     sfx.play('nope');
     streaks.wrong();
     const tub = $('tubs').children[cell.colour];
@@ -218,7 +222,21 @@ $('board').addEventListener('pointerdown', (e) => {
     return;
   }
 
-  launch(cell, point);
+  let target = cell && !S.filled.has(cell.id) ? cell : null;
+  if (!target) {
+    // Missed everything, or landed on a cell already done. Look just around
+    // the point — small cells are fiddly with a mouse and much worse under a
+    // fingertip, which covers several at once.
+    const slack = (e.pointerType === 'touch' ? 18 : 7) / board.scale;
+    target = cellNear(S.cells, point.x, point.y, {
+      colour: S.selected,
+      filled: S.filled,
+      radius: slack,
+    });
+  }
+  if (!target) return;
+
+  launch(target, point);
 });
 
 function launch(cell, point) {

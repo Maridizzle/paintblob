@@ -1,5 +1,18 @@
 // The whole reason this app exists.
 //
+// Rendering happens in three passes on a private layer, which is what lets the
+// paint look lit rather than flat:
+//
+//   1. every blob's silhouette, in the paint colour
+//   2. lighting drawn with `source-atop`, so it lands only where paint already
+//      is — highlights and shadows can overlap freely without ever producing a
+//      seam at a blob boundary, which a per-blob rim would
+//   3. the layer composited up to full size, its edges softening as it scales
+//
+// The layer is deliberately smaller than the picture. That is most of the
+// softness (a hard silhouette upscaled with smoothing gets a genuine soft
+// edge) and it makes the lighting passes cheap enough to run on a phone.
+//
 // One click produces a four-act burst:
 //
 //   LAUNCH  blobs rocket out of the click point to targets spread across the
@@ -14,6 +27,32 @@
 // paint, so we get crisp edges for free and never touch a canvas filter.
 
 const TAU = Math.PI * 2;
+
+// Resolution of the effect layer relative to the picture. Lower is softer and
+// cheaper; below about 0.45 the droplets turn to mush.
+const FX_SCALE = 0.6;
+
+// Light comes from up and to the left, consistently for every blob. Fixed
+// rather than per-blob, so a burst reads as one object under one lamp.
+const LIGHT_X = -0.34;
+const LIGHT_Y = -0.42;
+
+// One scratch layer shared by every burst — each redraws it from scratch, so
+// concurrent bursts cost no extra memory.
+let scratch = null;
+let scratchCtx = null;
+
+function getScratch(width, height) {
+  if (!scratch) {
+    scratch = document.createElement('canvas');
+    scratchCtx = scratch.getContext('2d');
+  }
+  if (scratch.width !== width || scratch.height !== height) {
+    scratch.width = width;
+    scratch.height = height;
+  }
+  return scratchCtx;
+}
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -94,6 +133,7 @@ class Splat {
     const lobes = tier === 2 ? 6 : tier === 1 ? 9 : 12;
     this.phase = new Float32Array(lobes);
     this.amp = new Float32Array(lobes);
+    this.points = new Float32Array(lobes * 2);
     for (let i = 0; i < lobes; i++) {
       this.phase[i] = rand() * TAU;
       this.amp[i] = 0.07 + rand() * (tier === 0 ? 0.16 : 0.13);
@@ -159,6 +199,7 @@ class Splat {
     return this.radius > 0.4;
   }
 
+  /** Pass 1: the flat silhouette. */
   draw(ctx, elapsed) {
     const r = this.radius;
     if (r <= 0.4) return;
@@ -184,7 +225,7 @@ class Splat {
     }
 
     const n = this.phase.length;
-    const pts = new Float32Array(n * 2);
+    const pts = this.points; // reused: this runs ~40 times a frame
     const t = elapsed / 260;
     for (let i = 0; i < n; i++) {
       const a = this.spin + (i / n) * TAU;
@@ -195,6 +236,61 @@ class Splat {
     ctx.beginPath();
     tracePath(ctx, pts);
     ctx.fill();
+  }
+
+  /**
+   * Pass 2: a soft dome. Every gradient here fades to fully transparent at its
+   * rim, which is the reason overlapping blobs never show a join — soft edges
+   * accumulate smoothly, hard ones would draw a line.
+   */
+  drawLighting(ctx, elapsed) {
+    const r = this.radius;
+    // Below a few pixels a dome is invisible but still costs a gradient and a
+    // fill. Droplets get their shape from the global pass instead.
+    if (r < 4) return;
+
+    // Every fillRect below is sized to the gradient's own outer radius.
+    // A generous box wastes real time: fillRect touches every pixel in it,
+    // transparent or not, and these run for ~40 blobs on every frame.
+
+    // Contact shadow on the far side. Kept weak and pulled inside the blob:
+    // strong per-blob shadows carve visible crescents where blobs overlap,
+    // which separates the splat into a pile of balls instead of one mass.
+    const shadeR = r * 0.95;
+    const sx = this.x - LIGHT_X * r * 0.7;
+    const sy = this.y - LIGHT_Y * r * 0.7;
+    const shade = ctx.createRadialGradient(sx, sy, r * 0.1, sx, sy, shadeR);
+    shade.addColorStop(0, 'rgba(24, 14, 36, 0.15)');
+    shade.addColorStop(0.6, 'rgba(24, 14, 36, 0.06)');
+    shade.addColorStop(1, 'rgba(24, 14, 36, 0)');
+    ctx.fillStyle = shade;
+    ctx.fillRect(sx - shadeR, sy - shadeR, shadeR * 2, shadeR * 2);
+
+    // Broad sheen. Enough roundness to catch the eye, not enough to look
+    // moulded — this is pigment, not a bead of gel.
+    const sheenR = r * 1.05;
+    const hx = this.x + LIGHT_X * r;
+    const hy = this.y + LIGHT_Y * r;
+    const sheen = ctx.createRadialGradient(hx, hy, r * 0.05, hx, hy, sheenR);
+    sheen.addColorStop(0, 'rgba(255, 255, 255, 0.19)');
+    sheen.addColorStop(0.45, 'rgba(255, 255, 255, 0.06)');
+    sheen.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = sheen;
+    ctx.fillRect(hx - sheenR, hy - sheenR, sheenR * 2, sheenR * 2);
+
+    // Small drifting specular — only on blobs big enough to carry one without
+    // turning into a bead of glitter.
+    if (r < 11) return;
+    const drift = Math.sin(elapsed / 260 + this.spin) * 0.09;
+    const gx = this.x + (LIGHT_X + drift) * r * 1.15;
+    const gy = this.y + (LIGHT_Y - drift * 0.6) * r * 1.15;
+    const gr = r * (0.17 + Math.sin(elapsed / 190 + this.phase[0]) * 0.035);
+    const glint = ctx.createRadialGradient(gx, gy, 0, gx, gy, gr);
+    glint.addColorStop(0, 'rgba(255, 255, 255, 0.40)');
+    glint.addColorStop(0.5, 'rgba(255, 255, 255, 0.12)');
+    glint.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = glint;
+    ctx.fillRect(gx - gr, gy - gr, gr * 2, gr * 2);
   }
 }
 
@@ -216,6 +312,8 @@ export class Burst {
     this.reach = o.reach;
     this.speed = o.speed ?? 1;
     this.cellPath = o.cellPath;
+    this.width = o.width;
+    this.height = o.height;
     this.elapsed = 0;
     this.done = false;
     this.filled = false;   // flips the moment the cell should count as painted
@@ -269,7 +367,9 @@ export class Burst {
       ));
     }
 
-    for (const splat of this.splats) splat.colour = shade(o.colour, 0.95 + rand() * 0.1);
+    // Subtle now that lighting carries the depth — just enough variation that
+    // overlapping paint reads as layered rather than poured from one tin.
+    for (const splat of this.splats) splat.colour = shade(o.colour, 0.97 + rand() * 0.06);
 
     this.fillWobble = Array.from({ length: 14 }, () => ({
       phase: rand() * TAU,
@@ -340,10 +440,75 @@ export class Burst {
     ctx.restore();
   }
 
+  /**
+   * One light across the entire splat, applied after the per-blob domes. This
+   * is what stops it reading as a heap of separate beads: whatever the blobs
+   * do individually, the mass as a whole is lit from one direction.
+   */
+  drawForm(ctx) {
+    const form = ctx.createLinearGradient(0, 0, this.width * 0.9, this.height);
+    form.addColorStop(0, 'rgba(255, 255, 255, 0.10)');
+    form.addColorStop(0.42, 'rgba(255, 255, 255, 0.015)');
+    form.addColorStop(1, 'rgba(20, 11, 30, 0.17)');
+    ctx.fillStyle = form;
+    ctx.fillRect(0, 0, this.width, this.height);
+  }
+
+  /**
+   * A band of light travelling across the burst. One pass takes slightly less
+   * than the burst does, so you always catch it, and it rides over the static
+   * per-blob speculars to keep the surface alive rather than merely shiny.
+   */
+  drawShimmer(ctx) {
+    const t = clamp01(this.elapsed / DURATION);
+    // Fade in as the paint lands, out as it drains away.
+    const strength = Math.sin(clamp01((t - 0.12) / 0.62) * Math.PI) ** 0.7;
+    if (strength <= 0.02) return;
+
+    const travel = -0.35 + t * 1.7;
+    const cx = travel * this.width;
+    const band = this.width * 0.17;
+
+    const sweep = ctx.createLinearGradient(cx - band, -this.height * 0.3, cx + band, this.height * 1.1);
+    sweep.addColorStop(0, 'rgba(255, 255, 255, 0)');
+    sweep.addColorStop(0.42, `rgba(255, 255, 255, ${0.1 * strength})`);
+    sweep.addColorStop(0.5, `rgba(255, 255, 255, ${0.26 * strength})`);
+    sweep.addColorStop(0.58, `rgba(255, 255, 255, ${0.1 * strength})`);
+    sweep.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = sweep;
+    ctx.fillRect(0, 0, this.width, this.height);
+  }
+
+  /**
+   * Silhouette, then lighting clipped to it, then composited up to full size.
+   * `ctx` is expected to be in picture coordinates.
+   */
   drawBlobs(ctx) {
+    const w = Math.max(1, Math.ceil(this.width * FX_SCALE));
+    const h = Math.max(1, Math.ceil(this.height * FX_SCALE));
+    const fx = getScratch(w, h);
+
+    fx.setTransform(FX_SCALE, 0, 0, FX_SCALE, 0, 0);
+    fx.clearRect(0, 0, this.width, this.height);
+    fx.lineJoin = 'round';
+
+    fx.globalCompositeOperation = 'source-over';
+    for (const s of this.splats) s.draw(fx, this.elapsed);
+
+    // Everything from here lands only on paint that already exists.
+    fx.globalCompositeOperation = 'source-atop';
+    for (const s of this.splats) s.drawLighting(fx, this.elapsed);
+    this.drawForm(fx);
+    this.drawShimmer(fx);
+    fx.globalCompositeOperation = 'source-over';
+
     ctx.save();
-    ctx.lineJoin = 'round';
-    for (const s of this.splats) s.draw(ctx, this.elapsed);
+    ctx.imageSmoothingEnabled = true;
+    // Bilinear, deliberately. 'high' runs a much more expensive resample that
+    // dominated the whole frame — 21ms of a 22ms budget — and it is also
+    // *sharper*, which is the opposite of what this upscale is here to do.
+    ctx.imageSmoothingQuality = 'low';
+    ctx.drawImage(scratch, 0, 0, this.width, this.height);
     ctx.restore();
   }
 }

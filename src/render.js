@@ -144,8 +144,11 @@ export class Board {
       for (const cell of this.cells) {
         if (this.filled.has(cell.id)) continue;
         const px = cell.inradius * this.scale;
-        if (px < 7) continue;
-        const size = Math.min(30, Math.max(9, px * 0.85)) / this.scale;
+        // Finer pictures make more small cells. A cell with no number is still
+        // paintable — selecting its tub washes it — so the bar for printing
+        // one only has to be "legible", not "roomy".
+        if (px < 5) continue;
+        const size = Math.min(30, Math.max(7.5, px * 0.9)) / this.scale;
         const active = cell.colour === this.selected;
         ctx.font = `${active ? 700 : 500} ${size}px ui-sans-serif, system-ui, sans-serif`;
         ctx.fillStyle = active ? 'rgba(30, 26, 40, 0.9)' : NUMBER;

@@ -170,6 +170,9 @@ button {
 }
 .tub.spent { opacity: 0.26; pointer-events: none; transform: none; }
 
+.tubs.many .tub { width: 32px; height: 32px; font-size: 11px; }
+.tubs.many .tub .count { min-width: 14px; height: 14px; font-size: 8.5px; }
+
 .tub .count {
   position: absolute;
   right: -3px; bottom: -3px;
@@ -443,6 +446,8 @@ button {
     height: 48px;
     font-size: 14px;
   }
+  /* Still a 40px target, which is about the smallest a fingertip resolves. */
+  .tubs.many .tub { width: 40px; height: 40px; font-size: 12px; }
   .tub .count {
     min-width: 18px;
     height: 18px;

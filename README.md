@@ -145,9 +145,16 @@ Useful knobs on the CLI (`--detail chunky|normal|detailed` sets all of them):
 | `--min-area` | 0.0016 | smallest cell, as a fraction of the picture |
 | `--size` | 768 | working resolution on the long side |
 
-Bigger `--min-area` gives chunkier cells; smaller gives more of them. Aim for
-25–70 cells — below that a picture is over in a few clicks, above it the
-numbers get hard to read.
+Bigger `--min-area` gives chunkier cells; smaller gives more of them. The three
+presets land around 30 / 70 / 130 cells on artwork with enough in it — the
+demo `Harbour Row` is the one built to show the top end. The ceiling is
+legibility rather than the pipeline: much past 150 and you are hunting slivers
+rather than painting.
+
+Cells too small for a number are still paintable — selecting a tub washes
+every cell that takes it — and a tap that misses looks just around itself for
+a cell of the colour you are holding, with more slack for a fingertip than a
+mouse pointer.
 
 The generator wraps your subject in a style block asking for flat vector poster
 art with no gradients or texture. That matters more than the subject does:
@@ -173,13 +180,27 @@ work worst — every soft edge becomes cells you did not want.
 | fill | 760–1010 | the cell floods with colour from its anchor outward |
 | pop | 1010–1180 | a brief white bloom along the wet edge |
 
-Blobs are hard-edged wobbly bezier loops, not blurred metaballs — overlaps are
-invisible because it's all the same paint, so the edges stay crisp and no
-canvas filter is involved. Each blob is drawn a few percent lighter or darker
-than its neighbours, which is what makes overlapping paint read as wet layers
-instead of one flat silhouette.
+Each frame draws to a private layer in three passes:
 
-Speed and density are adjustable in Settings.
+1. every blob's silhouette, in the paint colour
+2. lighting with `source-atop`, so it lands only where paint already is
+3. the layer composited up to full size
+
+That middle step is the whole trick. Because lighting is clipped to the union
+of the blobs rather than drawn per blob, highlights and shadows can overlap
+freely and never leave a seam at a boundary — which a per-blob rim always
+would. Each blob gets a soft dome and a drifting specular, the mass gets one
+light across all of it so it reads as a single splat, and a band of shimmer
+travels through during the burst.
+
+The layer is smaller than the picture (0.6×). Upscaling a hard silhouette with
+smoothing is where the soft edges come from, and it makes the lighting cheap
+enough for a phone. Use bilinear, not `imageSmoothingQuality: 'high'` — the
+expensive resample took 21ms of a 22ms frame and came out *sharper*.
+
+A full-density burst costs ~9ms per frame in software rendering with no GPU;
+`npm run check:web` asserts it stays inside a 60fps budget. Speed and density
+are adjustable in Settings, and density starts lower on phones.
 
 ## Sound
 

@@ -98,9 +98,22 @@ await page.waitForFunction(
   { timeout: 15000, polling: 100 },
 );
 
+// Switch to the picture with the most paint tubs. A tray of eighteen is what
+// actually threatens a phone layout; whichever puzzle happens to sort first
+// tells you nothing.
+const manifest = JSON.parse(fs.readFileSync(path.join(WEB, 'puzzles', 'manifest.json'), 'utf8'));
+const busiest = [...manifest].sort((a, b) => b.colours - a.colours)[0];
+await page.click('[data-act="pictures"]');
+await page.click(`.row.clickable:has-text("${busiest.title}")`);
+await page.waitForFunction(
+  (title) => document.getElementById('barSubtitle').textContent.startsWith(title),
+  busiest.title,
+  { timeout: 10000, polling: 100 },
+);
+
 /* --------------------------------------------------------------- the basics */
 
-check('boots and renders paint tubs', true);
+check('boots and renders paint tubs', true, `${busiest.title}, ${busiest.colours} tubs`);
 check('platform detected as web',
   await page.evaluate(() => document.documentElement.classList.contains('is-web')));
 
@@ -109,8 +122,16 @@ const chromeHidden = await page.evaluate(() =>
 check('window chrome hidden on touch', chromeHidden);
 
 const tubBox = await page.locator('#tubs .tub').first().boundingBox();
-check('tub is a comfortable tap target', tubBox.width >= 44 && tubBox.height >= 44,
+check('tub is a comfortable tap target', tubBox.width >= 40 && tubBox.height >= 40,
   `${Math.round(tubBox.width)}x${Math.round(tubBox.height)}px`);
+
+// The tray must not crowd out the picture, however many colours there are.
+const split = await page.evaluate(() => ({
+  board: document.getElementById('board').getBoundingClientRect().height,
+  tray: document.getElementById('tray').getBoundingClientRect().height,
+}));
+check('picture keeps most of the screen', split.board > split.tray * 1.8,
+  `board ${Math.round(split.board)}px vs tray ${Math.round(split.tray)}px`);
 
 /* -------------------------------------------------------------- painting */
 
@@ -150,15 +171,55 @@ check('tapping a cell paints it', true,
 await page.waitForTimeout(900);
 await page.screenshot({ path: path.join(OUT, 'portrait-after.png') });
 
+/* ------------------------------------------------------------------ speed */
+
+// Drive the effect directly rather than timing frames on the page: headless
+// Chromium throttles requestAnimationFrame hard, so observed frame rate says
+// nothing. This measures the actual cost of a burst frame — three passes over
+// every blob plus two gradients each — against the 16.6ms a 60fps budget.
+const msPerFrame = await page.evaluate(async (base) => {
+  const { Burst } = await import(new URL('paint-fx.js', base).href);
+  const canvas = document.createElement('canvas');
+  canvas.width = 900;
+  canvas.height = 900;
+  const ctx = canvas.getContext('2d');
+  const make = () => new Burst({
+    origin: { x: 450, y: 450 },
+    sink: { x: 300, y: 320 },
+    colour: '#d1495b',
+    width: 900,
+    height: 900,
+    reach: 220,
+    cellPath: null,
+    seed: 7,
+    speed: 1,
+    density: 1,
+  });
+
+  make(); // warm the JIT and allocate the scratch layer
+  const burst = make();
+  const frames = 72;
+  const started = performance.now();
+  for (let i = 0; i < frames; i++) {
+    burst.update(16);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    burst.drawBlobs(ctx);
+  }
+  return (performance.now() - started) / frames;
+}, origin);
+
+check('burst frame fits a 60fps budget', msPerFrame < 16.6,
+  `${msPerFrame.toFixed(1)}ms per frame at full density`);
+
 /* ------------------------------------------------------------------- pwa */
 
-const manifest = await page.evaluate(async () => {
+const webManifest = await page.evaluate(async () => {
   const link = document.querySelector('link[rel="manifest"]');
   if (!link) return null;
   return (await fetch(link.href)).json();
 });
-check('manifest is linked and valid', !!manifest?.icons?.length,
-  manifest ? `${manifest.name}, ${manifest.icons.length} icons` : 'missing');
+check('manifest is linked and valid', !!webManifest?.icons?.length,
+  webManifest ? `${webManifest.name}, ${webManifest.icons.length} icons` : 'missing');
 
 const swReady = await page.evaluate(() =>
   navigator.serviceWorker.ready.then(() => true).catch(() => false));

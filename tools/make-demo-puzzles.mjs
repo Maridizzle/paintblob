@@ -13,7 +13,7 @@ import {
   createImage, fillRect, fillPoly, fillEllipse, fillCircle, fillCapsule,
   blob, toPNGBuffer, mulberry32,
 } from './lib/raster.mjs';
-import { buildPuzzle } from '../src/pipeline/build.js';
+import { buildPuzzle, DETAIL_PRESETS } from '../src/pipeline/build.js';
 import { writePuzzle } from './mapify.mjs';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -149,12 +149,93 @@ function cactusMesa() {
   return img;
 }
 
+// A deliberately busy scene. The other three are broad flat shapes and finish
+// in a couple of minutes; this one exists to exercise the pipeline at the
+// detail level real generated artwork produces, and to give the numbers
+// somewhere to get small.
+function harbourRow() {
+  const img = createImage(SIZE, SIZE, hex('#cfe2e8'));
+  const rand = mulberry32(77);
+
+  fillRect(img, 0, 0, SIZE, SIZE * 0.16, hex('#4a6b96'));
+  fillRect(img, 0, SIZE * 0.16, SIZE, SIZE * 0.13, hex('#7fa3bf'));
+  fillRect(img, 0, SIZE * 0.29, SIZE, SIZE * 0.14, hex('#b9d2dd'));
+  fillCircle(img, SIZE * 0.79, SIZE * 0.13, SIZE * 0.062, hex('#ffe9b0'));
+
+  for (const [cx, cy, r, seed] of [
+    [SIZE * 0.2, SIZE * 0.1, SIZE * 0.075, 4],
+    [SIZE * 0.31, SIZE * 0.13, SIZE * 0.055, 8],
+    [SIZE * 0.55, SIZE * 0.08, SIZE * 0.05, 12],
+  ]) {
+    fillPoly(img, blob(cx, cy, r, { seed, squash: 0.5, wobble: 0.26 }), hex('#e8f1f4'));
+  }
+
+  const WALLS = ['#d8654f', '#e8a05a', '#f0dba4', '#7ba98c', '#5d7fa8', '#c98aa6', '#e5cdb2'];
+  const ROOFS = ['#4a3350', '#6b3b48', '#33465e', '#2f4f45'];
+
+  // Seven houses along a quay, each with its own windows and door. Windows are
+  // kept above the size floor so they survive as their own cells rather than
+  // being absorbed into the wall.
+  const quay = SIZE * 0.71;
+  let x = SIZE * 0.02;
+  for (let i = 0; i < 7; i++) {
+    const w = SIZE * (0.1 + rand() * 0.045);
+    const h = SIZE * (0.19 + rand() * 0.13);
+    const top = quay - h;
+    const wall = hex(WALLS[i % WALLS.length]);
+    const roof = hex(ROOFS[i % ROOFS.length]);
+
+    fillRect(img, x, top, w, h, wall);
+    fillPoly(img, [
+      [x - SIZE * 0.012, top], [x + w / 2, top - SIZE * 0.06], [x + w + SIZE * 0.012, top],
+    ], roof);
+
+    const cols = w > SIZE * 0.12 ? 2 : 1;
+    const rows = h > SIZE * 0.26 ? 2 : 1;
+    const ww = SIZE * 0.038;
+    const wh = SIZE * 0.045;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const wx = x + (w / (cols + 1)) * (c + 1) - ww / 2;
+        const wy = top + SIZE * 0.045 + r * SIZE * 0.085;
+        fillRect(img, wx, wy, ww, wh, hex('#2b3a4d'));
+        fillRect(img, wx + ww * 0.12, wy + wh * 0.1, ww * 0.34, wh * 0.36, hex('#9fc6d8'));
+      }
+    }
+    const dw = SIZE * 0.036;
+    fillRect(img, x + w / 2 - dw / 2, quay - SIZE * 0.075, dw, SIZE * 0.075, hex('#3f2b3a'));
+    x += w + SIZE * 0.005;
+  }
+
+  fillRect(img, 0, quay, SIZE, SIZE * 0.035, hex('#8a7a6d'));
+  fillRect(img, 0, quay + SIZE * 0.035, SIZE, SIZE * 0.1, hex('#3f6e86'));
+  fillRect(img, 0, quay + SIZE * 0.135, SIZE, SIZE, hex('#2b4f66'));
+
+  for (let i = 0; i < 7; i++) {
+    const w = SIZE * (0.05 + rand() * 0.09);
+    fillRect(img, rand() * (SIZE - w), quay + SIZE * (0.05 + i * 0.028), w, SIZE * 0.014,
+      hex('#7fb0c4'));
+  }
+
+  const boat = (bx, by, len, hull, sail) => {
+    fillPoly(img, [
+      [bx - len, by], [bx + len, by], [bx + len * 0.7, by + len * 0.32], [bx - len * 0.7, by + len * 0.32],
+    ], hull);
+    fillPoly(img, [[bx, by - len * 1.5], [bx, by - len * 0.06], [bx - len * 0.78, by - len * 0.06]], sail);
+  };
+  boat(SIZE * 0.22, SIZE * 0.86, SIZE * 0.055, hex('#3f2b3a'), hex('#f6efe2'));
+  boat(SIZE * 0.71, SIZE * 0.92, SIZE * 0.042, hex('#4a3350'), hex('#e8cfc0'));
+
+  return img;
+}
+
 /* ------------------------------------------------------------------- driver */
 
 const SCENES = [
-  { id: 'dusk-harbour', title: 'Dusk Harbour', draw: duskHarbour, opts: { maxColours: 13, maxCells: 52 } },
-  { id: 'koi-pond', title: 'Koi Pond', draw: koiPond, opts: { maxColours: 12, maxCells: 46 } },
-  { id: 'cactus-mesa', title: 'Cactus Mesa', draw: cactusMesa, opts: { maxColours: 14, maxCells: 54 } },
+  { id: 'dusk-harbour', title: 'Dusk Harbour', draw: duskHarbour, opts: DETAIL_PRESETS.normal },
+  { id: 'koi-pond', title: 'Koi Pond', draw: koiPond, opts: DETAIL_PRESETS.normal },
+  { id: 'cactus-mesa', title: 'Cactus Mesa', draw: cactusMesa, opts: DETAIL_PRESETS.normal },
+  { id: 'harbour-row', title: 'Harbour Row', draw: harbourRow, opts: DETAIL_PRESETS.detailed },
 ];
 
 fs.mkdirSync(RAW, { recursive: true });

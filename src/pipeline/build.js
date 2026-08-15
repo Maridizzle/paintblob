@@ -15,18 +15,27 @@ import { boundsOf, traceRegion, ringsToPath } from './contour.js';
 import { nameColour, toHex, uniquifyNames } from './colour-names.js';
 
 export const DEFAULTS = {
-  size: 768,        // working resolution on the long side
-  maxColours: 14,   // paint tubs
-  maxCells: 64,     // clickable regions
-  minAreaFrac: 0.0016,
+  // 900 rather than 768: the working resolution sets the floor on how fine a
+  // shape can survive tracing, so raising it is what actually buys detail.
+  // Cost is linear-ish and still lands well under a second.
+  size: 900,
+  maxColours: 16,   // paint tubs
+  maxCells: 90,     // clickable regions
+  minAreaFrac: 0.0011,
   denoise: 1,
 };
 
-/** Named presets for the in-app importer, which has no room for flags. */
+/**
+ * Named presets for the in-app importer, which has no room for flags.
+ *
+ * The ceiling on all of these is legibility, not the pipeline: much past 150
+ * cells the numbers stop fitting and you are hunting for slivers rather than
+ * painting. `normal` is deliberately only a step up from where it was.
+ */
 export const DETAIL_PRESETS = {
-  chunky: { maxColours: 10, maxCells: 34, minAreaFrac: 0.004 },
-  normal: { maxColours: 14, maxCells: 64, minAreaFrac: 0.0016 },
-  detailed: { maxColours: 18, maxCells: 110, minAreaFrac: 0.0007 },
+  chunky: { maxColours: 11, maxCells: 38, minAreaFrac: 0.0035 },
+  normal: { maxColours: 16, maxCells: 90, minAreaFrac: 0.0011 },
+  detailed: { maxColours: 18, maxCells: 150, minAreaFrac: 0.00045 },
 };
 
 /**

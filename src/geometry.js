@@ -115,6 +115,32 @@ export function prepareCells(puzzle, Path2DImpl = globalThis.Path2D) {
   });
 }
 
+/**
+ * Looks just around a point for a cell that takes the paint currently held.
+ *
+ * Small cells are hard to hit, and a fingertip covers a lot of them at once.
+ * Sampling a couple of rings around the tap is far cheaper than computing a
+ * real distance to every polygon, and accurate enough at these radii.
+ *
+ * @param {object} o
+ * @param {number} o.colour   palette index the player is holding
+ * @param {Set<number>} o.filled  cells already painted
+ * @param {number} o.radius   how far to forgive, in picture units
+ */
+export function cellNear(cells, px, py, { colour, filled, radius, rings = 2, samples = 10 }) {
+  for (let ring = 1; ring <= rings; ring++) {
+    const r = (radius * ring) / rings;
+    for (let i = 0; i < samples; i++) {
+      // Offset each ring so the sample points do not line up radially and
+      // miss the same sliver twice.
+      const angle = ((i + ring * 0.37) / samples) * Math.PI * 2;
+      const hit = cellAt(cells, px + Math.cos(angle) * r, py + Math.sin(angle) * r);
+      if (hit && hit.colour === colour && !filled.has(hit.id)) return hit;
+    }
+  }
+  return null;
+}
+
 export function cellAt(cells, px, py) {
   // Small cells sit on top of large ones visually, and are the ones a player
   // is aiming at, so prefer them when bounding boxes overlap.
