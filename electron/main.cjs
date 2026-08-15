@@ -4,7 +4,7 @@
 // keeping the main and preload scripts CJS avoids Electron's ESM/sandbox
 // caveats entirely — one less thing to break on a version bump.
 
-const { app, BrowserWindow, dialog, ipcMain, screen, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -63,6 +63,30 @@ function writeSave(data) {
   fs.writeFileSync(tmp, JSON.stringify(data));
   fs.renameSync(tmp, savePath);
 }
+
+/* ------------------------------------------------------------------ crashes */
+
+// An Electron app that dies takes its console with it, so a user can only
+// report "it shut down". This leaves a line behind in the same directory as
+// the save file, which is the difference between a diagnosis and a guess.
+function logCrash(kind, detail) {
+  try {
+    fs.appendFileSync(
+      path.join(app.getPath('userData'), 'crash.log'),
+      `${new Date().toISOString()}  ${kind}: ${detail}\n`,
+    );
+  } catch {
+    // If even appending a line fails there is nothing useful left to try.
+  }
+}
+
+// Logged and survived rather than logged and exited: almost everything that
+// reaches here is a broken IPC call, and losing an in-progress picture over
+// it would be worse than carrying on.
+process.on('uncaughtException', (err) => logCrash('uncaughtException', err?.stack ?? err));
+process.on('unhandledRejection', (err) => logCrash('unhandledRejection', err?.stack ?? err));
+app.on('render-process-gone', (_e, _wc, details) => logCrash('renderer-gone', JSON.stringify(details)));
+app.on('child-process-gone', (_e, details) => logCrash('child-process-gone', JSON.stringify(details)));
 
 /* ------------------------------------------------------------------- window */
 
@@ -150,8 +174,12 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function runSmokeTest(target) {
   const errors = [];
+  // A file chooser may only open from a real user gesture, and this test
+  // clicks programmatically, so Chromium refuses and says so. Expected here;
+  // what is being checked is that the attempt does not kill the process.
+  const EXPECTED = [/File chooser dialog can only be shown with a user activation/];
   target.webContents.on('console-message', (_e, level, message) => {
-    if (level >= 2) errors.push(message); // 2 = warning, 3 = error
+    if (level >= 2 && !EXPECTED.some((re) => re.test(message))) errors.push(message);
   });
   target.webContents.on('render-process-gone', (_e, details) => {
     errors.push(`renderer gone: ${details.reason}`);
@@ -227,6 +255,23 @@ async function runSmokeTest(target) {
     console.log(`smoke: imported "${imported.subtitle}" (listed: ${imported.listed})`);
     if (!imported.listed || !/Smoke Import/.test(imported.subtitle)) {
       errors.push(`add-a-picture failed (subtitle: "${imported.subtitle}", listed: ${imported.listed})`);
+    }
+
+    // The reported crash: the app died the instant the file chooser opened.
+    // Click the real button, then confirm the process is still here.
+    const survived = await target.webContents.executeJavaScript(`(async () => {
+      document.querySelector('[data-act="pictures"]').click();
+      await new Promise((r) => setTimeout(r, 300));
+      const add = document.querySelector('.primary.add');
+      if (!add) return 'no Add picture button';
+      add.click();
+      await new Promise((r) => setTimeout(r, 1200));
+      document.querySelectorAll('input[type=file]').forEach((el) => el.remove());
+      return 'alive';
+    })()`);
+    console.log(`smoke: after opening the picker -> ${survived}`);
+    if (survived !== 'alive' || target.isDestroyed()) {
+      errors.push(`opening the file picker did not survive: ${survived}`);
     }
 
     const image = await target.webContents.capturePage();
@@ -316,28 +361,16 @@ ipcMain.handle('puzzles:load', async (_e, id) => {
   throw new Error(`no such puzzle: ${id}`);
 });
 
-const MAX_IMAGE_BYTES = 48 * 1024 * 1024;
-
-ipcMain.handle('puzzles:pick-image', async () => {
-  const result = await dialog.showOpenDialog(win, {
-    title: 'Add a picture',
-    buttonLabel: 'Add',
-    properties: ['openFile', 'multiSelections'],
-    filters: [
-      { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'bmp'] },
-      { name: 'All files', extensions: ['*'] },
-    ],
-  });
-  if (result.canceled) return [];
-
-  // Decoding happens in the renderer, where Chromium handles every format it
-  // can display — considerably more than the CLI's PNG/JPEG. All the main
-  // process does is hand over bytes.
-  return result.filePaths.flatMap((file) => {
-    const { size } = fs.statSync(file);
-    if (size > MAX_IMAGE_BYTES) return [];
-    return [{ name: path.basename(file, path.extname(file)), bytes: fs.readFileSync(file) }];
-  });
+// Choosing a file is done entirely in the renderer with an input element.
+// dialog.showOpenDialog used to live here, parented to this window — which is
+// frameless, transparent, always-on-top and visible on all workspaces. That
+// combination could take the whole process down the moment the dialog opened.
+// The renderer's picker is Chromium's own and is not attached to the window.
+ipcMain.handle('win:suspend-top', (_e, suspend) => {
+  if (!win || win.isDestroyed()) return false;
+  const wanted = suspend ? false : readSave().settings.alwaysOnTop !== false;
+  win.setAlwaysOnTop(wanted, 'floating');
+  return wanted;
 });
 
 ipcMain.handle('puzzles:save', async (_e, { id, title, puzzle, entry }) => {
