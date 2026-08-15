@@ -64,8 +64,11 @@ const VALID_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
  *
  * `capture` is deliberately absent so Android offers the gallery and Files
  * alongside the camera.
+ *
+ * Exported for the harness, which cannot open a real chooser (that needs a
+ * user gesture) but can check this never resolves before one is answered.
  */
-function pickImage() {
+export function pickImage() {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -88,10 +91,15 @@ function pickImage() {
         bytes: file,
       })));
     });
-    // Cancelling a file picker fires no event on older engines; window focus
-    // returning is the only reliable signal that nothing was chosen.
+
+    // `cancel` is the only signal used, and it is the correct one — every
+    // engine this runs on fires it when a chooser is dismissed.
+    //
+    // There used to be a window-focus fallback here for older engines. It was
+    // actively harmful: focus can arrive while the chooser is still open, and
+    // finishing detaches the input, which dismisses the chooser. The dialog
+    // appeared for a moment and then closed by itself.
     input.addEventListener('cancel', () => finish([]));
-    window.addEventListener('focus', () => setTimeout(() => finish([]), 800), { once: true });
 
     input.click();
   });

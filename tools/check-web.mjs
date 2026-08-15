@@ -160,6 +160,46 @@ check('tapping a cell paints it', true,
 await page.waitForTimeout(900);
 await page.screenshot({ path: path.join(OUT, 'portrait-after.png') });
 
+/* ----------------------------------------------------------- file chooser */
+
+// A real chooser needs a user gesture, so click() is stubbed and the events a
+// chooser would emit are dispatched instead. What matters is that nothing
+// resolves the picker early: finishing detaches the input, which dismisses an
+// open chooser, and a window-focus fallback used to do exactly that.
+const chooser = await page.evaluate(async (base) => {
+  const { pickImage } = await import(new URL('platform.js', base).href);
+  const real = HTMLInputElement.prototype.click;
+  HTMLInputElement.prototype.click = function noop() {};
+  try {
+    let settled = false;
+    const pending = pickImage().then((v) => { settled = true; return v; });
+
+    // Everything that happens around a chooser opening, none of which means
+    // the user answered it.
+    window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new Event('blur'));
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 1400));
+    const stayedOpen = !settled;
+
+    const input = document.querySelector('input[type=file]');
+    const detached = !input;
+    input?.dispatchEvent(new Event('cancel'));
+    const cancelled = await Promise.race([
+      pending.then(() => 'resolved'),
+      new Promise((r) => setTimeout(() => r('hung'), 2000)),
+    ]);
+    return { stayedOpen, detached, cancelled };
+  } finally {
+    HTMLInputElement.prototype.click = real;
+  }
+}, origin);
+
+check('chooser survives focus changes', chooser.stayedOpen && !chooser.detached,
+  chooser.detached ? 'input was detached, which dismisses the dialog'
+    : chooser.stayedOpen ? '' : 'picker resolved before the user answered');
+check('cancelling the chooser resolves', chooser.cancelled === 'resolved', chooser.cancelled);
+
 /* ------------------------------------------------------------------ speed */
 
 // Drive the effect directly rather than timing frames on the page: headless
