@@ -183,13 +183,30 @@ async function runSmokeTest(target) {
     // Exercise the add-a-picture path for real: generate an image in the
     // renderer, drop it on the window, and confirm it round-trips through IPC,
     // the pipeline, and the user puzzle directory into something playable.
+    // Deliberately a *photograph*, not flat art: grain, a gradient and a dark
+    // border, at a size a phone actually produces. Flat art skips the whole
+    // grain and crop path, which is how a crash on real photos got through.
     const imported = await target.webContents.executeJavaScript(`(async () => {
-      const canvas = new OffscreenCanvas(360, 360);
+      const W = 2000, H = 2600;
+      const canvas = new OffscreenCanvas(W, H);
       const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#f2e9d8'; ctx.fillRect(0, 0, 360, 360);
-      ctx.fillStyle = '#d1495b'; ctx.beginPath(); ctx.arc(130, 140, 84, 0, 7); ctx.fill();
-      ctx.fillStyle = '#2a9d8f'; ctx.fillRect(30, 250, 300, 80);
-      ctx.fillStyle = '#e9c46a'; ctx.beginPath(); ctx.arc(258, 110, 58, 0, 7); ctx.fill();
+      const img = ctx.createImageData(W, H);
+      const d = img.data;
+      let s = 11;
+      const rnd = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const o = (y * W + x) * 4;
+          const r = Math.hypot(x - W / 2, y - H / 2) / (W * 0.7);
+          const border = (x < 70 || y < 70 || x > W - 71 || y > H - 71) ? 0.08 : 1;
+          const n = (rnd() - 0.5) * 28;
+          d[o] = (185 - r * 70 + n) * border;
+          d[o + 1] = (150 + r * 40 + n) * border;
+          d[o + 2] = (175 - r * 20 + n) * border;
+          d[o + 3] = 255;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
 
       const blob = await canvas.convertToBlob({ type: 'image/png' });
       const transfer = new DataTransfer();
@@ -198,7 +215,7 @@ async function runSmokeTest(target) {
         dataTransfer: transfer, bubbles: true, cancelable: true,
       }));
 
-      for (let i = 0; i < 60 && !/Smoke Import/.test(document.getElementById('barSubtitle').textContent); i++) {
+      for (let i = 0; i < 200 && !/Smoke Import/.test(document.getElementById('barSubtitle').textContent); i++) {
         await new Promise((r) => setTimeout(r, 100));
       }
       const subtitle = document.getElementById('barSubtitle').textContent;
