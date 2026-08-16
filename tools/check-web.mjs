@@ -160,46 +160,6 @@ check('tapping a cell paints it', true,
 await page.waitForTimeout(900);
 await page.screenshot({ path: path.join(OUT, 'portrait-after.png') });
 
-/* ----------------------------------------------------------- file chooser */
-
-// A real chooser needs a user gesture, so click() is stubbed and the events a
-// chooser would emit are dispatched instead. What matters is that nothing
-// resolves the picker early: finishing detaches the input, which dismisses an
-// open chooser, and a window-focus fallback used to do exactly that.
-const chooser = await page.evaluate(async (base) => {
-  const { pickImage } = await import(new URL('platform.js', base).href);
-  const real = HTMLInputElement.prototype.click;
-  HTMLInputElement.prototype.click = function noop() {};
-  try {
-    let settled = false;
-    const pending = pickImage().then((v) => { settled = true; return v; });
-
-    // Everything that happens around a chooser opening, none of which means
-    // the user answered it.
-    window.dispatchEvent(new Event('focus'));
-    window.dispatchEvent(new Event('blur'));
-    window.dispatchEvent(new Event('focus'));
-    await new Promise((r) => setTimeout(r, 1400));
-    const stayedOpen = !settled;
-
-    const input = document.querySelector('input[type=file]');
-    const detached = !input;
-    input?.dispatchEvent(new Event('cancel'));
-    const cancelled = await Promise.race([
-      pending.then(() => 'resolved'),
-      new Promise((r) => setTimeout(() => r('hung'), 2000)),
-    ]);
-    return { stayedOpen, detached, cancelled };
-  } finally {
-    HTMLInputElement.prototype.click = real;
-  }
-}, origin);
-
-check('chooser survives focus changes', chooser.stayedOpen && !chooser.detached,
-  chooser.detached ? 'input was detached, which dismisses the dialog'
-    : chooser.stayedOpen ? '' : 'picker resolved before the user answered');
-check('cancelling the chooser resolves', chooser.cancelled === 'resolved', chooser.cancelled);
-
 /* ------------------------------------------------------------------ speed */
 
 // Drive the effect directly rather than timing frames on the page: headless
@@ -280,6 +240,83 @@ await page.waitForTimeout(400);
 await page.screenshot({ path: path.join(OUT, 'landscape.png') });
 check('landscape lays out without overflow',
   await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+
+/* --------------------------------------------------------- ways to add art */
+// Last, because these change the active puzzle. Paste and drag-drop are the
+// routes that never open a native file picker — which is the one part of "add
+// a picture" that cannot be tested without a real OS gesture, and the part
+// that keeps shipping broken. They are what the user falls back to, so they
+// must be solid.
+
+await page.setViewportSize({ width: 393, height: 851 });
+await page.waitForTimeout(200);
+
+const pasteResult = await page.evaluate(async () => {
+  const cv = new OffscreenCanvas(300, 300);
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#e8d5a0'; ctx.fillRect(0, 0, 300, 300);
+  ctx.fillStyle = '#7a3b8c'; ctx.beginPath(); ctx.arc(150, 150, 90, 0, 7); ctx.fill();
+  const blob = await cv.convertToBlob({ type: 'image/png' });
+  const dt = new DataTransfer();
+  dt.items.add(new File([blob], 'pasted.png', { type: 'image/png' }));
+  window.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  for (let i = 0; i < 80; i++) {
+    await new Promise((r) => setTimeout(r, 100));
+    if (/Pasted/.test(document.getElementById('barSubtitle').textContent)) return 'added';
+  }
+  return document.getElementById('barSubtitle').textContent;
+});
+check('pasting an image adds it', pasteResult === 'added', pasteResult);
+
+const dropResult = await page.evaluate(async () => {
+  const cv = new OffscreenCanvas(300, 300);
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#a0d5e8'; ctx.fillRect(0, 0, 300, 300);
+  ctx.fillStyle = '#3b8c5a'; ctx.fillRect(60, 60, 180, 180);
+  const blob = await cv.convertToBlob({ type: 'image/png' });
+  const dt = new DataTransfer();
+  dt.items.add(new File([blob], 'dropped.png', { type: 'image/png' }));
+  window.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+  for (let i = 0; i < 80; i++) {
+    await new Promise((r) => setTimeout(r, 100));
+    if (/Dropped/.test(document.getElementById('barSubtitle').textContent)) return 'added';
+  }
+  return document.getElementById('barSubtitle').textContent;
+});
+check('dropping an image adds it', dropResult === 'added', dropResult);
+
+// The picker itself: a real chooser needs a user gesture, so click() is
+// stubbed and the events a chooser emits are dispatched instead. What matters
+// is that nothing resolves the picker early — finishing detaches the input,
+// which dismisses an open chooser, and a focus fallback used to do exactly that.
+const chooser = await page.evaluate(async (base) => {
+  const { pickImage } = await import(new URL('platform.js', base).href);
+  const real = HTMLInputElement.prototype.click;
+  HTMLInputElement.prototype.click = function noop() {};
+  try {
+    let settled = false;
+    const pending = pickImage().then((v) => { settled = true; return v; });
+    window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new Event('blur'));
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 1400));
+    const stayedOpen = !settled;
+    const input = document.querySelector('input[type=file]');
+    const detached = !input;
+    input?.dispatchEvent(new Event('cancel'));
+    const cancelled = await Promise.race([
+      pending.then(() => 'resolved'),
+      new Promise((r) => setTimeout(() => r('hung'), 2000)),
+    ]);
+    return { stayedOpen, detached, cancelled };
+  } finally {
+    HTMLInputElement.prototype.click = real;
+  }
+}, origin);
+check('chooser survives focus changes', chooser.stayedOpen && !chooser.detached,
+  chooser.detached ? 'input detached, which dismisses the dialog'
+    : chooser.stayedOpen ? '' : 'picker resolved before the user answered');
+check('cancelling the chooser resolves', chooser.cancelled === 'resolved', chooser.cancelled);
 
 await browser.close();
 server.close();

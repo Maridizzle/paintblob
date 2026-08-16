@@ -539,7 +539,7 @@ function buildAddRow(body) {
 
   const hint = document.createElement('div');
   hint.className = 'add-hint';
-  hint.textContent = 'or drop an image anywhere on the window';
+  hint.textContent = 'or drop an image on the window, or press Ctrl/Cmd+V to paste one';
 
   wrap.append(button, detail, hint);
   return wrap;
@@ -765,6 +765,23 @@ document.addEventListener('keydown', (e) => {
   grip.addEventListener('pointerup', stop);
   grip.addEventListener('pointercancel', stop);
 }
+
+// Paste an image straight in. No file chooser is involved, which matters:
+// the chooser is the one part of adding a picture that cannot be exercised
+// without a real user gesture, and so the one part that keeps shipping broken.
+window.addEventListener('paste', async (e) => {
+  const files = [...(e.clipboardData?.items ?? [])]
+    .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+    .map((item) => item.getAsFile())
+    .filter(Boolean)
+    .map((file, i) => ({
+      name: file.name ? file.name.replace(/\.[^.]+$/, '') : `pasted ${i + 1}`,
+      blob: file,
+    }));
+  if (!files.length) return;
+  e.preventDefault();
+  await runImport(files, $('panelBody'));
+});
 
 // Drop an image anywhere on the window to add it. dragenter/dragleave fire for
 // every child element the cursor crosses, so track depth rather than toggling
