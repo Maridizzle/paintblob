@@ -203,25 +203,12 @@ async function webPlatform() {
 /* ------------------------------------------------------------------ electron */
 
 function electronPlatform(bridge) {
-  return {
-    isDesktop: true,
-    ...bridge,
-
-    // Same input-based picker as the web build. An always-on-top window will
-    // happily sit in front of the file chooser, which reads as a freeze, so
-    // the pin is dropped for the duration and restored afterwards.
-    async pickImage() {
-      // Deliberately not awaited. A file chooser may only be opened from a
-      // user gesture, and awaiting an IPC round trip first puts the click on
-      // the far side of that gesture — the picker would simply refuse to open.
-      bridge.suspendAlwaysOnTop?.(true);
-      try {
-        return await pickImage();
-      } finally {
-        bridge.suspendAlwaysOnTop?.(false);
-      }
-    },
-  };
+  // Note: no HTML file input here. On Windows a `transparent` BrowserWindow
+  // crashes — natively, below JS — the moment the OS file dialog opens, and an
+  // <input type=file> triggers that same dialog owned by this window. The
+  // dialog is opened in the main process instead, parented to nothing, so it
+  // is never associated with the transparent window. See win:pick-image.
+  return { isDesktop: true, ...bridge };
 }
 
 /**
