@@ -6,6 +6,7 @@
 // pixels onward it is the exact same pipeline the CLI uses.
 
 import { buildPuzzle, DETAIL_PRESETS, slugify } from './pipeline/build.js';
+import { readZip } from './zip.js';
 
 // Cap the decode before the pipeline's own downscale. A 6000px phone photo
 // would otherwise cost a 36M-pixel box filter to reach the same 768px result.
@@ -123,6 +124,25 @@ async function toPixels(blob) {
   return result;
 }
 
+/**
+ * Encodes buildPuzzle's `preview` buffer down to a small JPEG data URI, so
+ * a player can later compare their painted cells against the real picture.
+ * Node has its own encoder (tools/lib/preview.mjs) — canvas is a browser-only
+ * API — so this half lives here rather than in the shared pipeline.
+ */
+async function encodeSourceImage(preview) {
+  const canvas = new OffscreenCanvas(preview.width, preview.height);
+  const ctx = canvas.getContext('2d');
+  ctx.putImageData(new ImageData(preview.data, preview.width, preview.height), 0, 0);
+  const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.82 });
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
 function uniqueId(base, taken) {
   const root = slugify(base);
   if (!taken.has(root)) return root;
@@ -141,11 +161,11 @@ function titleFrom(name) {
 }
 
 /**
- * @param {Array<{name: string, blob: Blob}>} files
+ * @param {Array<{name: string, blob: Blob, blind?: boolean}>} files
  * @param {object} o
  * @param {string} o.detail  key of DETAIL_PRESETS
  * @param {Set<string>} o.taken  ids already in use
- * @param {(name: string, index: number, total: number) => void} [o.onProgress]
+ * @param {(name: string, index: number, total: number, blind: boolean) => void} [o.onProgress]
  * @returns {Promise<{added: object[], failed: {name: string, reason: string}[]}>}
  */
 export async function importImages(files, { detail = 'normal', taken = new Set(), onProgress, api }) {
@@ -155,7 +175,7 @@ export async function importImages(files, { detail = 'normal', taken = new Set()
   const claimed = new Set(taken);
 
   for (const [index, file] of files.entries()) {
-    onProgress?.(file.name, index, files.length);
+    onProgress?.(file.name, index, files.length, !!file.blind);
     try {
       // Yield first so the progress label actually paints before the pipeline
       // takes over the main thread for a few hundred milliseconds.
@@ -165,9 +185,13 @@ export async function importImages(files, { detail = 'normal', taken = new Set()
       const puzzle = buildPuzzle(image.data, image.width, image.height, preset);
 
       if (!puzzle.cells.length) {
-        failed.push({ name: file.name, reason: 'no regions found in that image' });
+        failed.push({ name: file.name, blind: !!file.blind, reason: 'no regions found in that image' });
         continue;
       }
+
+      puzzle.sourceImage = await encodeSourceImage(puzzle.preview);
+      delete puzzle.preview;
+      if (file.blind) puzzle.blind = true;
 
       const id = uniqueId(file.name, claimed);
       claimed.add(id);
@@ -177,22 +201,51 @@ export async function importImages(files, { detail = 'normal', taken = new Set()
         colours: puzzle.palette.length,
         thumb: puzzle.palette.slice(0, 5).map((p) => p.hex),
         photoLike: puzzle.photoLike,
+        ...(file.blind ? { blind: true } : {}),
       };
 
       await api.savePuzzle({ id, title, puzzle, entry });
       added.push({ id, title, ...entry });
     } catch (err) {
-      failed.push({ name: file.name, reason: err.message });
+      failed.push({ name: file.name, blind: !!file.blind, reason: err.message });
     }
   }
 
   return { added, failed };
 }
 
-/** Pulls image files out of a drop event, ignoring anything else dragged in. */
-export function imagesFromDrop(event) {
+const IMAGE_RE = /\.(png|jpe?g|webp|gif|avif|bmp)$/i;
+const ZIP_TYPES = new Set(['application/zip', 'application/x-zip-compressed', 'application/x-zip']);
+const stripExt = (name) => name.replace(/\.[^.]+$/, '');
+
+/**
+ * Pulls image files out of a drop event, ignoring anything else dragged in.
+ * A .zip is unzipped first, and every image that comes out of it is flagged
+ * `blind: true` — dropping a pack is the deliberate way to get a picture
+ * without knowing what it is, so that has to survive from here all the way
+ * to the title staying hidden in the Pictures list until it is solved.
+ */
+export async function imagesFromDrop(event) {
   const files = [...(event.dataTransfer?.files ?? [])];
-  return files
-    .filter((f) => f.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|avif|bmp)$/i.test(f.name))
-    .map((f) => ({ name: f.name.replace(/\.[^.]+$/, ''), blob: f }));
+  const out = [];
+
+  for (const f of files) {
+    if (f.type.startsWith('image/') || IMAGE_RE.test(f.name)) {
+      out.push({ name: stripExt(f.name), blob: f });
+      continue;
+    }
+    if (ZIP_TYPES.has(f.type) || /\.zip$/i.test(f.name)) {
+      try {
+        const entries = await readZip(await f.arrayBuffer());
+        for (const entry of entries) {
+          if (!IMAGE_RE.test(entry.name)) continue;
+          out.push({ name: stripExt(entry.name), blob: entry.blob, blind: true });
+        }
+      } catch {
+        // Not a zip this reader can parse — ignored, the same as any other
+        // file type dropped that isn't a picture.
+      }
+    }
+  }
+  return out;
 }

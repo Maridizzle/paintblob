@@ -355,6 +355,23 @@ const pasteResult = await page.evaluate(async () => {
 });
 check('pasting an image adds it', pasteResult === 'added', pasteResult);
 
+// That paste was this session's first import, which unlocks an achievement.
+// Its toast is worth reading, so it waits for a click instead of fading on
+// the same short timer an ordinary status toast uses.
+const toastResult = await page.evaluate(async () => {
+  const toast = document.querySelector('#toasts .toast.sticky');
+  if (!toast) return { found: false };
+  await new Promise((r) => setTimeout(r, 4200)); // past the 3800ms ordinary-toast timeout
+  const survivedTimeout = document.body.contains(toast) && !toast.classList.contains('out');
+  toast.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 500));
+  const dismissedByClick = !document.body.contains(toast) || toast.classList.contains('out');
+  return { found: true, survivedTimeout, dismissedByClick };
+});
+check('achievement toast waits for a click instead of fading on its own',
+  toastResult.found && toastResult.survivedTimeout && toastResult.dismissedByClick,
+  JSON.stringify(toastResult));
+
 const dropResult = await page.evaluate(async () => {
   const cv = new OffscreenCanvas(300, 300);
   const ctx = cv.getContext('2d');
@@ -371,6 +388,92 @@ const dropResult = await page.evaluate(async () => {
   return document.getElementById('barSubtitle').textContent;
 });
 check('dropping an image adds it', dropResult === 'added', dropResult);
+
+// A .zip is the deliberate way to get a picture without knowing what it is
+// ahead of time — its filenames would spoil that as surely as a title would,
+// so both stay hidden in the list until the picture is solved.
+const zipResult = await page.evaluate(async () => {
+  function u16(v) { return [v & 0xff, (v >> 8) & 0xff]; }
+  function u32(v) { return [v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >>> 24) & 0xff]; }
+
+  // STORED (uncompressed) entries only — a plain JS builder needs no deflate
+  // step, and readZip's deflate path already has its own unit tests.
+  function buildZip(files) {
+    const chunks = [];
+    let at = 0;
+    const track = (arr) => { chunks.push(arr); at += arr.length; };
+    const enc = new TextEncoder();
+    const offsets = [];
+
+    for (const f of files) {
+      offsets.push(at);
+      const name = enc.encode(f.name);
+      track(Uint8Array.from([
+        ...u32(0x04034b50), ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0),
+        ...u32(0), ...u32(f.data.length), ...u32(f.data.length),
+        ...u16(name.length), ...u16(0),
+      ]));
+      track(name);
+      track(f.data);
+    }
+    const centralStart = at;
+    files.forEach((f, i) => {
+      const name = enc.encode(f.name);
+      track(Uint8Array.from([
+        ...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0),
+        ...u32(0), ...u32(f.data.length), ...u32(f.data.length),
+        ...u16(name.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0),
+        ...u32(offsets[i]),
+      ]));
+      track(name);
+    });
+    const centralSize = at - centralStart;
+    track(Uint8Array.from([
+      ...u32(0x06054b50), ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length),
+      ...u32(centralSize), ...u32(centralStart), ...u16(0),
+    ]));
+    const out = new Uint8Array(at);
+    let o = 0;
+    for (const c of chunks) { out.set(c, o); o += c.length; }
+    return out;
+  }
+
+  async function png(fill) {
+    const cv = new OffscreenCanvas(120, 120);
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = fill; ctx.fillRect(0, 0, 120, 120);
+    return new Uint8Array(await (await cv.convertToBlob({ type: 'image/png' })).arrayBuffer());
+  }
+
+  const zipBytes = buildZip([
+    { name: 'this-is-definitely-a-sunset.png', data: await png('#ff8844') },
+    { name: 'this-is-definitely-a-forest.png', data: await png('#2f7a3c') },
+  ]);
+
+  const dt = new DataTransfer();
+  dt.items.add(new File([zipBytes], 'mystery-pack.zip', { type: 'application/zip' }));
+  window.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+
+  for (let i = 0; i < 80; i++) {
+    await new Promise((r) => setTimeout(r, 100));
+    if (/Mystery picture/.test(document.getElementById('barSubtitle').textContent)) return 'added';
+  }
+  return document.getElementById('barSubtitle').textContent;
+});
+check('dropping a .zip imports its pictures blind', zipResult === 'added', zipResult);
+
+const mysteryRows = await page.evaluate(async () => {
+  document.querySelector('[data-act="pictures"]').click();
+  await new Promise((r) => setTimeout(r, 250));
+  const rows = [...document.querySelectorAll('#panelBody .row')]
+    .filter((r) => r.querySelector('.label')?.textContent === 'Mystery picture');
+  const swatchCounts = rows.map((r) => r.querySelectorAll('.swatches i').length);
+  document.querySelector('[data-act="panel-close"]')?.click();
+  return { count: rows.length, swatchCounts };
+});
+check('both mystery pictures are listed with hidden titles and no colour swatches',
+  mysteryRows.count >= 2 && mysteryRows.swatchCounts.every((n) => n === 0),
+  JSON.stringify(mysteryRows));
 
 // The picker itself: a real chooser needs a user gesture, so click() is
 // stubbed and the events a chooser emits are dispatched instead. What matters
@@ -404,6 +507,141 @@ check('chooser survives focus changes', chooser.stayedOpen && !chooser.detached,
   chooser.detached ? 'input detached, which dismisses the dialog'
     : chooser.stayedOpen ? '' : 'picker resolved before the user answered');
 check('cancelling the chooser resolves', chooser.cancelled === 'resolved', chooser.cancelled);
+
+/* --------------------------------------------------- finishing a picture */
+// Last of all, since it permanently marks Harbour Row done: fast-forward its
+// save to one cell short, reload to pick that up, then paint the last cell
+// for real, so finish() runs its actual code path rather than a shortcut.
+
+{
+  const cells = puzzle.cells;
+  let biggest = 0;
+  for (let i = 1; i < cells.length; i++) if (cells[i].a > cells[biggest].a) biggest = i;
+  const leftover = cells[biggest];
+  const almostDone = cells.map((_, i) => i).filter((i) => i !== biggest);
+
+  await page.evaluate(async ({ base, id, filled }) => {
+    const { createPlatform } = await import(new URL('platform.js', base).href);
+    const api = await createPlatform();
+    await api.writeSave({
+      progress: { [id]: { filled, done: false, seconds: 300 } },
+      // Paste/drop/zip above each switch to whatever they just added, so
+      // without this the reload below would reopen one of those instead —
+      // lastPuzzle is what boot() actually uses to decide.
+      settings: { lastPuzzle: id },
+    });
+  }, { base: origin, id: puzzle.id, filled: almostDone });
+
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForFunction(
+    (title) => document.getElementById('barSubtitle').textContent.startsWith(title),
+    busiest.title,
+    { timeout: 10000, polling: 100 },
+  );
+  const pickedUp = await page.evaluate(() => document.getElementById('barSubtitle').textContent);
+  check('the fast-forwarded save picks up right where it was left',
+    pickedUp === `${busiest.title} · ${cells.length - 1}/${cells.length}`, pickedUp);
+
+  const { ox: fOx, oy: fOy, scale: fScale } = await boardTransform();
+  await page.touchscreen.tap(fOx + leftover.x * fScale, fOy + leftover.y * fScale);
+
+  // The leftover cell is the single biggest in the picture, chosen for a
+  // reliably tappable target — but that also gives its burst the longest
+  // flood-fill of any cell, so wait for the actual state change rather than
+  // guessing a fixed delay. The moment it lands is what matters here: the
+  // finish card must not have covered the picture yet, only the much longer
+  // pause after it should do that.
+  const finished = await page.waitForFunction(
+    (title) => document.getElementById('barSubtitle').textContent === title,
+    busiest.title,
+    { timeout: 8000, polling: 100 },
+  ).then(() => true).catch(() => false);
+  const rightAfter = await page.evaluate(() => ({
+    subtitle: document.getElementById('barSubtitle').textContent,
+    finishHidden: document.getElementById('finish').classList.contains('hidden'),
+    comparePillHidden: document.getElementById('comparePill')?.classList.contains('hidden'),
+  }));
+  check('finishing the last cell is recognised', finished, rightAfter.subtitle);
+  check('the finish card waits before covering the finished picture',
+    rightAfter.finishHidden, JSON.stringify(rightAfter));
+  check('the compare-to-photo pill appears as soon as the picture is finished',
+    rightAfter.comparePillHidden === false, JSON.stringify(rightAfter));
+
+  // Two animations are still running right at this point, and sampling
+  // through either would compare their motion, not the toggle: the burst's
+  // own screen-shake nudges the *whole* base layer by a random offset every
+  // frame until it stops at DURATION (1180ms), and the outline/number fade
+  // (S.revealFrom, 850ms) keeps tinting boundary pixels as it eases out.
+  // Both start at essentially the same moment finish() does, so one wait
+  // past the longer of the two clears them both.
+  await page.waitForTimeout(1200);
+
+  // The pill must actually swap what is on the canvas, not just its own
+  // label. A single sampled pixel is not reliable — quantisation deliberately
+  // picks a flat cell colour close to the photo underneath it, so a lone
+  // point can coincidentally land somewhere the two nearly agree. A grid
+  // spread across the picture is robust to that: some of sixteen points
+  // landing near a cell edge or a gradient is as good as guaranteed. The
+  // square puzzle is letterboxed in this taller viewport, so the grid is
+  // built in picture space and mapped to canvas pixels the same way the
+  // renderer's own fit-to-window transform does — a naive fraction of the
+  // canvas's own width/height would land outside the picture entirely for
+  // some of these points, sampling empty margin instead.
+  const sample = () => page.evaluate(({ pw, ph }) => {
+    const canvas = document.getElementById('board');
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const scale = Math.min(rect.width / pw, rect.height / ph);
+    const offX = (rect.width - pw * scale) / 2;
+    const offY = (rect.height - ph * scale) / 2;
+    const out = [];
+    for (let gy = 1; gy <= 4; gy++) {
+      for (let gx = 1; gx <= 4; gx++) {
+        const d = ctx.getImageData(
+          Math.floor((offX + ((pw * gx) / 5) * scale) * dpr),
+          Math.floor((offY + ((ph * gy) / 5) * scale) * dpr),
+          1, 1,
+        ).data;
+        out.push(d[0], d[1], d[2]);
+      }
+    }
+    return out;
+  }, { pw: puzzle.width, ph: puzzle.height });
+  const totalDiff = (a, b) => a.reduce((sum, v, i) => sum + Math.abs(v - b[i]), 0);
+
+  const painting1 = await sample();
+  await page.click('#comparePill');
+  await page.waitForTimeout(150);
+  const photo = await sample();
+  await page.click('#comparePill');
+  await page.waitForTimeout(150);
+  const painting2 = await sample();
+
+  // Threshold well below what Harbour Row actually measures (113, and exactly
+  // repeatable — rendering is fully deterministic once the animations above
+  // have settled) but well above what identical, unswapped pixels would give
+  // (0): most sample points sit in the sky and water, which is exactly the
+  // kind of large flat area quantisation approximates most closely, so the
+  // real margin between "swapped" and "not" is much smaller here than it
+  // would be over a busier picture.
+  check('the compare pill swaps the canvas to the real photo',
+    totalDiff(painting1, photo) > 40, `total diff across 16 sample points: ${totalDiff(painting1, photo)}`);
+  check('toggling back returns to the painted picture',
+    totalDiff(painting1, painting2) < 10, `first ${painting1}, after round-trip ${painting2}`);
+
+  const modalAppeared = await page.waitForFunction(
+    () => !document.getElementById('finish').classList.contains('hidden'),
+    null, { timeout: 4000, polling: 100 },
+  ).then(() => true).catch(() => false);
+  check('the finish card appears once the pause is over', modalAppeared);
+
+  await page.click('.finish-close');
+  const closedByX = await page.evaluate(() => document.getElementById('finish').classList.contains('hidden'));
+  check("the finish card's close button dismisses it without leaving the picture", closedByX);
+
+  await page.screenshot({ path: path.join(OUT, 'finished-compare.png') });
+}
 
 await browser.close();
 server.close();

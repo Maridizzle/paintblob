@@ -62,19 +62,29 @@ function persist(immediate = false) {
 
 /* -------------------------------------------------------------------- toasts */
 
-function toast(def, reward = '') {
+/**
+ * @param {object} def  { icon, name, desc }
+ * @param {string} [reward]  e.g. "+2✦", appended to desc
+ * @param {object} o
+ * @param {boolean} [o.sticky]  an achievement is worth reading properly, so
+ *   it waits for a click rather than fading on its own timer like an
+ *   ordinary status toast does.
+ */
+function toast(def, reward = '', { sticky = false } = {}) {
   const el = document.createElement('div');
-  el.className = 'toast';
+  el.className = sticky ? 'toast sticky' : 'toast';
   el.innerHTML = `<span class="glyph"></span><span><span class="name"></span><br><span class="desc"></span></span>`;
   el.querySelector('.glyph').textContent = def.icon;
   el.querySelector('.name').textContent = def.name;
   el.querySelector('.desc').textContent = reward ? `${def.desc}  ${reward}` : def.desc;
   $('toasts').append(el);
 
-  setTimeout(() => {
+  const dismiss = () => {
     el.classList.add('out');
     setTimeout(() => el.remove(), 320);
-  }, 3800);
+  };
+  if (sticky) el.addEventListener('click', dismiss, { once: true });
+  else setTimeout(dismiss, 3800);
 
   // Stop the corner filling up during a burst of unlocks.
   const all = $('toasts').children;
@@ -127,9 +137,12 @@ function syncTubs() {
 
   const total = S.cells.length;
   $('progressFill').style.width = `${(S.filled.size / total) * 100}%`;
+  // A blind pack's title stays hidden in the bar too, or painting the
+  // picture would not be what gave it away.
+  const title = S.puzzle.blind && !S.finished ? 'Mystery picture' : S.puzzle.title;
   $('barSubtitle').textContent = S.finished
-    ? S.puzzle.title
-    : `${S.puzzle.title} · ${S.filled.size}/${total}`;
+    ? title
+    : `${title} · ${S.filled.size}/${total}`;
 }
 
 function syncHints() {
@@ -147,6 +160,16 @@ function syncZoom() {
   pill.classList.toggle('hidden', pct <= 100);
   pill.textContent = `${pct}%`;
   $('board').classList.toggle('zoomed', pct > 100);
+}
+
+/** The compare-to-photo pill only ever appears once a picture is finished —
+ *  and only if this one actually has a photo to compare against, which an
+ *  older save from before this feature existed will not. */
+function syncCompare() {
+  const pill = $('comparePill');
+  if (!pill) return;
+  pill.classList.toggle('hidden', !(S.finished && S.puzzle?.sourceImage));
+  pill.textContent = board.showSource ? '🎨 Painting' : '🖼 Photo';
 }
 
 function selectTub(i, fromUser = false) {
@@ -201,6 +224,7 @@ async function loadPuzzle(id) {
   buildTubs();
   board.layout();
   syncZoom(); // board.setPuzzle() already reset zoom for the new picture
+  syncCompare(); // ditto showSource
   if (!S.finished) nextTub();
 
   S.save.settings.lastPuzzle = id;
@@ -274,7 +298,7 @@ $('board').addEventListener('pointermove', (e) => {
 $('board').addEventListener('pointerleave', () => board.setHover(-1));
 
 $('board').addEventListener('pointerdown', (e) => {
-  if (e.button !== 0 || S.finished) return;
+  if (e.button !== 0) return; // zoom/pan still work once finished — tryPaint blocks the paint itself
   sfx.ensure();
   S.idleSinceBurst = false;
   // Not every pointer session honours capture (synthetic test events among
@@ -324,7 +348,7 @@ $('board').addEventListener('pointerup', endPointer);
 $('board').addEventListener('pointercancel', endPointer);
 
 $('board').addEventListener('wheel', (e) => {
-  if (!S.puzzle || S.finished) return;
+  if (!S.puzzle) return; // zoom still works once finished — painting is what tryPaint blocks
   e.preventDefault();
   // A little steep on purpose: this is a paint-by-number, not a map — a
   // couple of notches should get from fit-to-window to "that cell is huge".
@@ -447,14 +471,20 @@ function finish() {
     `${S.cells.length} cells · ${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, '0')}s` +
     `${streaks.wrongClicks === 0 ? ' · flawless' : ''}`;
 
-  // Let the reveal animation play out first. Guard against the player jumping
-  // to another picture in the meantime — the overlay would land on that one.
+  // A real pause on the finished picture before anything covers it — the
+  // 850ms outline fade (S.revealFrom above) is barely long enough to notice
+  // it happened, let alone look the picture over. The stats card can wait;
+  // it isn't going anywhere, and the ✕ on it backs right out to this same
+  // clear view whenever the player is done with it. Guard against the player
+  // jumping to another picture in the meantime — the overlay would land on
+  // that one.
   const finishing = S.puzzle.id;
   setTimeout(() => {
     if (S.puzzle?.id === finishing && S.finished) $('finish').classList.remove('hidden');
-  }, 900);
+  }, 2800);
   sfx.play('complete');
   syncTubs();
+  syncCompare();
   persist(true);
 }
 
@@ -606,20 +636,25 @@ function renderPictures(body) {
     const progress = S.save.progress[p.id];
     const done = progress?.done;
     const painted = progress?.filled?.length ?? 0;
+    // A blind pack drop is unsolved until you finish it — the title and the
+    // colours actually in it would both give the picture away early.
+    const hidden = p.blind && !done;
 
     const el = row(`clickable ${p.id === S.puzzle?.id ? 'current' : ''}`);
     const sw = document.createElement('div');
     sw.className = 'swatches';
-    for (const hex of p.thumb ?? []) {
-      const i = document.createElement('i');
-      i.style.background = hex;
-      sw.append(i);
+    if (!hidden) {
+      for (const hex of p.thumb ?? []) {
+        const i = document.createElement('i');
+        i.style.background = hex;
+        sw.append(i);
+      }
     }
 
     const text = document.createElement('div');
     text.className = 'grow';
     text.innerHTML = '<div class="label"></div><div class="sub"></div>';
-    text.querySelector('.label').textContent = p.title;
+    text.querySelector('.label').textContent = hidden ? 'Mystery picture' : p.title;
     text.querySelector('.sub').textContent = done
       ? `finished · ${p.cells} cells`
       : `${painted}/${p.cells} cells · ${p.colours} colours`;
@@ -634,7 +669,7 @@ function renderPictures(body) {
     if (p.imported) {
       const remove = document.createElement('button');
       remove.className = 'icon danger';
-      remove.title = `Remove ${p.title}`;
+      remove.title = `Remove ${hidden ? 'this mystery picture' : p.title}`;
       remove.textContent = '✕';
       remove.addEventListener('click', async (e) => {
         e.stopPropagation(); // the row itself loads the picture
@@ -705,7 +740,8 @@ function buildAddRow(body) {
 
   const hint = document.createElement('div');
   hint.className = 'add-hint';
-  hint.textContent = 'or drop an image on the window, or press Ctrl/Cmd+V to paste one';
+  hint.textContent =
+    'or drop an image on the window (a .zip of them for a surprise), or press Ctrl/Cmd+V to paste one';
 
   wrap.append(button, detail, hint);
   return wrap;
@@ -757,10 +793,13 @@ async function runImport(files, body) {
       api,
       detail: S.save.settings.detail ?? 'normal',
       taken: new Set(S.manifest.map((p) => p.id)),
-      onProgress: (name, i, total) => {
+      onProgress: (name, i, total, blind) => {
+        // A blind pack's filenames are as much a spoiler as its title —
+        // "Mapping sunset-over-mountains…" gives it away before it opens.
+        const label = blind ? 'a mystery picture' : name;
         status.textContent = total > 1
-          ? `Mapping ${name}…  (${i + 1} of ${total})`
-          : `Mapping ${name}…`;
+          ? `Mapping ${label}…  (${i + 1} of ${total})`
+          : `Mapping ${label}…`;
       },
     });
     S.manifest = await api.listPuzzles();
@@ -776,7 +815,11 @@ async function runImport(files, body) {
   for (const p of result.added) {
     S.save.stats.imported = (S.save.stats.imported ?? 0) + 1;
     if (p.photoLike) achievements.award('import-photo');
-    toast({
+    toast(p.blind ? {
+      icon: '🎁',
+      name: 'Added a mystery picture',
+      desc: `${p.cells} cells — finish it to find out what it is`,
+    } : {
       icon: '🖼️',
       name: `Added ${p.title}`,
       desc: `${p.cells} cells · ${p.colours} colours`,
@@ -784,7 +827,11 @@ async function runImport(files, body) {
   }
   if (result.added.length) achievements.sync(S.save.stats);
   for (const f of result.failed) {
-    toast({ icon: '⚠️', name: `Could not add ${f.name}`, desc: f.reason });
+    toast({
+      icon: '⚠️',
+      name: f.blind ? 'Could not add a mystery picture' : `Could not add ${f.name}`,
+      desc: f.reason,
+    });
   }
 
   if (result.added.length) {
@@ -936,14 +983,22 @@ document.addEventListener('click', async (e) => {
     }
     case 'hint': useHint(); break;
     case 'zoom-reset': board.resetZoom(); syncZoom(); ensureFrame(); break;
+    case 'toggle-source': board.setShowSource(!board.showSource); syncCompare(); ensureFrame(); break;
     case 'pictures': case 'trophies': case 'settings':
       if (S.panel === act) closePanel();
       else await openPanel(act);
       break;
     case 'panel-close': closePanel(); break;
     case 'next': $('finish').classList.add('hidden'); await nextPuzzle(); break;
+    case 'finish-dismiss': $('finish').classList.add('hidden'); break;
     default: break;
   }
+});
+
+// The finish card is a small island in a dark overlay — clicking the dark
+// part, same as the close button, dismisses it without leaving the picture.
+$('finish').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) $('finish').classList.add('hidden');
 });
 
 document.addEventListener('keydown', (e) => {
@@ -1013,7 +1068,7 @@ window.addEventListener('paste', async (e) => {
   window.addEventListener('drop', async (e) => {
     e.preventDefault();
     clear();
-    const files = imagesFromDrop(e);
+    const files = await imagesFromDrop(e);
     if (files.length) await runImport(files, $('panelBody'));
   });
 }
@@ -1067,7 +1122,7 @@ async function boot() {
     const reward = def.hint ?? 1;
     grantHints(S.save.stats, reward);
     syncHints();
-    toast(def, `+${reward}✦`);
+    toast(def, `+${reward}✦`, { sticky: true });
     sfx.play('achievement');
     persist();
   });

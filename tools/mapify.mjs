@@ -12,6 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { decodeImage } from './lib/decode.mjs';
+import { encodeSourceImage } from './lib/preview.mjs';
 import { buildPuzzle, DEFAULTS, DETAIL_PRESETS, slugify } from '../src/pipeline/build.js';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -70,8 +71,10 @@ export function manifestEntry(puzzle, { id, title }) {
 
 export function writePuzzle(puzzle, { id, title }) {
   fs.mkdirSync(PUZZLE_DIR, { recursive: true });
+  const { preview, ...rest } = puzzle;
+  const sourceImage = encodeSourceImage(preview);
   const out = path.join(PUZZLE_DIR, `${id}.json`);
-  fs.writeFileSync(out, JSON.stringify({ id, title, ...puzzle }));
+  fs.writeFileSync(out, JSON.stringify({ id, title, ...rest, sourceImage }));
   updateManifest(manifestEntry(puzzle, { id, title }));
   return out;
 }
