@@ -179,20 +179,104 @@ const target = puzzle.cells
 if (!target) throw new Error('no cell for the first tub');
 
 const stage = page.locator('#stage');
-
-// Nothing has painted yet — the first frame only runs when we step the clock.
-await page.evaluate(() => window.__clock.step(16));
-
-await page.mouse.move(ox + target.x * scale, oy + target.y * scale);
-await page.mouse.down();
-await page.mouse.up();
-
 const STEP = 16;
 const advance = async (ms) => {
   for (let done = 0; done < ms; done += STEP) {
     await page.evaluate((s) => window.__clock.step(s), Math.min(STEP, ms - done));
   }
 };
+
+// --- rapid double-click on one cell must not double-count it -------------
+// Regression check: clicking the same unfilled cell twice before the first
+// burst lands used to launch two bursts at it. Committing both decremented
+// the tub's remaining count twice for one visually-filled cell — eventually
+// driving it negative and stranding real cells of that colour with no way
+// to select their tub again.
+{
+  const tub0 = puzzle.cells.filter((c) => c.c === 0).sort((a, b) => b.a - a.a);
+  // Second-biggest of tub 1, not the biggest — the burst-effect walkthrough
+  // below needs that one still unpainted.
+  const rapidTarget = tub0[1] ?? puzzle.cells.find((c) => c.c !== 0);
+  if (!rapidTarget) throw new Error('no safe second cell found for the rapid-click test');
+
+  const tubCount = (i) => page.evaluate(
+    (idx) => Number(document.querySelectorAll('#tubs .tub')[idx].querySelector('.count').textContent),
+    i,
+  );
+  const countBefore = await tubCount(rapidTarget.c);
+
+  const rx = ox + rapidTarget.x * scale;
+  const ry = oy + rapidTarget.y * scale;
+  await page.evaluate(() => window.__clock.step(16)); // first frame only runs once stepped
+  await page.mouse.move(rx, ry);
+  await page.mouse.down();
+  await page.mouse.up();
+  await advance(200); // well inside the ~760ms before the first burst commits
+  await page.mouse.down(); // same spot: a second, still-in-flight click on the same cell
+  await page.mouse.up();
+  await advance(1400); // both bursts, if the bug is present, fully resolve
+
+  const countAfter = await tubCount(rapidTarget.c);
+  console.log(`rapid click: tub ${rapidTarget.c + 1} count ${countBefore} -> ${countAfter}`);
+  if (countAfter !== countBefore - 1) {
+    problems.push(
+      `rapid click on one cell changed its tub's count by ${countBefore - countAfter}, not 1 ` +
+      `(${countBefore} -> ${countAfter}) — the second click launched a duplicate burst`,
+    );
+  }
+}
+
+// --- zoom and pan ----------------------------------------------------------
+{
+  const zoomPill = () => page.evaluate(() => {
+    const el = document.getElementById('zoomPill');
+    return { text: el.textContent, hidden: el.classList.contains('hidden') };
+  });
+
+  const cx = ox + puzzle.width * scale * 0.5;
+  const cy = oy + puzzle.height * scale * 0.5;
+  await page.mouse.move(cx, cy);
+  await page.mouse.wheel(0, -600); // negative deltaY: zoom in, centred on the picture
+  await advance(50);
+  await stage.screenshot({ path: path.join(outDir, `${wanted}-zoomed-in.png`) });
+
+  const zoomed = await zoomPill();
+  console.log(`zoom: pill after wheel "${zoomed.text}" hidden=${zoomed.hidden}`);
+  if (zoomed.hidden || Number.parseInt(zoomed.text, 10) <= 100) {
+    problems.push(`wheel did not zoom in (pill: "${zoomed.text}", hidden=${zoomed.hidden})`);
+  }
+
+  // A drag past the threshold must pan, not paint — barSubtitle's fill count
+  // must be untouched by it.
+  const subtitleBefore = await page.evaluate(() => document.getElementById('barSubtitle').textContent);
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx - 60, cy - 40, { steps: 8 });
+  await page.mouse.up();
+  await advance(50);
+  await stage.screenshot({ path: path.join(outDir, `${wanted}-panned.png`) });
+  const subtitleAfter = await page.evaluate(() => document.getElementById('barSubtitle').textContent);
+  console.log(`pan: subtitle "${subtitleBefore}" -> "${subtitleAfter}"`);
+  if (subtitleAfter !== subtitleBefore) {
+    problems.push(
+      `a drag past the threshold painted a cell instead of panning ` +
+      `(subtitle "${subtitleBefore}" -> "${subtitleAfter}")`,
+    );
+  }
+
+  // The pill doubles as the reset button.
+  await page.click('#zoomPill');
+  await advance(50);
+  const reset = await zoomPill();
+  console.log(`zoom: pill after reset "${reset.text}" hidden=${reset.hidden}`);
+  if (!reset.hidden || reset.text !== '100%') {
+    problems.push(`zoom reset did not return to 100% (pill: "${reset.text}", hidden=${reset.hidden})`);
+  }
+}
+
+await page.mouse.move(ox + target.x * scale, oy + target.y * scale);
+await page.mouse.down();
+await page.mouse.up();
 
 const shots = [];
 let virtual = 0;

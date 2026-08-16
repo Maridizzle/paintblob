@@ -39,9 +39,10 @@ IndexedDB. Dragging the folder onto [Netlify Drop](https://app.netlify.com/drop)
 is the quickest way to get a URL.
 
 Touch is handled properly rather than tolerated: bigger tubs, no stranded
-hover outlines, no pinch-zoom fighting the canvas, safe-area insets for the
-notch, and a lower default blob density since phones have less GPU headroom.
-The window chrome disappears, having no window to manage.
+hover outlines, pinch-to-zoom instead of the browser's own zoom fighting the
+canvas, safe-area insets for the notch, and a lower default blob density
+since phones have less GPU headroom. The window chrome disappears, having no
+window to manage.
 
 `npm run check:web` runs the whole thing on a Pixel-sized viewport, taps a
 cell with a finger, then switches the network off and reloads to prove the
@@ -72,6 +73,12 @@ Pick a tub, click any cell carrying that number. Wrong colour gets a soft
 When a tub runs dry the next one is selected automatically. Progress, stats and
 achievements are saved to the Electron `userData` directory and survive
 restarts.
+
+Scroll wheel or two-finger pinch to zoom in on a picture, up to 6×; drag (or
+one-finger pan on a touchscreen) to move around once zoomed. A pill in the
+corner shows the current zoom level and doubles as the reset button. The same
+gestures work identically with a mouse and a fingertip — there is no
+touch-only mode to fall back to.
 
 The window is frameless, transparent and floats above other windows. Drag the
 title bar to move it, use the corner grip to resize, `◉` to unpin it from
@@ -194,7 +201,9 @@ brighter when it is the colour you are currently holding — so a picture can
 go past the point of legible numbers without any cell becoming
 unidentifiable. It is also what keeps `insane` playable past 250 cells. A tap
 that misses looks just around itself for a cell of the colour you are
-holding, with more slack for a fingertip than a mouse pointer.
+holding, with more slack for a fingertip than a mouse pointer. Zoom (above)
+is the third tool for the same problem — push in until a stripe-filled sliver
+is big enough to aim at properly.
 
 The generator wraps your subject in a style block asking for flat vector poster
 art with no gradients or texture. That matters more than the subject does:
