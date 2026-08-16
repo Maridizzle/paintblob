@@ -18,6 +18,18 @@ const MIN_SIZE = 380;
 // exactly what breaks on an Electron upgrade.
 const SMOKE = process.argv.includes('--smoke');
 
+// Windows never opens an OS file dialog, in any form. Opening one loads every
+// installed shell extension — cloud-drive overlays, antivirus hooks, archive
+// tools — into this process and enumerates the start folder, before the user
+// clicks anything; any of those can kill an unsigned process on the spot. It
+// crashed identically parented, parentless, and via Chromium's own chooser,
+// while the same imports through drag-and-drop and paste never crashed once.
+// That code is not ours and not patchable from JS, so on Windows it simply
+// never runs: the Add button guides to the dialog-free routes instead (see
+// showAddGuide in game.js). PAINTBLOB_NO_DIALOG forces this path on other
+// platforms so it can actually be tested end to end.
+const DIALOG_FREE = process.platform === 'win32' || !!process.env.PAINTBLOB_NO_DIALOG;
+
 function smokeOutputPath() {
   const next = process.argv[process.argv.indexOf('--smoke') + 1];
   if (next && !next.startsWith('--')) return path.resolve(next);
@@ -107,13 +119,14 @@ function createWindow() {
   const save = readSave();
   const restored = clampToDisplay(save.bounds);
 
-  // A transparent window on Windows crashes the process, natively, the moment
-  // it owns an OS file dialog — which is what broke "Add picture". The user
-  // asked for a *frameless* window; the see-through corners were an addition,
-  // so on Windows the window is opaque (still frameless, still floating) and
-  // the crash trigger is gone entirely. macOS and Linux keep the transparency,
-  // where it is stable. PAINTBLOB_OPAQUE forces the opaque path for testing.
-  const transparent = process.platform !== 'win32' && !process.env.PAINTBLOB_OPAQUE;
+  // Glass everywhere again. 0.5.4 went opaque on Windows blaming transparency
+  // for the file-dialog crash, but the crash tracked the dialog through every
+  // variant while identical imports through this same window via drag/paste
+  // never died — the dialog machinery itself was the poisoned piece. Windows
+  // no longer opens one at all (see DIALOG_FREE), so there is nothing left
+  // for the transparency to collide with. PAINTBLOB_OPAQUE stays as an
+  // escape hatch if a specific machine misbehaves.
+  const transparent = !process.env.PAINTBLOB_OPAQUE;
 
   win = new BrowserWindow({
     width: restored?.width ?? 720,
@@ -294,6 +307,42 @@ async function runSmokeTest(target) {
       errors.push(`add-a-picture wiring missing: ${JSON.stringify(wiring)}`);
     }
 
+    if (DIALOG_FREE) {
+      // The Windows path, end to end: clicking Add must open the guide (and
+      // never a dialog), and the guide must dismiss on click. This is the code
+      // path Windows users actually run, exercised for real — unlike the OS
+      // dialog, nothing in it needs a human at a real desktop.
+      const shown = await target.webContents.executeJavaScript(`(async () => {
+        document.querySelector('[data-act="pictures"]').click();
+        await new Promise((r) => setTimeout(r, 300));
+        document.querySelector('.primary.add').click();
+        await new Promise((r) => setTimeout(r, 500));
+        return !!document.querySelector('.drop-hint.guide');
+      })()`);
+
+      // Capture while the guide is up, so what a Windows user sees when they
+      // press the button is a reviewable image rather than a description.
+      const guideShot = await target.webContents.capturePage();
+      fs.mkdirSync(path.dirname(smokeOutputPath()), { recursive: true });
+      fs.writeFileSync(
+        path.join(path.dirname(smokeOutputPath()), 'guide.png'),
+        guideShot.toPNG(),
+      );
+
+      const dismissed = await target.webContents.executeJavaScript(`(async () => {
+        document.getElementById('drop').click();
+        await new Promise((r) => setTimeout(r, 200));
+        const gone = !document.querySelector('.drop-hint.guide');
+        document.querySelector('[data-act="panel-close"]')?.click();
+        return gone;
+      })()`);
+      const guide = { shown, dismissed };
+      console.log(`smoke: dialog-free guide shown=${guide.shown} dismissed=${guide.dismissed}`);
+      if (!guide.shown || !guide.dismissed) {
+        errors.push(`dialog-free guide misbehaved: ${JSON.stringify(guide)}`);
+      }
+    }
+
     const image = await target.webContents.capturePage();
     const out = smokeOutputPath();
     fs.mkdirSync(path.dirname(out), { recursive: true });
@@ -393,6 +442,10 @@ const MAX_IMAGE_BYTES = 64 * 1024 * 1024;
 // parentless dialog is a standalone top-level OS window owned by nothing, so
 // the transparent window is never in the picture.
 ipcMain.handle('win:pick-image', async () => {
+  // The dialog-free platforms get a sentinel instead of a dialog; the renderer
+  // responds by showing the drag/paste guide. See DIALOG_FREE above for why.
+  if (DIALOG_FREE) return { dialogFree: true };
+
   // Drop always-on-top while the dialog is up, or the floating window sits in
   // front of it. Restored in the finally. This is a plain main-process call,
   // so there is no user-gesture timing to get wrong.

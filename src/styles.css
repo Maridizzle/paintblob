@@ -425,6 +425,18 @@ button {
 }
 #app.dropping .drop-hint { display: grid; }
 
+/* Guide mode (the Add button on dialog-free platforms): the same overlay, but
+   it must accept the dismissing click, so pointer-events comes back on. */
+.drop-hint.guide {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.drop-hint.guide span {
+  max-width: 34ch;
+  text-align: center;
+  line-height: 1.5;
+}
+
 .drop-hint span {
   font-size: 14px;
   font-weight: 650;

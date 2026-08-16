@@ -110,8 +110,16 @@ inside the cell it labels.
 ## Adding pictures
 
 Open the Pictures panel (`▦`) and hit **Add picture**, or just drag an image
-onto the window. It maps and opens straight away. **Chunky / Normal /
-Detailed** controls how many cells you get.
+onto the window, or press **Ctrl/Cmd+V** to paste one. It maps and opens
+straight away. **Chunky / Normal / Detailed** controls how many cells you get.
+
+On Windows the Add button never opens the OS file dialog: opening one loads
+every installed shell extension into the process before the first click, and
+that machinery was crashing the app outright — through the native dialog and
+Chromium's own chooser alike. The button instead points you at drag-and-drop
+and paste, which share the whole import pipeline and no native dialog. The
+dialog-free path is forced on other platforms with `PAINTBLOB_NO_DIALOG=1`,
+which is how CI keeps it tested.
 
 Because the decoding is Chromium's, this path takes anything the browser can
 display — PNG, JPEG, WebP, AVIF, GIF, BMP. Imported pictures are written to

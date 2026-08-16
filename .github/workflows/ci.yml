@@ -31,6 +31,14 @@ jobs:
       - name: Smoke test the app
         run: xvfb-run -a --server-args="-screen 0 800x900x24" npm run smoke -- --no-sandbox
 
+      # The same smoke on the Windows-shaped path: the Add button must open the
+      # drag/paste guide and never an OS dialog. Forced on via the env switch
+      # so the path Windows users actually run stays guarded from Linux CI.
+      - name: Smoke test the dialog-free path
+        run: xvfb-run -a --server-args="-screen 0 800x900x24" npm run smoke -- --no-sandbox
+        env:
+          PAINTBLOB_NO_DIALOG: 1
+
       # The Android/PWA build: taps a cell with a finger on a phone-sized
       # viewport, then kills the network and reloads to prove the service
       # worker actually makes it work offline.
