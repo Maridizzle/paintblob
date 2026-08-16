@@ -100,7 +100,7 @@ async function main() {
   const src = opts._[0];
   if (!src) {
     console.error('usage: node tools/mapify.mjs <image> [--id slug] [--title "Name"]');
-    console.error('       [--detail chunky|normal|detailed]');
+    console.error('       [--detail chunky|normal|detailed|insane]');
     console.error('       [--size 768] [--colours 14] [--cells 64] [--min-area 0.0016]');
     console.error('accepts PNG or JPEG');
     process.exit(1);

@@ -111,7 +111,9 @@ inside the cell it labels.
 
 Open the Pictures panel (`▦`) and hit **Add picture**, or just drag an image
 onto the window, or press **Ctrl/Cmd+V** to paste one. It maps and opens
-straight away. **Chunky / Normal / Detailed** controls how many cells you get.
+straight away. **Chunky / Normal / Detailed** controls how many cells you get,
+and **Insane** goes further still — past the point where every cell fits a
+number.
 
 On Windows the Add button never opens the OS file dialog: opening one loads
 every installed shell extension into the process before the first click, and
@@ -168,7 +170,8 @@ when the dark run *ends* before ~12% of the way in. Darkness alone cannot tell
 a shadow from a night sky; a border is a thin band, artwork carries on into
 the picture.
 
-Useful knobs on the CLI (`--detail chunky|normal|detailed` sets all of them):
+Useful knobs on the CLI (`--detail chunky|normal|detailed|insane` sets all of
+them):
 
 | flag | default | effect |
 |---|---|---|
@@ -177,16 +180,21 @@ Useful knobs on the CLI (`--detail chunky|normal|detailed` sets all of them):
 | `--min-area` | 0.0016 | smallest cell, as a fraction of the picture |
 | `--size` | 768 | working resolution on the long side |
 
-Bigger `--min-area` gives chunkier cells; smaller gives more of them. The three
-presets land around 30 / 70 / 130 cells on artwork with enough in it — the
-demo `Harbour Row` is the one built to show the top end. The ceiling is
-legibility rather than the pipeline: much past 150 and you are hunting slivers
-rather than painting.
+Bigger `--min-area` gives chunkier cells; smaller gives more of them. `chunky`
+/ `normal` / `detailed` land around 30 / 70 / 130 cells on artwork with enough
+in it — the demo `Harbour Row` is the one built to show the top end of that
+range, and the ceiling there is legibility rather than the pipeline: much past
+150 and you are hunting slivers rather than painting. `insane` throws that
+ceiling out on purpose, up past 250 cells — see below for what keeps a cell
+that small paintable.
 
-Cells too small for a number are still paintable — selecting a tub washes
-every cell that takes it — and a tap that misses looks just around itself for
-a cell of the colour you are holding, with more slack for a fingertip than a
-mouse pointer.
+Cells too small for a number are still paintable. Below a certain size the
+number is dropped for a diagonal stripe in the cell's own colour instead —
+brighter when it is the colour you are currently holding — so a picture can
+go past the point of legible numbers without any cell becoming
+unidentifiable. It is also what keeps `insane` playable past 250 cells. A tap
+that misses looks just around itself for a cell of the colour you are
+holding, with more slack for a fingertip than a mouse pointer.
 
 The generator wraps your subject in a style block asking for flat vector poster
 art with no gradients or texture. That matters more than the subject does:

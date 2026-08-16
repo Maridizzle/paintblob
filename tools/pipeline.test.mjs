@@ -11,7 +11,7 @@ import {
 import { labelRegions, mergeSmallRegions, labelAnchor } from '../src/pipeline/regions.js';
 import { boundsOf, traceRegion, ringsToPath } from '../src/pipeline/contour.js';
 import { nameColour, toHex, uniquifyNames } from '../src/pipeline/colour-names.js';
-import { buildPuzzle } from '../src/pipeline/build.js';
+import { buildPuzzle, DETAIL_PRESETS } from '../src/pipeline/build.js';
 import { parsePath, pointInRings, ringsBounds } from '../src/geometry.js';
 
 const W = 64;
@@ -178,6 +178,51 @@ test('buildPuzzle tiles the picture with no gaps and no overlaps', () => {
   const usage = puzzle.palette.map(() => 0);
   for (const cell of puzzle.cells) usage[cell.c]++;
   assert.deepEqual(usage, [...usage].sort((a, b) => b - a), 'palette should be ordered by usage');
+});
+
+test('insane preset yields substantially more cells than detailed on a busy image, with the same tiling guarantee', () => {
+  // A grid of small blocks, each independently coloured by a deterministic
+  // PRNG. Two more obvious constructions both turn out pathological for a
+  // 4-connectivity pipeline: a *periodic* mosaic lets same-colour blocks
+  // chain into a handful of giant sprawling regions (bounding boxes tens of
+  // times their pixel count), and isolated dots on one flat background force
+  // every merge in Pass 2 to share that one background as a neighbour,
+  // leaving it riddled with hundreds of holes. Random-but-contiguous blocks
+  // avoid both: clusters stay small (well under the site-percolation
+  // threshold at 6 colours), so regions end up with varied neighbours —
+  // which is also what actually forces both presets to trim via maxCells.
+  const W = 300;
+  const H = 300;
+  const block = 8; // block area (64px) clears the pipeline's 48px minimum-cell floor
+  const palette = [RED, BLUE, CREAM, [30, 140, 90], [200, 120, 20], [120, 40, 160]];
+  const cols = Math.ceil(W / block);
+  const rows = Math.ceil(H / block);
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const blockColour = Array.from({ length: cols * rows }, () => palette[Math.floor(rnd() * palette.length)]);
+  const data = image(W, H, (x, y) => blockColour[Math.floor(y / block) * cols + Math.floor(x / block)]);
+
+  const detailedPuzzle = buildPuzzle(data, W, H, { ...DETAIL_PRESETS.detailed, size: W });
+  const insanePuzzle = buildPuzzle(data, W, H, { ...DETAIL_PRESETS.insane, size: W });
+
+  assert.ok(
+    insanePuzzle.cells.length > detailedPuzzle.cells.length,
+    `insane (${insanePuzzle.cells.length} cells) should exceed detailed (${detailedPuzzle.cells.length})`,
+  );
+
+  // Same tiling guarantee the ordinary buildPuzzle test checks: no gaps, no
+  // overlaps, even on a picture dense enough to need the stripe fallback.
+  const coverage = new Uint8Array(insanePuzzle.width * insanePuzzle.height);
+  for (const cell of insanePuzzle.cells) {
+    const rings = parsePath(cell.d);
+    const b = ringsBounds(rings);
+    for (let y = Math.floor(b.y0); y < Math.ceil(b.y1); y++) {
+      for (let x = Math.floor(b.x0); x < Math.ceil(b.x1); x++) {
+        if (pointInRings(rings, x + 0.5, y + 0.5)) coverage[y * insanePuzzle.width + x]++;
+      }
+    }
+  }
+  assert.ok([...coverage].every((c) => c === 1), 'every pixel belongs to exactly one cell');
 });
 
 test('colour names are readable and unique within a puzzle', () => {

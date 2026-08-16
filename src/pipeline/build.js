@@ -31,14 +31,25 @@ export const DEFAULTS = {
 /**
  * Named presets for the in-app importer, which has no room for flags.
  *
- * The ceiling on all of these is legibility, not the pipeline: much past 150
- * cells the numbers stop fitting and you are hunting for slivers rather than
- * painting. `normal` is deliberately only a step up from where it was.
+ * The ceiling on chunky/normal/detailed is legibility, not the pipeline:
+ * much past 150 cells the numbers stop fitting and you are hunting for
+ * slivers rather than painting. `normal` is deliberately only a step up
+ * from where it was.
+ *
+ * `insane` deliberately blows past that ceiling. A picture this fine has
+ * cells too small for their number, so the renderer paints those as a
+ * diagonal stripe of their own colour instead (see stripePattern in
+ * render.js) — that is what keeps it paintable rather than illegible. The
+ * bump to `size` matters more than usual here: working resolution is the
+ * floor on how fine a shape survives tracing at all.
  */
 export const DETAIL_PRESETS = {
   chunky: { maxColours: 11, maxCells: 38, minAreaFrac: 0.0035 },
   normal: { maxColours: 16, maxCells: 90, minAreaFrac: 0.0011 },
   detailed: { maxColours: 18, maxCells: 150, minAreaFrac: 0.00045 },
+  insane: {
+    maxColours: 20, maxCells: 280, minAreaFrac: 0.0002, size: 1200,
+  },
 };
 
 /**

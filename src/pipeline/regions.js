@@ -82,6 +82,58 @@ function buildAdjacency(labels, width, height, count) {
 }
 
 /**
+ * Binary min-heap keyed by area, with lazy deletion: a merge only ever grows
+ * the survivor's area, so instead of touching old entries it pushes a fresh
+ * one and lets pop() discard anything stale by checking against the current
+ * area. Cutting a high `maxCells` down from a few thousand raw regions —
+ * what `insane` detail routinely does — means thousands of "find the
+ * smallest survivor" queries; a heap keeps that O(n log n) instead of the
+ * O(n) rescan a naive loop would need for every single one.
+ */
+class AreaHeap {
+  constructor() {
+    this.items = [];
+  }
+
+  get size() {
+    return this.items.length;
+  }
+
+  push(area, index) {
+    const h = this.items;
+    h.push([area, index]);
+    let i = h.length - 1;
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (h[parent][0] <= h[i][0]) break;
+      [h[parent], h[i]] = [h[i], h[parent]];
+      i = parent;
+    }
+  }
+
+  pop() {
+    const h = this.items;
+    const top = h[0];
+    const last = h.pop();
+    if (h.length) {
+      h[0] = last;
+      let i = 0;
+      for (;;) {
+        const l = i * 2 + 1;
+        const r = i * 2 + 2;
+        let smallest = i;
+        if (l < h.length && h[l][0] < h[smallest][0]) smallest = l;
+        if (r < h.length && h[r][0] < h[smallest][0]) smallest = r;
+        if (smallest === i) break;
+        [h[smallest], h[i]] = [h[i], h[smallest]];
+        i = smallest;
+      }
+    }
+    return top;
+  }
+}
+
+/**
  * Absorbs undersized regions into neighbours until every surviving cell is at
  * least `minArea` pixels and there are no more than `maxCells` of them.
  */
@@ -170,17 +222,26 @@ export function mergeSmallRegions(labelling, width, height, { minArea, maxCells 
     if (!merged) break;
   }
 
-  // Pass 2: enforce the cell budget by eating the smallest survivors.
-  while (live > maxCells) {
-    let smallest = -1;
+  // Pass 2: enforce the cell budget by eating the smallest survivors, always
+  // the current global smallest first — same rule as a naive rescan, just
+  // found via the heap above instead of by scanning every survivor each time.
+  if (live > maxCells) {
+    const heap = new AreaHeap();
+    const freshest = new Int32Array(count).fill(-1); // latest area pushed per root
     for (let i = 0; i < count; i++) {
       if (find(i) !== i) continue;
-      if (smallest < 0 || area[i] < area[smallest]) smallest = i;
+      heap.push(area[i], i);
+      freshest[i] = area[i];
     }
-    if (smallest < 0) break;
-    const target = bestNeighbour(smallest);
-    if (target < 0) break;
-    union(smallest, target);
+    while (live > maxCells && heap.size) {
+      const [a, i] = heap.pop();
+      if (find(i) !== i || a !== freshest[i]) continue; // stale: merged, or since grown
+      const target = bestNeighbour(i);
+      if (target < 0) continue;
+      union(i, target);
+      freshest[target] = area[target];
+      heap.push(area[target], target);
+    }
   }
 
   // Compact into a dense 0..n-1 labelling, ordered largest first.
