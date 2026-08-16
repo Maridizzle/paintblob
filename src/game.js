@@ -2,6 +2,7 @@ import { Board } from './render.js';
 import { Burst, audioCue } from './paint-fx.js';
 import { Sfx } from './audio.js';
 import { Achievements, StreakTracker } from './achievements.js';
+import { accruePassiveHint, grantHints, spendHint, pickHintTarget } from './hints.js';
 import { prepareCells, cellAt, cellNear } from './geometry.js';
 import { importImages, imagesFromDrop } from './import.js';
 import { createPlatform } from './platform.js';
@@ -30,6 +31,7 @@ const S = {
   idleSinceBurst: true,
   panel: null,
   importing: false,
+  hintsThisPuzzle: 0,
 };
 
 /* ---------------------------------------------------------------- persistence */
@@ -59,13 +61,13 @@ function persist(immediate = false) {
 
 /* -------------------------------------------------------------------- toasts */
 
-function toast(def) {
+function toast(def, reward = '') {
   const el = document.createElement('div');
   el.className = 'toast';
   el.innerHTML = `<span class="glyph"></span><span><span class="name"></span><br><span class="desc"></span></span>`;
   el.querySelector('.glyph').textContent = def.icon;
   el.querySelector('.name').textContent = def.name;
-  el.querySelector('.desc').textContent = def.desc;
+  el.querySelector('.desc').textContent = reward ? `${def.desc}  ${reward}` : def.desc;
   $('toasts').append(el);
 
   setTimeout(() => {
@@ -129,6 +131,14 @@ function syncTubs() {
     : `${S.puzzle.title} · ${S.filled.size}/${total}`;
 }
 
+function syncHints() {
+  const btn = document.querySelector('[data-act="hint"]');
+  if (!btn) return;
+  const n = S.save.stats.hints ?? 0;
+  btn.querySelector('.badge').textContent = String(n);
+  btn.classList.toggle('empty', n <= 0);
+}
+
 function selectTub(i, fromUser = false) {
   if (i < 0 || i >= S.puzzle.palette.length) return;
   if (S.remaining[i] === 0 || i === S.selected) return;
@@ -166,6 +176,7 @@ async function loadPuzzle(id) {
   S.bursts = [];
   S.selected = -1;
   S.revealFrom = S.finished ? 0 : -1;
+  S.hintsThisPuzzle = 0;
 
   S.remaining = puzzle.palette.map(() => 0);
   for (const cell of S.cells) if (!S.filled.has(cell.id)) S.remaining[cell.colour]++;
@@ -216,9 +227,9 @@ $('board').addEventListener('pointerdown', (e) => {
     sfx.play('nope');
     streaks.wrong();
     const tub = $('tubs').children[cell.colour];
-    tub?.classList.remove('hint');
+    tub?.classList.remove('nudge');
     void tub?.offsetWidth; // restart the animation
-    tub?.classList.add('hint');
+    tub?.classList.add('nudge');
     return;
   }
 
@@ -274,6 +285,10 @@ function commitFill(burst) {
 
   S.save.stats.cells++;
   if (!sfx.enabled) S.save.stats.mutedCells = (S.save.stats.mutedCells || 0) + 1;
+  if (accruePassiveHint(S.save.stats)) {
+    sfx.play('bank');
+    syncHints();
+  }
 
   for (const id of streaks.fill(Date.now())) achievements.award(id);
   achievements.sync(S.save.stats);
@@ -297,6 +312,9 @@ function finish() {
   S.save.stats.puzzles++;
   if (streaks.wrongClicks === 0) achievements.award('flawless');
   if (S.elapsedMs < 90_000) achievements.award('speedrun');
+  if (S.hintsThisPuzzle === 0) achievements.award('unassisted');
+  if (S.cells.length >= 100) achievements.award('fine-print');
+  if (S.cells.length < 12) achievements.award('minimalist');
   achievements.sync(S.save.stats);
 
   const secs = Math.round(S.elapsedMs / 1000);
@@ -323,6 +341,22 @@ async function nextPuzzle() {
   const unfinished = order.find((id, i) =>
     i !== start && !(S.save.progress[id]?.done));
   await loadPuzzle(unfinished ?? order[(start + 1) % order.length]);
+}
+
+function useHint() {
+  if (S.finished || !S.puzzle) return;
+  if (!spendHint(S.save.stats)) {
+    sfx.play('nope');
+    return;
+  }
+  const target = pickHintTarget(S.cells, S.filled, S.selected);
+  S.hintsThisPuzzle++;
+  board.showHint(target.id, performance.now());
+  sfx.play('hint');
+  achievements.sync(S.save.stats);
+  syncHints();
+  persist();
+  ensureFrame();
 }
 
 /* --------------------------------------------------------------------- loop */
@@ -385,7 +419,7 @@ function frame(now) {
   }
 
   // Full rate while anything is moving, a lazy 30fps for the idle pulse.
-  const busy = S.bursts.length > 0 || S.revealFrom > 0;
+  const busy = S.bursts.length > 0 || S.revealFrom > 0 || board.hintTarget;
   if (busy || now - lastDraw > 33) {
     lastDraw = now;
     board.draw(S.bursts, now);
@@ -615,12 +649,15 @@ async function runImport(files, body) {
   }
 
   for (const p of result.added) {
+    S.save.stats.imported = (S.save.stats.imported ?? 0) + 1;
+    if (p.photoLike) achievements.award('import-photo');
     toast({
       icon: '🖼️',
       name: `Added ${p.title}`,
       desc: `${p.cells} cells · ${p.colours} colours`,
     });
   }
+  if (result.added.length) achievements.sync(S.save.stats);
   for (const f of result.failed) {
     toast({ icon: '⚠️', name: `Could not add ${f.name}`, desc: f.reason });
   }
@@ -642,7 +679,8 @@ function renderTrophies(body) {
   head.className = 'empty';
   head.style.padding = '2px 4px 8px';
   head.textContent = `${earned} of ${list.length} unlocked · ` +
-    `${S.save.stats.cells.toLocaleString()} cells painted`;
+    `${S.save.stats.cells.toLocaleString()} cells painted · ` +
+    `${(S.save.stats.hints ?? 0).toLocaleString()}✦ in hand`;
   body.append(head);
 
   for (const a of list) {
@@ -670,6 +708,12 @@ function renderTrophies(body) {
     }
 
     el.append(glyph, text);
+
+    const reward = document.createElement('span');
+    reward.className = 'reward';
+    reward.textContent = `+${a.hint ?? 1}✦`;
+    el.append(reward);
+
     body.append(el);
   }
 }
@@ -762,8 +806,10 @@ document.addEventListener('click', async (e) => {
     case 'pin': {
       const on = await api.toggleAlwaysOnTop();
       button.classList.toggle('on', on);
+      achievements.award('free-spirit');
       break;
     }
+    case 'hint': useHint(); break;
     case 'pictures': case 'trophies': case 'settings':
       if (S.panel === act) closePanel();
       else await openPanel(act);
@@ -871,22 +917,40 @@ async function boot() {
   S.save.settings.speed ??= 1;
   S.save.stats.mutedCells ??= 0;
   S.save.stats.patientLandings ??= 0;
+  S.save.stats.hints ??= 0;
+  S.save.stats.hintsEarned ??= 0;
+  S.save.stats.hintsUsed ??= 0;
+  S.save.stats.imported ??= 0;
+  S.save.stats.daysVisited ??= 0;
   S.save.settings.detail ??= 'normal';
   // Phones have far less GPU headroom than a laptop, and the burst is the most
   // expensive thing here. Start them lighter; the slider still goes to 1.6.
   S.save.settings.density ??= matchMedia('(pointer: coarse)').matches ? 0.7 : 1;
 
+  // Counts distinct calendar days the app has been opened on, not a strict
+  // login streak — missing a day should not cost you a ladder you were on.
+  const today = new Date().toDateString();
+  if (S.save.stats.lastVisitDay !== today) {
+    S.save.stats.lastVisitDay = today;
+    S.save.stats.daysVisited++;
+  }
+
   sfx = new Sfx({ enabled: S.save.settings.sound !== false, volume: S.save.settings.volume ?? 0.7 });
   achievements = new Achievements(S.save.unlocked);
   achievements.onUnlock((def) => {
-    toast(def);
+    const reward = def.hint ?? 1;
+    grantHints(S.save.stats, reward);
+    syncHints();
+    toast(def, `+${reward}✦`);
     sfx.play('achievement');
     persist();
   });
+  achievements.sync(S.save.stats);
 
   document.querySelector('[data-act="pin"]')
     ?.classList.toggle('on', S.save.settings.alwaysOnTop !== false);
   syncSoundIcon();
+  syncHints();
 
   S.manifest = await api.listPuzzles();
   ro.observe($('stage'));

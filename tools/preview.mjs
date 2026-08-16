@@ -119,7 +119,10 @@ await page.addInitScript((data) => {
   const save = {
     version: 1,
     progress: {},
-    stats: { blobs: 0, cells: 0, puzzles: 0, colourSwitches: 0, seconds: 0, undos: 0, mutedCells: 0 },
+    stats: {
+      blobs: 0, cells: 0, puzzles: 0, colourSwitches: 0, seconds: 0, undos: 0, mutedCells: 0,
+      hints: 3, hintsEarned: 3, hintsUsed: 0, imported: 0, daysVisited: 1,
+    },
     unlocked: [],
     settings: { sound: false, volume: 0, alwaysOnTop: true, speed: data.speed, density: 1 },
     bounds: null,
@@ -215,6 +218,37 @@ if (second) {
 
 await advance(BURST_MS / speed);
 await stage.screenshot({ path: path.join(outDir, `${wanted}-settled.png`) });
+
+// Spend a hint and screenshot the ping-then-pulse timeline, so a change to
+// the flash's shape or timing shows up here instead of only in play. The
+// balance is read before and after rather than asserted from the seed value,
+// because painting cells above may itself have banked one or more — blob-1
+// alone hands back a hint the instant the first cell lands.
+const hintBefore = await page.evaluate(() =>
+  document.querySelector('[data-act="hint"] .badge').textContent);
+await page.click('[data-act="hint"]');
+await page.evaluate(() => window.__clock.step(16));
+await stage.screenshot({ path: path.join(outDir, `${wanted}-hint-ping.png`) });
+await advance(650);
+await stage.screenshot({ path: path.join(outDir, `${wanted}-hint-pulse.png`) });
+await advance(650);
+await stage.screenshot({ path: path.join(outDir, `${wanted}-hint-fade.png`) });
+await advance(300); // past the 1600ms flash duration; it should be cleared by now
+await stage.screenshot({ path: path.join(outDir, `${wanted}-hint-cleared.png`) });
+
+const hintAfter = await page.evaluate(() =>
+  document.querySelector('[data-act="hint"] .badge').textContent);
+console.log(`hint: badge ${hintBefore} -> ${hintAfter} after spending one`);
+if (Number(hintAfter) !== Number(hintBefore) - 1) {
+  problems.push(`hint spend did not decrement the balance by exactly one (${hintBefore} -> ${hintAfter})`);
+}
+
+// The achievements panel, so the new reward badges and hint tally get eyes on
+// them in the same pass as everything else.
+await page.click('[data-act="trophies"]');
+await page.waitForTimeout(150);
+await page.locator('#app').screenshot({ path: path.join(outDir, 'trophies-panel.png') });
+await page.click('[data-act="panel-close"]');
 
 // Drop an image on the window and shoot the Pictures panel, so the import UI
 // gets eyes on it in the same pass as the effect.

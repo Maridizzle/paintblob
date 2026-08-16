@@ -176,6 +176,7 @@ export async function importImages(files, { detail = 'normal', taken = new Set()
         cells: puzzle.cells.length,
         colours: puzzle.palette.length,
         thumb: puzzle.palette.slice(0, 5).map((p) => p.hex),
+        photoLike: puzzle.photoLike,
       };
 
       await api.savePuzzle({ id, title, puzzle, entry });
