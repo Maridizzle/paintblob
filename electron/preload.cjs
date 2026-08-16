@@ -10,9 +10,10 @@ contextBridge.exposeInMainWorld('blob', {
 
   listPuzzles: () => ipcRenderer.invoke('puzzles:list'),
   loadPuzzle: (id) => ipcRenderer.invoke('puzzles:load', id),
-  // No pickImage here: choosing files is done with a file input in the
-  // renderer, on every platform. See src/platform.js.
-  suspendAlwaysOnTop: (on) => ipcRenderer.invoke('win:suspend-top', on),
+  // The picker runs entirely in the main process as a parentless native
+  // dialog — a transparent window on Windows crashes when it owns an OS file
+  // dialog, so it must own none. Returns [{ name, bytes }], or [] if cancelled.
+  pickImage: () => ipcRenderer.invoke('win:pick-image'),
   savePuzzle: (payload) => ipcRenderer.invoke('puzzles:save', payload),
   deletePuzzle: (id) => ipcRenderer.invoke('puzzles:delete', id),
 

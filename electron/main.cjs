@@ -4,7 +4,7 @@
 // keeping the main and preload scripts CJS avoids Electron's ESM/sandbox
 // caveats entirely — one less thing to break on a version bump.
 
-const { app, BrowserWindow, ipcMain, screen, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, screen, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -17,6 +17,18 @@ const MIN_SIZE = 380;
 // this proves the real Electron window loads, composites and paints — which is
 // exactly what breaks on an Electron upgrade.
 const SMOKE = process.argv.includes('--smoke');
+
+// Windows never opens an OS file dialog, in any form. Opening one loads every
+// installed shell extension — cloud-drive overlays, antivirus hooks, archive
+// tools — into this process and enumerates the start folder, before the user
+// clicks anything; any of those can kill an unsigned process on the spot. It
+// crashed identically parented, parentless, and via Chromium's own chooser,
+// while the same imports through drag-and-drop and paste never crashed once.
+// That code is not ours and not patchable from JS, so on Windows it simply
+// never runs: the Add button guides to the dialog-free routes instead (see
+// showAddGuide in game.js). PAINTBLOB_NO_DIALOG forces this path on other
+// platforms so it can actually be tested end to end.
+const DIALOG_FREE = process.platform === 'win32' || !!process.env.PAINTBLOB_NO_DIALOG;
 
 function smokeOutputPath() {
   const next = process.argv[process.argv.indexOf('--smoke') + 1];
@@ -107,6 +119,15 @@ function createWindow() {
   const save = readSave();
   const restored = clampToDisplay(save.bounds);
 
+  // Glass everywhere again. 0.5.4 went opaque on Windows blaming transparency
+  // for the file-dialog crash, but the crash tracked the dialog through every
+  // variant while identical imports through this same window via drag/paste
+  // never died — the dialog machinery itself was the poisoned piece. Windows
+  // no longer opens one at all (see DIALOG_FREE), so there is nothing left
+  // for the transparency to collide with. PAINTBLOB_OPAQUE stays as an
+  // escape hatch if a specific machine misbehaves.
+  const transparent = !process.env.PAINTBLOB_OPAQUE;
+
   win = new BrowserWindow({
     width: restored?.width ?? 720,
     height: restored?.height ?? 820,
@@ -115,9 +136,11 @@ function createWindow() {
     minWidth: MIN_SIZE,
     minHeight: MIN_SIZE,
     frame: false,
-    transparent: true,
-    hasShadow: false,          // we draw our own; OS shadow clips the round corners
-    backgroundColor: '#00000000',
+    transparent,
+    // Opaque builds get a real OS shadow; transparent ones draw their own so
+    // the shadow does not clip the rounded corners.
+    hasShadow: !transparent,
+    backgroundColor: transparent ? '#00000000' : '#17151f',
     alwaysOnTop: save.settings.alwaysOnTop !== false,
     resizable: true,
     maximizable: false,
@@ -130,6 +153,14 @@ function createWindow() {
       sandbox: true,
       backgroundThrottling: false, // keep animating while it sits behind things
     },
+  });
+
+  // Tell the renderer whether it is on glass or a solid panel, so the corners
+  // can be squared off when there is nothing to see through them.
+  win.webContents.on('did-finish-load', () => {
+    win.webContents.executeJavaScript(
+      `document.documentElement.classList.toggle('opaque-window', ${!transparent})`,
+    ).catch(() => {});
   });
 
   // Float above full-screen apps too, without stealing focus.
@@ -257,21 +288,59 @@ async function runSmokeTest(target) {
       errors.push(`add-a-picture failed (subtitle: "${imported.subtitle}", listed: ${imported.listed})`);
     }
 
-    // The reported crash: the app died the instant the file chooser opened.
-    // Click the real button, then confirm the process is still here.
-    const survived = await target.webContents.executeJavaScript(`(async () => {
+    // The Add-picture button now opens a native dialog in the main process,
+    // which blocks until a real person answers it — so the button cannot be
+    // clicked in an automated test without hanging forever, and the actual
+    // Windows dialog crash cannot be reproduced on this platform at all. What
+    // is checked here is that the wiring is present and the button exists; the
+    // dialog itself is only ever exercised by hand.
+    const wiring = await target.webContents.executeJavaScript(`(async () => {
+      const hasBridge = typeof window.blob.pickImage === 'function';
       document.querySelector('[data-act="pictures"]').click();
       await new Promise((r) => setTimeout(r, 300));
-      const add = document.querySelector('.primary.add');
-      if (!add) return 'no Add picture button';
-      add.click();
-      await new Promise((r) => setTimeout(r, 1200));
-      document.querySelectorAll('input[type=file]').forEach((el) => el.remove());
-      return 'alive';
+      const hasButton = !!document.querySelector('.primary.add');
+      document.querySelector('[data-act="panel-close"]')?.click();
+      return { hasBridge, hasButton };
     })()`);
-    console.log(`smoke: after opening the picker -> ${survived}`);
-    if (survived !== 'alive' || target.isDestroyed()) {
-      errors.push(`opening the file picker did not survive: ${survived}`);
+    console.log(`smoke: picker wired ${wiring.hasBridge}, button present ${wiring.hasButton}`);
+    if (!wiring.hasBridge || !wiring.hasButton) {
+      errors.push(`add-a-picture wiring missing: ${JSON.stringify(wiring)}`);
+    }
+
+    if (DIALOG_FREE) {
+      // The Windows path, end to end: clicking Add must open the guide (and
+      // never a dialog), and the guide must dismiss on click. This is the code
+      // path Windows users actually run, exercised for real — unlike the OS
+      // dialog, nothing in it needs a human at a real desktop.
+      const shown = await target.webContents.executeJavaScript(`(async () => {
+        document.querySelector('[data-act="pictures"]').click();
+        await new Promise((r) => setTimeout(r, 300));
+        document.querySelector('.primary.add').click();
+        await new Promise((r) => setTimeout(r, 500));
+        return !!document.querySelector('.drop-hint.guide');
+      })()`);
+
+      // Capture while the guide is up, so what a Windows user sees when they
+      // press the button is a reviewable image rather than a description.
+      const guideShot = await target.webContents.capturePage();
+      fs.mkdirSync(path.dirname(smokeOutputPath()), { recursive: true });
+      fs.writeFileSync(
+        path.join(path.dirname(smokeOutputPath()), 'guide.png'),
+        guideShot.toPNG(),
+      );
+
+      const dismissed = await target.webContents.executeJavaScript(`(async () => {
+        document.getElementById('drop').click();
+        await new Promise((r) => setTimeout(r, 200));
+        const gone = !document.querySelector('.drop-hint.guide');
+        document.querySelector('[data-act="panel-close"]')?.click();
+        return gone;
+      })()`);
+      const guide = { shown, dismissed };
+      console.log(`smoke: dialog-free guide shown=${guide.shown} dismissed=${guide.dismissed}`);
+      if (!guide.shown || !guide.dismissed) {
+        errors.push(`dialog-free guide misbehaved: ${JSON.stringify(guide)}`);
+      }
     }
 
     const image = await target.webContents.capturePage();
@@ -361,16 +430,58 @@ ipcMain.handle('puzzles:load', async (_e, id) => {
   throw new Error(`no such puzzle: ${id}`);
 });
 
-// Choosing a file is done entirely in the renderer with an input element.
-// dialog.showOpenDialog used to live here, parented to this window — which is
-// frameless, transparent, always-on-top and visible on all workspaces. That
-// combination could take the whole process down the moment the dialog opened.
-// The renderer's picker is Chromium's own and is not attached to the window.
-ipcMain.handle('win:suspend-top', (_e, suspend) => {
-  if (!win || win.isDestroyed()) return false;
-  const wanted = suspend ? false : readSave().settings.alwaysOnTop !== false;
-  win.setAlwaysOnTop(wanted, 'floating');
-  return wanted;
+const MAX_IMAGE_BYTES = 64 * 1024 * 1024;
+
+// The file picker. Deliberately a native dialog in the main process with NO
+// parent window, and deliberately not an <input type=file> in the renderer.
+//
+// On Windows a `transparent` BrowserWindow crashes the whole process — a
+// native crash, below any JS handler — the instant it owns an OS file dialog.
+// An <input> triggers exactly that dialog, owned by this window, so it crashes
+// too; that is why swapping the native dialog for an input did not help. A
+// parentless dialog is a standalone top-level OS window owned by nothing, so
+// the transparent window is never in the picture.
+ipcMain.handle('win:pick-image', async () => {
+  // The dialog-free platforms get a sentinel instead of a dialog; the renderer
+  // responds by showing the drag/paste guide. See DIALOG_FREE above for why.
+  if (DIALOG_FREE) return { dialogFree: true };
+
+  // Drop always-on-top while the dialog is up, or the floating window sits in
+  // front of it. Restored in the finally. This is a plain main-process call,
+  // so there is no user-gesture timing to get wrong.
+  const pinned = win && !win.isDestroyed() && win.isAlwaysOnTop();
+  if (pinned) win.setAlwaysOnTop(false);
+
+  try {
+    // No window argument: the dialog is parented to nothing.
+    const result = await dialog.showOpenDialog({
+      title: 'Add a picture',
+      buttonLabel: 'Add',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    });
+    if (result.canceled) return [];
+
+    return result.filePaths.flatMap((file) => {
+      try {
+        if (fs.statSync(file).size > MAX_IMAGE_BYTES) return [];
+        return [{ name: path.basename(file, path.extname(file)), bytes: fs.readFileSync(file) }];
+      } catch (err) {
+        logCrash('pick-image-read', `${file}: ${err.message}`);
+        return [];
+      }
+    });
+  } catch (err) {
+    logCrash('pick-image', err?.stack ?? String(err));
+    return [];
+  } finally {
+    if (pinned && win && !win.isDestroyed()) {
+      win.setAlwaysOnTop(readSave().settings.alwaysOnTop !== false, 'floating');
+    }
+  }
 });
 
 ipcMain.handle('puzzles:save', async (_e, { id, title, puzzle, entry }) => {

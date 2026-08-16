@@ -508,7 +508,14 @@ function buildAddRow(body) {
   button.addEventListener('click', async () => {
     try {
       const picked = await api.pickImage();
-      if (!picked.length) return;
+      // Windows: no OS dialog is ever opened (its shell-extension machinery
+      // crashed the process on open). The main process says so, and the button
+      // becomes a guide to the two dialog-free routes instead.
+      if (picked?.dialogFree) {
+        showAddGuide();
+        return;
+      }
+      if (!picked?.length) return;
       await runImport(picked.map((f) => ({ name: f.name, blob: new Blob([f.bytes]) })), body);
     } catch (err) {
       // A rejected file dialog or a failed read would otherwise vanish into an
@@ -539,15 +546,42 @@ function buildAddRow(body) {
 
   const hint = document.createElement('div');
   hint.className = 'add-hint';
-  hint.textContent = 'or drop an image anywhere on the window';
+  hint.textContent = 'or drop an image on the window, or press Ctrl/Cmd+V to paste one';
 
   wrap.append(button, detail, hint);
   return wrap;
 }
 
+/* On platforms where the Add button cannot open an OS dialog, it repurposes
+   the drop overlay as an instruction card: drag a file in, or paste. Both use
+   the exact import path below and neither touches a native dialog. */
+let dismissAddGuide = null;
+
+function showAddGuide() {
+  if (dismissAddGuide) return;
+  const drop = $('drop');
+  const label = drop.querySelector('span');
+  const original = label.textContent;
+
+  label.textContent = 'Drag a picture here from your folder, or press Ctrl+V to paste one — click to dismiss';
+  drop.classList.add('guide');
+  $('app').classList.add('dropping');
+
+  const onClick = () => dismissAddGuide?.();
+  dismissAddGuide = () => {
+    drop.classList.remove('guide');
+    $('app').classList.remove('dropping');
+    label.textContent = original;
+    drop.removeEventListener('click', onClick);
+    dismissAddGuide = null;
+  };
+  drop.addEventListener('click', onClick);
+}
+
 /** Shared by the button and drag-and-drop. */
 async function runImport(files, body) {
   if (S.importing || !files.length) return;
+  dismissAddGuide?.(); // the guide's advice was followed; get out of the way
   S.importing = true;
 
   const status = document.createElement('div');
@@ -741,7 +775,10 @@ document.addEventListener('click', async (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') return closePanel();
+  if (e.key === 'Escape') {
+    if (dismissAddGuide) return dismissAddGuide();
+    return closePanel();
+  }
   if (e.key >= '1' && e.key <= '9') return selectTub(Number(e.key) - 1, true);
   if (e.key === '0') return selectTub(9, true);
   return undefined;
@@ -765,6 +802,23 @@ document.addEventListener('keydown', (e) => {
   grip.addEventListener('pointerup', stop);
   grip.addEventListener('pointercancel', stop);
 }
+
+// Paste an image straight in. No file chooser is involved, which matters:
+// the chooser is the one part of adding a picture that cannot be exercised
+// without a real user gesture, and so the one part that keeps shipping broken.
+window.addEventListener('paste', async (e) => {
+  const files = [...(e.clipboardData?.items ?? [])]
+    .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+    .map((item) => item.getAsFile())
+    .filter(Boolean)
+    .map((file, i) => ({
+      name: file.name ? file.name.replace(/\.[^.]+$/, '') : `pasted ${i + 1}`,
+      blob: file,
+    }));
+  if (!files.length) return;
+  e.preventDefault();
+  await runImport(files, $('panelBody'));
+});
 
 // Drop an image anywhere on the window to add it. dragenter/dragleave fire for
 // every child element the cursor crosses, so track depth rather than toggling

@@ -44,6 +44,16 @@ html, body {
   backdrop-filter: blur(18px);
 }
 
+/* On an opaque window (Windows) there is nothing to see through, so square the
+   corners — a rounded card would leave the window's own corners showing — make
+   the background fully solid, and drop the blur, which has nothing to act on. */
+.opaque-window #app {
+  border-radius: 0;
+  border: none;
+  background: var(--card-solid);
+  backdrop-filter: none;
+}
+
 /* ------------------------------------------------------------------- title */
 
 #bar {
@@ -414,6 +424,18 @@ button {
   pointer-events: none;
 }
 #app.dropping .drop-hint { display: grid; }
+
+/* Guide mode (the Add button on dialog-free platforms): the same overlay, but
+   it must accept the dismissing click, so pointer-events comes back on. */
+.drop-hint.guide {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.drop-hint.guide span {
+  max-width: 34ch;
+  text-align: center;
+  line-height: 1.5;
+}
 
 .drop-hint span {
   font-size: 14px;

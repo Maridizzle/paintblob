@@ -120,7 +120,10 @@ jobs:
           Download the one for your machine and open it like any other app.
 
           - **macOS** — `-mac-arm64.dmg` (Apple Silicon) or `-mac-x64.dmg` (Intel)
-          - **Windows** — `-setup-x64.exe`, or `-portable-x64.exe` to run without installing
+          - **Windows** — `-setup-x64.exe`, or `-portable-x64.exe` to run without installing.
+            The **Add picture** button on Windows never opens an OS file dialog
+            (its shell-extension machinery was crashing the app on open) — it
+            guides you to drag the image onto the window or press Ctrl+V instead.
           - **Linux** — `-linux-x86_64.AppImage`
 
           These are unsigned, so the first launch needs a nudge: on macOS
