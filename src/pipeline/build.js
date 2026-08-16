@@ -78,10 +78,12 @@ export function buildPuzzle(rgba, srcW, srcH, opts = {}) {
   // Trim the desk, shadow or sketchbook edge out of a photograph first, so the
   // working resolution is spent on the artwork rather than on its surroundings.
   let source = { data: rgba, width: srcW, height: srcH };
+  let cropped = false;
   if (o.crop !== false) {
     const bounds = findContentBounds(rgba, srcW, srcH);
     if (bounds.x0 > 0 || bounds.y0 > 0 || bounds.x1 < srcW - 1 || bounds.y1 < srcH - 1) {
       source = cropTo(rgba, srcW, bounds);
+      cropped = true;
     }
   }
 
@@ -153,6 +155,10 @@ export function buildPuzzle(rgba, srcW, srcH, opts = {}) {
       cells: usage[i],
     })),
     cells,
+    // Whether this looked like a photo of real artwork rather than flat
+    // generated art — grain needed cleaning, or a border needed cropping.
+    // Surfaced so the importer can credit bringing in something imperfect.
+    photoLike: grain > 0 || cropped,
   };
 }
 

@@ -11,6 +11,13 @@ const BLANK = '#edeae4';
 const BLANK_EDGE = 'rgba(38, 34, 48, 0.34)';
 const NUMBER = 'rgba(56, 50, 68, 0.66)';
 
+// A hint flash: a ring pings out from the cell's anchor for the first
+// stretch, while the cell itself pulses at full visibility until fading out
+// over the last stretch.
+const HINT_DURATION = 1600;
+const HINT_PING = 500;
+const HINT_FADE = 400;
+
 export class Board {
   constructor(canvas) {
     this.canvas = canvas;
@@ -25,6 +32,7 @@ export class Board {
     this.hover = -1;
     this.reveal = 0;      // 1 = finished picture, outlines faded away
     this.dirty = true;
+    this.hintTarget = null; // { id, start } while a hint flash is showing
 
     this.dpr = 1;
     this.scale = 1;
@@ -55,6 +63,10 @@ export class Board {
   markFilled(id) {
     this.filled.add(id);
     this.dirty = true;
+  }
+
+  showHint(cellId, now) {
+    this.hintTarget = { id: cellId, start: now };
   }
 
   /** Fits the picture into the element box, preserving aspect. */
@@ -201,6 +213,39 @@ export class Board {
         ctx.lineWidth = 2.4 / this.scale;
         ctx.lineJoin = 'round';
         ctx.stroke(cell.path);
+        ctx.restore();
+      }
+    }
+
+    if (this.hintTarget) {
+      const cell = this.cells[this.hintTarget.id];
+      const elapsed = timeMs - this.hintTarget.start;
+      if (!cell || this.filled.has(cell.id) || elapsed > HINT_DURATION) {
+        this.hintTarget = null;
+      } else {
+        const tail = HINT_DURATION - HINT_FADE;
+        const fade = elapsed > tail ? 1 - (elapsed - tail) / HINT_FADE : 1;
+        const pulse = Math.abs(Math.sin(elapsed / 140));
+
+        ctx.save();
+        ctx.fillStyle = this.hexOf(cell.colour);
+        ctx.globalAlpha = fade * (0.16 + 0.24 * pulse);
+        ctx.fill(cell.path);
+        ctx.globalAlpha = fade;
+        ctx.strokeStyle = this.hexOf(cell.colour);
+        ctx.lineWidth = (1.5 + 1.5 * pulse) / this.scale;
+        ctx.lineJoin = 'round';
+        ctx.stroke(cell.path);
+
+        if (elapsed < HINT_PING) {
+          const p = elapsed / HINT_PING;
+          ctx.beginPath();
+          ctx.arc(cell.anchor.x, cell.anchor.y, cell.inradius * (0.4 + 1.8 * p), 0, Math.PI * 2);
+          ctx.globalAlpha = fade * (1 - p) * 0.8;
+          ctx.lineWidth = 2.5 / this.scale;
+          ctx.strokeStyle = '#fff';
+          ctx.stroke();
+        }
         ctx.restore();
       }
     }

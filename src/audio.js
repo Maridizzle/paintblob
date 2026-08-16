@@ -104,6 +104,8 @@ export class Sfx {
       case 'suck': return this.suck(t0);
       case 'fill': return this.fill(t0);
       case 'nope': return this.nope(t0);
+      case 'hint': return this.hint(t0);
+      case 'bank': return this.bank(t0);
       case 'achievement': return this.achievement(t0);
       case 'complete': return this.complete(t0);
       default: return undefined;
@@ -145,6 +147,21 @@ export class Sfx {
   nope(t0) {
     this.tone('sine', 190, 140, t0, 0.1, 0.14, { attack: 0.004, glide: 'lin' });
     this.hiss(t0, 0.05, 0.05, 700, 200, 'lowpass');
+  }
+
+  // Spending one: a quick upward sparkle, distinct from a tub click's single note.
+  hint(t0) {
+    [0, 5, 9].forEach((semi, i) => {
+      const f = 880 * 2 ** (semi / 12);
+      this.tone('sine', f, f * 1.02, t0 + i * 0.045, 0.12, 0.14, { attack: 0.003 });
+    });
+    this.hiss(t0, 0.16, 0.06, 3000, 7000, 'bandpass', 3);
+  }
+
+  // Passively earning one mid-painting: a single soft chime, easy to miss.
+  bank(t0) {
+    this.tone('sine', 1046.5, 1046.5, t0, 0.22, 0.12, { attack: 0.006 });
+    this.tone('triangle', 1568, 1568, t0 + 0.01, 0.18, 0.07, { attack: 0.008 });
   }
 
   achievement(t0) {
