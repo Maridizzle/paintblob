@@ -288,6 +288,52 @@ await page.waitForTimeout(200);
 await page.locator('#app').screenshot({ path: path.join(outDir, 'pictures-panel.png') });
 await page.click('[data-act="panel-close"]');
 
+// One more import, through the real Insane detail option and a busy
+// synthetic mosaic, so the stripe fallback for undersized cells gets
+// exercised through the actual import path rather than a stub. Shrunk
+// viewport so scale is low enough that plenty of cells actually land under
+// the 5px stripe threshold, rather than leaving it to chance at full size.
+await page.setViewportSize({ width: 340, height: 380 });
+await page.click('[data-act="pictures"]');
+await page.waitForTimeout(200);
+await page.click('.segmented button:has-text("Insane")');
+await page.evaluate(async () => {
+  const W = 400;
+  const H = 400;
+  const block = 8;
+  const cols = Math.ceil(W / block);
+  const rows = Math.ceil(H / block);
+  const palette = ['#dc2828', '#283cd2', '#f5f0e1', '#1e8c5a', '#c87814', '#7828a0'];
+  let s = 7;
+  const rnd = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const canvas = new OffscreenCanvas(W, H);
+  const ctx = canvas.getContext('2d');
+  for (let by = 0; by < rows; by++) {
+    for (let bx = 0; bx < cols; bx++) {
+      ctx.fillStyle = palette[Math.floor(rnd() * palette.length)];
+      ctx.fillRect(bx * block, by * block, block, block);
+    }
+  }
+  const transfer = new DataTransfer();
+  transfer.items.add(new File([await canvas.convertToBlob({ type: 'image/png' })],
+    'busy-mosaic.png', { type: 'image/png' }));
+  window.dispatchEvent(new DragEvent('drop', {
+    dataTransfer: transfer, bubbles: true, cancelable: true,
+  }));
+});
+await page.waitForFunction(
+  () => /Busy Mosaic/.test(document.getElementById('barSubtitle').textContent),
+  null,
+  { timeout: 15000, polling: 100 },
+);
+await page.evaluate(() => window.__clock.step(16));
+// Toasts dismiss on a real setTimeout, not the virtual clock, and the script
+// gets here in well under 3800ms of wall-clock time — wait them out so they
+// do not blot out the very cells this screenshot needs to show.
+await page.waitForTimeout(4200);
+await stage.screenshot({ path: path.join(outDir, 'insane-detail.png') });
+console.log(`insane detail: ${await page.evaluate(() => document.getElementById('barSubtitle').textContent)}`);
+
 const filledCount = await page.evaluate(() => {
   const text = document.getElementById('barSubtitle').textContent;
   return text;

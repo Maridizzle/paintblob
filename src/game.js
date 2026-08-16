@@ -561,7 +561,7 @@ function buildAddRow(body) {
 
   const detail = document.createElement('div');
   detail.className = 'segmented';
-  for (const key of ['chunky', 'normal', 'detailed']) {
+  for (const key of ['chunky', 'normal', 'detailed', 'insane']) {
     const option = document.createElement('button');
     option.textContent = key[0].toUpperCase() + key.slice(1);
     option.className = S.save.settings.detail === key ? 'on' : '';
@@ -569,6 +569,7 @@ function buildAddRow(body) {
       chunky: 'Fewer, bigger cells',
       normal: 'A balanced picture',
       detailed: 'More cells, finer shapes',
+      insane: 'So many cells the tiny ones trade their number for a stripe',
     }[key];
     option.addEventListener('click', () => {
       S.save.settings.detail = key;

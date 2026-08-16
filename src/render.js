@@ -11,6 +11,12 @@ const BLANK = '#edeae4';
 const BLANK_EDGE = 'rgba(38, 34, 48, 0.34)';
 const NUMBER = 'rgba(56, 50, 68, 0.66)';
 
+// Below this on-screen radius a number would be unreadable. Such a cell gets
+// a diagonal stripe of its own colour instead — still identifiable, never
+// blank. Shared by the fill pass and the number pass so a cell never gets
+// neither or both.
+const NUMBER_MIN_PX = 5;
+
 // A hint flash: a ring pings out from the cell's anchor for the first
 // stretch, while the cell itself pulses at full visibility until fading out
 // over the last stretch.
@@ -111,6 +117,34 @@ export class Board {
     return this.puzzle.palette[colourIndex].hex;
   }
 
+  /**
+   * A small diagonal-stripe tile in the given colour, for cells too small to
+   * carry a number. Sized in picture units, like every line width in this
+   * file, so the stripe reads as a constant width on screen regardless of
+   * zoom, rather than shrinking to nothing on the smallest cells.
+   */
+  stripePattern(ctx, hex, vivid) {
+    const n = Math.max(2, Math.round(10 / this.scale));
+    const tile = document.createElement('canvas');
+    tile.width = n;
+    tile.height = n;
+    const tctx = tile.getContext('2d');
+    tctx.fillStyle = BLANK;
+    tctx.fillRect(0, 0, n, n);
+    tctx.strokeStyle = hex;
+    tctx.globalAlpha = vivid ? 0.8 : 0.36;
+    tctx.lineWidth = n * 0.45;
+    tctx.beginPath();
+    // Three parallel copies, offset by a tile width, so the diagonal covers
+    // the corners and tiles seamlessly when repeated.
+    for (const o of [-n, 0, n]) {
+      tctx.moveTo(o, n);
+      tctx.lineTo(o + n, 0);
+    }
+    tctx.stroke();
+    return ctx.createPattern(tile, 'repeat');
+  }
+
   /* ------------------------------------------------------------- base layer */
 
   drawBase() {
@@ -123,9 +157,28 @@ export class Board {
     ctx.fillStyle = PAPER;
     ctx.fillRect(0, 0, width, height);
 
+    const stripes = new Map();
+    const stripeFor = (colourIndex, vivid) => {
+      const key = `${colourIndex}:${vivid}`;
+      let pattern = stripes.get(key);
+      if (!pattern) {
+        pattern = this.stripePattern(ctx, this.hexOf(colourIndex), vivid);
+        stripes.set(key, pattern);
+      }
+      return pattern;
+    };
+
     for (const cell of this.cells) {
       if (this.filled.has(cell.id)) {
         ctx.fillStyle = this.hexOf(cell.colour);
+      } else if (cell.inradius * this.scale < NUMBER_MIN_PX) {
+        // Too small for a number — a stripe of the cell's own colour stands
+        // in for it, brighter when it is the colour currently in hand.
+        ctx.fillStyle = BLANK;
+        ctx.fill(cell.path);
+        ctx.fillStyle = stripeFor(cell.colour, cell.colour === this.selected);
+        ctx.fill(cell.path);
+        continue;
       } else if (cell.colour === this.selected) {
         // Faint wash of the actual paint so it is obvious where it goes.
         ctx.fillStyle = BLANK;
@@ -156,10 +209,10 @@ export class Board {
       for (const cell of this.cells) {
         if (this.filled.has(cell.id)) continue;
         const px = cell.inradius * this.scale;
-        // Finer pictures make more small cells. A cell with no number is still
-        // paintable — selecting its tub washes it — so the bar for printing
-        // one only has to be "legible", not "roomy".
-        if (px < 5) continue;
+        // Finer pictures make more small cells. A cell with no number still
+        // carries its colour as a stripe (see the fill pass above), so the
+        // bar for printing one only has to be "legible", not "roomy".
+        if (px < NUMBER_MIN_PX) continue;
         const size = Math.min(30, Math.max(7.5, px * 0.9)) / this.scale;
         const active = cell.colour === this.selected;
         ctx.font = `${active ? 700 : 500} ${size}px ui-sans-serif, system-ui, sans-serif`;
