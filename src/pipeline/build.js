@@ -103,6 +103,16 @@ export function buildPuzzle(rgba, srcW, srcH, opts = {}) {
   const height = Math.max(1, Math.round(source.height * scale));
   const resized = resize(source.data, source.width, source.height, width, height);
 
+  // The continuous-tone picture, cropped and scaled exactly like the puzzle
+  // but read before despeckling and quantising touch it — for a caller that
+  // wants to let a player compare their painted cells against the real
+  // photo. Encoding it to a storable format is the caller's job: Node and
+  // the browser have no image encoder in common, so it cannot be this
+  // function's. despeckle() below always allocates a fresh output buffer
+  // rather than writing back into `resized`, so handing out the reference
+  // here is safe.
+  const preview = { data: resized, width, height };
+
   // Strip grain before quantising, by however much this particular image
   // turns out to need. Flat art measures ~0 and is passed through untouched;
   // a photo of a drawing needs two or three passes before the quantiser can
@@ -170,6 +180,7 @@ export function buildPuzzle(rgba, srcW, srcH, opts = {}) {
     // generated art — grain needed cleaning, or a border needed cropping.
     // Surfaced so the importer can credit bringing in something imperfect.
     photoLike: grain > 0 || cropped,
+    preview,
   };
 }
 

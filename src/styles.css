@@ -146,9 +146,8 @@ button {
 #board.done { cursor: default; }
 
 /* Shown only once zoomed past fit-to-window; doubles as the reset button. */
-.zoom-pill {
+.zoom-pill, .compare-pill {
   position: absolute;
-  top: 10px; right: 10px;
   z-index: 15;
   -webkit-app-region: no-drag;
   padding: 5px 11px;
@@ -161,7 +160,12 @@ button {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
   transition: background 120ms, transform 120ms;
 }
-.zoom-pill:hover { background: rgba(255, 255, 255, 0.14); transform: translateY(-1px); }
+.zoom-pill:hover, .compare-pill:hover { background: rgba(255, 255, 255, 0.14); transform: translateY(-1px); }
+.zoom-pill { top: 10px; right: 10px; }
+
+/* Shown once a picture is finished, to flip the canvas over to the real
+   photo — top-left so it never collides with the zoom pill. */
+.compare-pill { top: 10px; left: 10px; }
 
 /* ------------------------------------------------------------------- tubs */
 
@@ -261,7 +265,8 @@ button {
 }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
-.finish-card { text-align: center; padding: 20px; }
+.finish-card { position: relative; text-align: center; padding: 20px; }
+.finish-close { position: absolute; top: -4px; right: -4px; }
 .finish-title { font-size: 11px; letter-spacing: 2.4px; text-transform: uppercase; color: var(--accent); }
 .finish-name { font-size: 21px; font-weight: 700; margin: 7px 0 5px; }
 .finish-stats { font-size: 12px; color: var(--muted); margin-bottom: 17px; }
@@ -301,6 +306,10 @@ button {
   animation: toast-in 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 .toast.out { animation: toast-out 300ms ease both; }
+/* #toasts is click-through so status toasts never block the board — an
+   achievement waits for a click to go away, so it alone opts back in. */
+.toast.sticky { pointer-events: auto; cursor: pointer; }
+.toast.sticky:hover { border-color: rgba(255, 179, 92, 0.75); }
 @keyframes toast-in { from { opacity: 0; transform: translateX(-24px) scale(0.94); } }
 @keyframes toast-out { to { opacity: 0; transform: translateY(9px); } }
 
@@ -526,7 +535,7 @@ button {
   .segmented button { padding: 10px 13px; font-size: 12px; }
   .row { padding: 12px 13px; }
   .primary.add { padding: 14px; font-size: 14px; }
-  .zoom-pill { padding: 7px 14px; font-size: 12.5px; }
+  .zoom-pill, .compare-pill { padding: 7px 14px; font-size: 12.5px; }
 }
 
 /* Short and narrow — a phone in portrait. Give the picture the room. */

@@ -37,9 +37,12 @@
       <canvas id="board"></canvas>
 
       <button id="zoomPill" class="zoom-pill hidden" data-act="zoom-reset" title="Reset zoom">100%</button>
+      <button id="comparePill" class="compare-pill hidden" data-act="toggle-source"
+        title="Compare against the original picture"></button>
 
       <div id="finish" class="finish hidden">
         <div class="finish-card">
+          <button class="icon finish-close" data-act="finish-dismiss" title="Keep looking at it">✕</button>
           <div class="finish-title">Finished</div>
           <div class="finish-name" id="finishName"></div>
           <div class="finish-stats" id="finishStats"></div>

@@ -16,7 +16,7 @@
     "smoke": "electron . --smoke",
     "build:web": "node tools/build-web.mjs",
     "check:web": "node tools/build-web.mjs && node tools/check-web.mjs",
-    "test": "node --test tools/pipeline.test.mjs tools/game-logic.test.mjs && node tools/verify-puzzle.mjs",
+    "test": "node --test tools/pipeline.test.mjs tools/game-logic.test.mjs tools/zip.test.mjs && node tools/verify-puzzle.mjs",
     "dist": "npm run icon && electron-builder",
     "dist:linux": "npm run icon && electron-builder --linux",
     "dist:mac": "npm run icon && electron-builder --mac",

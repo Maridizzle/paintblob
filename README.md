@@ -72,7 +72,16 @@ Pick a tub, click any cell carrying that number. Wrong colour gets a soft
 "nope" and nudges the tub you actually wanted. Number keys `1`–`9` switch tubs.
 When a tub runs dry the next one is selected automatically. Progress, stats and
 achievements are saved to the Electron `userData` directory and survive
-restarts.
+restarts. An achievement toast waits for a click to dismiss rather than fading
+on a timer — there is always time to actually read what you just earned.
+
+Finishing a picture pauses on it rather than covering it immediately — the
+outlines and numbers fade away, then there is a real, unhurried look at the
+whole thing before the stats card appears, and that card has a close button
+so you can back out of it and keep looking whenever you are done with it. A
+pill in the corner (🖼 Photo / 🎨 Painting) shows up once a picture is
+finished and swaps the canvas between what you painted and the real photo it
+was mapped from — zoom and pan keep working on either.
 
 Scroll wheel or two-finger pinch to zoom in on a picture, up to 6×; drag (or
 one-finger pan on a touchscreen) to move around once zoomed. A pill in the
@@ -121,6 +130,14 @@ onto the window, or press **Ctrl/Cmd+V** to paste one. It maps and opens
 straight away. **Chunky / Normal / Detailed** controls how many cells you get,
 and **Insane** goes further still — past the point where every cell fits a
 number.
+
+Drop a `.zip` of pictures instead of an image and each one comes in blind: no
+preview, and its title stays "Mystery picture" in the list — right down to the
+filename in the mapping progress — until you actually finish it, at which
+point it is revealed like any other completed picture. Regular single-image
+drops are never blind; a `.zip` is the deliberate way to ask for the
+surprise. The unzipping is native to the app (`DecompressionStream`), so it
+works offline, the same as everything else here.
 
 On Windows the Add button never opens the OS file dialog: opening one loads
 every installed shell extension into the process before the first click, and

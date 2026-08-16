@@ -28,6 +28,17 @@ const HINT_FADE = 400;
 // smallest Insane-detail sliver can be pushed back over the number threshold.
 const MAX_ZOOM = 6;
 
+/** data:mime;base64,xxx -> Blob, without a network-facing fetch() — see the
+ *  comment where this is called for why that distinction matters. */
+function dataUriToBlob(uri) {
+  const comma = uri.indexOf(',');
+  const mime = uri.slice(5, uri.indexOf(';'));
+  const binary = atob(uri.slice(comma + 1));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
 export class Board {
   constructor(canvas) {
     this.canvas = canvas;
@@ -43,6 +54,9 @@ export class Board {
     this.reveal = 0;      // 1 = finished picture, outlines faded away
     this.dirty = true;
     this.hintTarget = null; // { id, start } while a hint flash is showing
+
+    this.sourceBitmap = null; // the real photo, once decoded — see setPuzzle()
+    this.showSource = false;  // true = showing it instead of the painted cells
 
     this.dpr = 1;
     this.fitScale = 1;  // fit-to-container scale, before zoom
@@ -80,6 +94,39 @@ export class Board {
     this.filled = filled;
     this.reveal = filled.size === cells.length ? 1 : 0;
     this.resetZoom();
+
+    this.showSource = false;
+    this.sourceBitmap?.close();
+    this.sourceBitmap = null;
+    if (puzzle.sourceImage) {
+      // Not fetch(puzzle.sourceImage) — the app's CSP has no `data:` in
+      // connect-src (only in img-src), so fetching a data: URI is silently
+      // blocked. Decoding it by hand is plain JS, not a request, so CSP has
+      // no say in it.
+      createImageBitmap(dataUriToBlob(puzzle.sourceImage))
+        .then((bitmap) => {
+          // A different picture loaded while this one was still decoding.
+          if (this.puzzle !== puzzle) { bitmap.close(); return; }
+          this.sourceBitmap = bitmap;
+          this.dirty = true;
+        })
+        .catch(() => {}); // no compare view for this one; the toggle just won't appear
+    }
+  }
+
+  /**
+   * @param {boolean} show
+   * @returns {boolean} the mode actually landed in — false if asked to show
+   *   a photo that has not (or will never) finish decoding, so the caller
+   *   can keep its own toggle control in sync rather than trusting the ask.
+   */
+  setShowSource(show) {
+    const next = !!(show && this.sourceBitmap);
+    if (this.showSource !== next) {
+      this.showSource = next;
+      this.dirty = true;
+    }
+    return next;
   }
 
   /** Keeps panX/panY from letting the picture drift entirely off-screen. */
@@ -234,6 +281,14 @@ export class Board {
     ctx.fillStyle = PAPER;
     ctx.fillRect(0, 0, width, height);
 
+    if (this.showSource && this.sourceBitmap) {
+      // The real photo, at the same scale and position painted cells would
+      // be — so zooming and panning keep working exactly the same way.
+      ctx.drawImage(this.sourceBitmap, 0, 0, width, height);
+      this.dirty = false;
+      return;
+    }
+
     const stripes = new Map();
     const stripeFor = (colourIndex, vivid) => {
       const key = `${colourIndex}:${vivid}`;
@@ -317,6 +372,10 @@ export class Board {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     ctx.drawImage(this.base, sx * this.dpr, sy * this.dpr);
+
+    // Just the photo — no pulses, hover outline, hints or bursts to paint
+    // over it with.
+    if (this.showSource) return;
 
     this.applyTransform(ctx, sx, sy);
 
