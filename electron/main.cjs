@@ -107,6 +107,14 @@ function createWindow() {
   const save = readSave();
   const restored = clampToDisplay(save.bounds);
 
+  // A transparent window on Windows crashes the process, natively, the moment
+  // it owns an OS file dialog — which is what broke "Add picture". The user
+  // asked for a *frameless* window; the see-through corners were an addition,
+  // so on Windows the window is opaque (still frameless, still floating) and
+  // the crash trigger is gone entirely. macOS and Linux keep the transparency,
+  // where it is stable. PAINTBLOB_OPAQUE forces the opaque path for testing.
+  const transparent = process.platform !== 'win32' && !process.env.PAINTBLOB_OPAQUE;
+
   win = new BrowserWindow({
     width: restored?.width ?? 720,
     height: restored?.height ?? 820,
@@ -115,9 +123,11 @@ function createWindow() {
     minWidth: MIN_SIZE,
     minHeight: MIN_SIZE,
     frame: false,
-    transparent: true,
-    hasShadow: false,          // we draw our own; OS shadow clips the round corners
-    backgroundColor: '#00000000',
+    transparent,
+    // Opaque builds get a real OS shadow; transparent ones draw their own so
+    // the shadow does not clip the rounded corners.
+    hasShadow: !transparent,
+    backgroundColor: transparent ? '#00000000' : '#17151f',
     alwaysOnTop: save.settings.alwaysOnTop !== false,
     resizable: true,
     maximizable: false,
@@ -130,6 +140,14 @@ function createWindow() {
       sandbox: true,
       backgroundThrottling: false, // keep animating while it sits behind things
     },
+  });
+
+  // Tell the renderer whether it is on glass or a solid panel, so the corners
+  // can be squared off when there is nothing to see through them.
+  win.webContents.on('did-finish-load', () => {
+    win.webContents.executeJavaScript(
+      `document.documentElement.classList.toggle('opaque-window', ${!transparent})`,
+    ).catch(() => {});
   });
 
   // Float above full-screen apps too, without stealing focus.
