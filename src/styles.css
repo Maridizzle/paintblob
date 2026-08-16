@@ -138,10 +138,30 @@ button {
   display: block;
   border-radius: 9px;
   cursor: crosshair;
-  /* The canvas owns its gestures completely — no scroll, no pinch-zoom. */
+  /* The canvas owns its gestures completely — no scroll, no pinch-zoom (the
+     app implements its own, in game.js, so it can share it with painting). */
   touch-action: none;
 }
+#board.zoomed { cursor: grab; }
 #board.done { cursor: default; }
+
+/* Shown only once zoomed past fit-to-window; doubles as the reset button. */
+.zoom-pill {
+  position: absolute;
+  top: 10px; right: 10px;
+  z-index: 15;
+  -webkit-app-region: no-drag;
+  padding: 5px 11px;
+  border-radius: 20px;
+  background: rgba(28, 25, 38, 0.9);
+  border: 1px solid var(--edge);
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--text);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  transition: background 120ms, transform 120ms;
+}
+.zoom-pill:hover { background: rgba(255, 255, 255, 0.14); transform: translateY(-1px); }
 
 /* ------------------------------------------------------------------- tubs */
 
@@ -506,6 +526,7 @@ button {
   .segmented button { padding: 10px 13px; font-size: 12px; }
   .row { padding: 12px 13px; }
   .primary.add { padding: 14px; font-size: 14px; }
+  .zoom-pill { padding: 7px 14px; font-size: 12.5px; }
 }
 
 /* Short and narrow — a phone in portrait. Give the picture the room. */

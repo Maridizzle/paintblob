@@ -24,6 +24,10 @@ const HINT_DURATION = 1600;
 const HINT_PING = 500;
 const HINT_FADE = 400;
 
+// How far past fit-to-window the player can zoom. High enough that even the
+// smallest Insane-detail sliver can be pushed back over the number threshold.
+const MAX_ZOOM = 6;
+
 export class Board {
   constructor(canvas) {
     this.canvas = canvas;
@@ -41,9 +45,33 @@ export class Board {
     this.hintTarget = null; // { id, start } while a hint flash is showing
 
     this.dpr = 1;
-    this.scale = 1;
-    this.ox = 0;
-    this.oy = 0;
+    this.fitScale = 1;  // fit-to-container scale, before zoom
+    this.zoom = 1;      // user zoom multiplier, always >= 1
+    this.panX = 0;      // user pan, CSS px, applied after zoom
+    this.panY = 0;
+    this.cssW = 0;
+    this.cssH = 0;
+  }
+
+  /** fitScale * zoom. Everything below reads this, never fitScale directly,
+   * so a stroke width or a stripe tile stays a constant screen size and a
+   * click still lands on the right cell at any zoom level. */
+  get scale() {
+    return this.fitScale * this.zoom;
+  }
+
+  /** Picture's on-screen top-left corner, CSS px, incorporating pan.
+   *  Safe with no puzzle loaded yet — toPuzzle() gets called on every
+   *  pointerdown regardless of whether one has, same as the fields these
+   *  getters replaced. */
+  get offsetX() {
+    if (!this.puzzle) return 0;
+    return (this.cssW - this.puzzle.width * this.scale) / 2 + this.panX;
+  }
+
+  get offsetY() {
+    if (!this.puzzle) return 0;
+    return (this.cssH - this.puzzle.height * this.scale) / 2 + this.panY;
   }
 
   setPuzzle(puzzle, cells, filled) {
@@ -51,6 +79,56 @@ export class Board {
     this.cells = cells;
     this.filled = filled;
     this.reveal = filled.size === cells.length ? 1 : 0;
+    this.resetZoom();
+  }
+
+  /** Keeps panX/panY from letting the picture drift entirely off-screen. */
+  clampPan() {
+    if (!this.puzzle || !this.cssW) return;
+    const maxPanX = Math.max(0, (this.puzzle.width * this.scale - this.cssW) / 2);
+    const maxPanY = Math.max(0, (this.puzzle.height * this.scale - this.cssH) / 2);
+    this.panX = Math.max(-maxPanX, Math.min(maxPanX, this.panX));
+    this.panY = Math.max(-maxPanY, Math.min(maxPanY, this.panY));
+  }
+
+  /**
+   * @param {number} zoom  target zoom, clamped to [1, MAX_ZOOM]
+   * @param {number} anchorClientX  @param {number} anchorClientY
+   *   viewport point to hold stationary through the change — the cursor for
+   *   a wheel notch, the pinch midpoint for two fingers. Without this every
+   *   zoom step also recentres the picture, which reads as the view
+   *   lurching rather than the point under your fingers growing.
+   */
+  setZoom(zoom, anchorClientX, anchorClientY) {
+    const clamped = Math.max(1, Math.min(MAX_ZOOM, zoom));
+    if (clamped === this.zoom || !this.puzzle) return;
+    const rect = this.canvas.getBoundingClientRect();
+    const bx = anchorClientX - rect.left;
+    const by = anchorClientY - rect.top;
+    const px = (bx - this.offsetX) / this.scale;
+    const py = (by - this.offsetY) / this.scale;
+
+    this.zoom = clamped;
+    const centredX = (this.cssW - this.puzzle.width * this.scale) / 2;
+    const centredY = (this.cssH - this.puzzle.height * this.scale) / 2;
+    this.panX = bx - px * this.scale - centredX;
+    this.panY = by - py * this.scale - centredY;
+    this.clampPan();
+    this.dirty = true;
+  }
+
+  /** Drag-to-pan and two-finger pan both just nudge panX/panY, CSS px. */
+  panBy(dx, dy) {
+    this.panX += dx;
+    this.panY += dy;
+    this.clampPan();
+    this.dirty = true;
+  }
+
+  resetZoom() {
+    this.zoom = 1;
+    this.panX = 0;
+    this.panY = 0;
     this.dirty = true;
   }
 
@@ -94,23 +172,22 @@ export class Board {
     this.dpr = dpr;
     this.cssW = rect.width;
     this.cssH = rect.height;
-    this.scale = Math.min(rect.width / this.puzzle.width, rect.height / this.puzzle.height);
-    this.ox = (rect.width - this.puzzle.width * this.scale) / 2;
-    this.oy = (rect.height - this.puzzle.height * this.scale) / 2;
+    this.fitScale = Math.min(rect.width / this.puzzle.width, rect.height / this.puzzle.height);
+    this.clampPan();
   }
 
   /** Screen coordinates -> picture coordinates. */
   toPuzzle(clientX, clientY) {
     const rect = this.canvas.getBoundingClientRect();
     return {
-      x: (clientX - rect.left - this.ox) / this.scale,
-      y: (clientY - rect.top - this.oy) / this.scale,
+      x: (clientX - rect.left - this.offsetX) / this.scale,
+      y: (clientY - rect.top - this.offsetY) / this.scale,
     };
   }
 
   applyTransform(ctx, shakeX = 0, shakeY = 0) {
     const k = this.scale * this.dpr;
-    ctx.setTransform(k, 0, 0, k, (this.ox + shakeX) * this.dpr, (this.oy + shakeY) * this.dpr);
+    ctx.setTransform(k, 0, 0, k, (this.offsetX + shakeX) * this.dpr, (this.offsetY + shakeY) * this.dpr);
   }
 
   hexOf(colourIndex) {

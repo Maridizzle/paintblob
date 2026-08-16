@@ -133,13 +133,24 @@ const puzzle = JSON.parse(fs.readFileSync(
   'utf8',
 ));
 
-const rect = await page.evaluate(() => {
-  const r = document.getElementById('board').getBoundingClientRect();
-  return { left: r.left, top: r.top, width: r.width, height: r.height };
-});
-const scale = Math.min(rect.width / puzzle.width, rect.height / puzzle.height);
-const ox = rect.left + (rect.width - puzzle.width * scale) / 2;
-const oy = rect.top + (rect.height - puzzle.height * scale) / 2;
+// The board's on-screen position, freshly read — the bar above it grows and
+// shrinks (toasts, badges) as the game reacts to what just happened, so a
+// rect cached from an earlier moment drifts. A real finger always aims at
+// where the picture is *now*, so every tap below re-reads this first.
+async function boardTransform() {
+  const r = await page.evaluate(() => {
+    const b = document.getElementById('board').getBoundingClientRect();
+    return { left: b.left, top: b.top, width: b.width, height: b.height };
+  });
+  const s = Math.min(r.width / puzzle.width, r.height / puzzle.height);
+  return {
+    scale: s,
+    ox: r.left + (r.width - puzzle.width * s) / 2,
+    oy: r.top + (r.height - puzzle.height * s) / 2,
+  };
+}
+
+const { scale, ox, oy } = await boardTransform();
 const target = puzzle.cells.filter((c) => c.c === 0).sort((a, b) => b.a - a.a)[0];
 
 await page.screenshot({ path: path.join(OUT, 'portrait-before.png') });
@@ -159,6 +170,82 @@ check('tapping a cell paints it', true,
 
 await page.waitForTimeout(900);
 await page.screenshot({ path: path.join(OUT, 'portrait-after.png') });
+
+/* -------------------------------------------------------------- zoom & pan */
+
+// Two-finger pinch: Playwright's touchscreen API is single-touch only, so
+// this dispatches raw PointerEvents the way a real two-finger touch would —
+// the same technique already used below for paste/drop, which cannot go
+// through a high-level API either.
+const pinchResult = await page.evaluate(() => {
+  const board = document.getElementById('board');
+  const r = board.getBoundingClientRect();
+  const cx = r.left + r.width / 2;
+  const cy = r.top + r.height / 2;
+  const fire = (type, id, x, y) => board.dispatchEvent(new PointerEvent(type, {
+    pointerId: id, pointerType: 'touch', clientX: x, clientY: y,
+    bubbles: true, cancelable: true, isPrimary: id === 1,
+  }));
+
+  fire('pointerdown', 1, cx - 20, cy);
+  fire('pointerdown', 2, cx + 20, cy);
+  for (let i = 1; i <= 5; i++) {
+    const half = 20 + i * 24;
+    fire('pointermove', 1, cx - half, cy);
+    fire('pointermove', 2, cx + half, cy);
+  }
+  fire('pointerup', 1, cx - 140, cy);
+  fire('pointerup', 2, cx + 140, cy);
+
+  const pill = document.getElementById('zoomPill');
+  return { text: pill.textContent, hidden: pill.classList.contains('hidden') };
+});
+check('pinch zooms in', !pinchResult.hidden && Number.parseInt(pinchResult.text, 10) > 100,
+  `pill reads "${pinchResult.text}"`);
+await page.screenshot({ path: path.join(OUT, 'pinch-zoomed.png') });
+
+// A one-finger drag past the threshold must pan, not paint — this is the
+// bar a fingertip is held to everywhere else in the app (a fuzzy tap is
+// still a tap), so it is worth checking a real drag does not sneak past it.
+const beforeDrag = await page.evaluate(() => document.getElementById('barSubtitle').textContent);
+await page.evaluate(() => {
+  const board = document.getElementById('board');
+  const r = board.getBoundingClientRect();
+  const cx = r.left + r.width / 2;
+  const cy = r.top + r.height / 2;
+  const fire = (type, x, y) => board.dispatchEvent(new PointerEvent(type, {
+    pointerId: 9, pointerType: 'touch', clientX: x, clientY: y,
+    bubbles: true, cancelable: true, isPrimary: true,
+  }));
+  fire('pointerdown', cx, cy);
+  fire('pointermove', cx - 15, cy - 10);
+  fire('pointermove', cx - 40, cy - 30);
+  fire('pointermove', cx - 70, cy - 55);
+  fire('pointerup', cx - 70, cy - 55);
+});
+const afterDrag = await page.evaluate(() => document.getElementById('barSubtitle').textContent);
+check('one-finger drag pans instead of painting', afterDrag === beforeDrag,
+  `"${beforeDrag}" -> "${afterDrag}"`);
+
+// Reset, then a plain tap must still paint — confirming the gesture rework
+// left the common case, a finger just tapping a cell, exactly as it was.
+await page.click('#zoomPill');
+const zoomReset = await page.evaluate(() =>
+  document.getElementById('zoomPill').classList.contains('hidden'));
+check('zoom pill resets to 100%', zoomReset);
+
+// Same tub as the first tap — held tub is still whatever the first tap
+// selected, and a second colour's cell would be a genuine wrong-tub miss.
+const target2 = puzzle.cells.filter((c) => c.c === target.c).sort((a, b) => b.a - a.a)[1];
+const post = await boardTransform();
+await page.touchscreen.tap(post.ox + target2.x * post.scale, post.oy + target2.y * post.scale);
+const secondTap = await page.waitForFunction(
+  () => /· [2-9]\d*\//.test(document.getElementById('barSubtitle').textContent),
+  null,
+  { timeout: 10000, polling: 100 },
+).then(() => true).catch(() => false);
+check('a tap still paints after zoom and pan', secondTap,
+  await page.evaluate(() => document.getElementById('barSubtitle').textContent));
 
 /* ------------------------------------------------------------------ speed */
 

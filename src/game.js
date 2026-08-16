@@ -32,6 +32,7 @@ const S = {
   panel: null,
   importing: false,
   hintsThisPuzzle: 0,
+  pending: new Set(), // cells with a burst already in flight, claimed but not yet filled
 };
 
 /* ---------------------------------------------------------------- persistence */
@@ -139,6 +140,15 @@ function syncHints() {
   btn.classList.toggle('empty', n <= 0);
 }
 
+function syncZoom() {
+  const pill = $('zoomPill');
+  if (!pill) return;
+  const pct = Math.round(board.zoom * 100);
+  pill.classList.toggle('hidden', pct <= 100);
+  pill.textContent = `${pct}%`;
+  $('board').classList.toggle('zoomed', pct > 100);
+}
+
 function selectTub(i, fromUser = false) {
   if (i < 0 || i >= S.puzzle.palette.length) return;
   if (S.remaining[i] === 0 || i === S.selected) return;
@@ -177,6 +187,7 @@ async function loadPuzzle(id) {
   S.selected = -1;
   S.revealFrom = S.finished ? 0 : -1;
   S.hintsThisPuzzle = 0;
+  S.pending.clear();
 
   S.remaining = puzzle.palette.map(() => 0);
   for (const cell of S.cells) if (!S.filled.has(cell.id)) S.remaining[cell.colour]++;
@@ -189,6 +200,7 @@ async function loadPuzzle(id) {
 
   buildTubs();
   board.layout();
+  syncZoom(); // board.setPuzzle() already reset zoom for the new picture
   if (!S.finished) nextTub();
 
   S.save.settings.lastPuzzle = id;
@@ -197,19 +209,66 @@ async function loadPuzzle(id) {
 
 /* -------------------------------------------------------------------- input */
 
-function pointerToCell(e) {
-  const p = board.toPuzzle(e.clientX, e.clientY);
+function pointerToCell(clientX, clientY) {
+  const p = board.toPuzzle(clientX, clientY);
   return { point: p, cell: cellAt(S.cells, p.x, p.y) };
 }
 
+// Every pointer currently down on the board, latest {x, y}. A lone pointer
+// is undecided — tap or pan? — until it moves; a second pointer landing
+// makes it a pinch. Mouse and touch share this one path, which is what lets
+// zoom and pan work identically everywhere rather than only on a phone.
+const pointers = new Map();
+const DRAG_PX = 6;   // movement past this abandons a tap for a pan
+let tap = null;      // { id, x0, y0 } — sole pointer, decision pending
+let panning = null;  // { id, x, y } — single-pointer pan in progress
+let pinch = null;    // { ids, dist, zoom, midX, midY } — two-finger gesture
+
 $('board').addEventListener('pointermove', (e) => {
-  // A finger has no hover state. Touch drags would otherwise leave an outline
-  // stranded under wherever the thumb last was.
-  if (S.finished || e.pointerType === 'touch') return;
-  const { cell } = pointerToCell(e);
-  // Idle frames are throttled to 30fps; force the next one so the hover
-  // outline tracks the cursor rather than lagging behind it.
-  if (board.setHover(cell && !S.filled.has(cell.id) ? cell.id : -1)) lastDraw = 0;
+  if (!pointers.has(e.pointerId)) {
+    // No gesture claims this pointer: the plain hover-outline path. A finger
+    // has no hover state, and touch drags would otherwise leave an outline
+    // stranded under wherever the thumb last was.
+    if (S.finished || e.pointerType === 'touch') return;
+    const { cell } = pointerToCell(e.clientX, e.clientY);
+    // Idle frames are throttled to 30fps; force the next one so the hover
+    // outline tracks the cursor rather than lagging behind it.
+    if (board.setHover(cell && !S.filled.has(cell.id) ? cell.id : -1)) lastDraw = 0;
+    return;
+  }
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (pinch) {
+    const [a, b] = pinch.ids.map((id) => pointers.get(id));
+    if (!a || !b) return;
+    const dist = Math.hypot(a.x - b.x, a.y - b.y);
+    const midX = (a.x + b.x) / 2;
+    const midY = (a.y + b.y) / 2;
+    if (dist > 0 && pinch.dist > 0) board.setZoom(pinch.zoom * (dist / pinch.dist), midX, midY);
+    board.panBy(midX - pinch.midX, midY - pinch.midY);
+    pinch.midX = midX;
+    pinch.midY = midY;
+    syncZoom();
+    ensureFrame();
+    return;
+  }
+
+  if (panning) {
+    const p = pointers.get(panning.id);
+    board.panBy(p.x - panning.x, p.y - panning.y);
+    panning.x = p.x;
+    panning.y = p.y;
+    ensureFrame();
+    return;
+  }
+
+  if (tap && Math.hypot(e.clientX - tap.x0, e.clientY - tap.y0) > DRAG_PX) {
+    // Moved far enough that this was never going to be a tap — pan instead,
+    // the way any zoomable map or image viewer treats a drag.
+    panning = { id: tap.id, x: e.clientX, y: e.clientY };
+    board.setHover(-1);
+    tap = null;
+  }
 });
 
 $('board').addEventListener('pointerleave', () => board.setHover(-1));
@@ -218,12 +277,70 @@ $('board').addEventListener('pointerdown', (e) => {
   if (e.button !== 0 || S.finished) return;
   sfx.ensure();
   S.idleSinceBurst = false;
+  // Not every pointer session honours capture (synthetic test events among
+  // them); painting and panning both work fine without it, so a failure here
+  // is not worth losing the gesture over.
+  try { board.canvas.setPointerCapture(e.pointerId); } catch { /* best-effort */ }
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
-  const { point, cell } = pointerToCell(e);
+  if (pointers.size === 2) {
+    // A second finger landed mid-gesture: whatever the first one was doing,
+    // a pinch takes over.
+    tap = null;
+    panning = null;
+    const [a, b] = [...pointers.values()];
+    pinch = {
+      ids: [...pointers.keys()],
+      dist: Math.hypot(a.x - b.x, a.y - b.y),
+      zoom: board.zoom,
+      midX: (a.x + b.x) / 2,
+      midY: (a.y + b.y) / 2,
+    };
+    return;
+  }
+  if (pointers.size > 2) return; // a third finger is not a gesture this handles
+
+  tap = { id: e.pointerId, x0: e.clientX, y0: e.clientY };
+});
+
+function endPointer(e) {
+  pointers.delete(e.pointerId);
+  if (board.canvas.hasPointerCapture(e.pointerId)) board.canvas.releasePointerCapture(e.pointerId);
+
+  if (pinch) {
+    if (pinch.ids.includes(e.pointerId)) pinch = null;
+    return;
+  }
+  if (panning) {
+    if (panning.id === e.pointerId) panning = null;
+    return;
+  }
+  if (tap && tap.id === e.pointerId) {
+    tryPaint(e.clientX, e.clientY, e.pointerType);
+    tap = null;
+  }
+}
+$('board').addEventListener('pointerup', endPointer);
+$('board').addEventListener('pointercancel', endPointer);
+
+$('board').addEventListener('wheel', (e) => {
+  if (!S.puzzle || S.finished) return;
+  e.preventDefault();
+  // A little steep on purpose: this is a paint-by-number, not a map — a
+  // couple of notches should get from fit-to-window to "that cell is huge".
+  board.setZoom(board.zoom * Math.exp(-e.deltaY * 0.0018), e.clientX, e.clientY);
+  syncZoom();
+  ensureFrame();
+}, { passive: false });
+
+/** Resolves a settled tap: paint the cell underneath it, if there is one. */
+function tryPaint(clientX, clientY, pointerType) {
+  if (S.finished) return;
+  const { point, cell } = pointerToCell(clientX, clientY);
 
   // Aimed squarely at an unpainted cell of another colour: that is a genuine
   // mistake and deserves the buzz, not a silent correction.
-  if (cell && !S.filled.has(cell.id) && cell.colour !== S.selected) {
+  if (cell && !S.filled.has(cell.id) && !S.pending.has(cell.id) && cell.colour !== S.selected) {
     sfx.play('nope');
     streaks.wrong();
     const tub = $('tubs').children[cell.colour];
@@ -233,22 +350,24 @@ $('board').addEventListener('pointerdown', (e) => {
     return;
   }
 
-  let target = cell && !S.filled.has(cell.id) ? cell : null;
+  let target = cell && !S.filled.has(cell.id) && !S.pending.has(cell.id) ? cell : null;
   if (!target) {
-    // Missed everything, or landed on a cell already done. Look just around
-    // the point — small cells are fiddly with a mouse and much worse under a
-    // fingertip, which covers several at once.
-    const slack = (e.pointerType === 'touch' ? 18 : 7) / board.scale;
+    // Missed everything, or landed on a cell already done or already claimed
+    // by a burst still in flight. Look just around the point — small cells
+    // are fiddly with a mouse and much worse under a fingertip, which covers
+    // several at once.
+    const slack = (pointerType === 'touch' ? 18 : 7) / board.scale;
+    const spokenFor = S.pending.size ? new Set([...S.filled, ...S.pending]) : S.filled;
     target = cellNear(S.cells, point.x, point.y, {
       colour: S.selected,
-      filled: S.filled,
+      filled: spokenFor,
       radius: slack,
     });
   }
   if (!target) return;
 
   launch(target, point);
-});
+}
 
 function launch(cell, point) {
   const burst = new Burst({
@@ -266,6 +385,10 @@ function launch(cell, point) {
   burst.cell = cell;
   burst.applied = false;
   S.bursts.push(burst);
+  // Claimed the instant it launches, not when it lands — otherwise a second
+  // rapid click on the same cell launches a duplicate burst, and the cell
+  // gets double-counted (and the tub's remaining count with it) once both commit.
+  S.pending.add(cell.id);
 
   // Arm the "watched it land without touching anything" achievement. The
   // pointerdown that got us here already cleared the flag; any *further* click
@@ -280,6 +403,7 @@ function launch(cell, point) {
 function commitFill(burst) {
   const cell = burst.cell;
   S.filled.add(cell.id);
+  S.pending.delete(cell.id);
   S.remaining[cell.colour]--;
   board.markFilled(cell.id);
 
@@ -811,6 +935,7 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'hint': useHint(); break;
+    case 'zoom-reset': board.resetZoom(); syncZoom(); ensureFrame(); break;
     case 'pictures': case 'trophies': case 'settings':
       if (S.panel === act) closePanel();
       else await openPanel(act);
