@@ -36,6 +36,9 @@ function parseArgs(argv) {
       case 'denoise': opts.denoise = Number(value); break;
       case 'id': opts.id = value; break;
       case 'title': opts.title = value; break;
+      // Boolean flag — undo the lookahead above unless `--blind=...` was
+      // written inline, in which case nothing was consumed to undo.
+      case 'blind': opts.blind = true; if (inline === undefined) i--; break;
       case 'detail': {
         const preset = DETAIL_PRESETS[value];
         if (!preset) throw new Error(`--detail must be one of ${Object.keys(DETAIL_PRESETS).join(', ')}`);
@@ -59,23 +62,25 @@ function updateManifest(entry) {
   return file;
 }
 
-export function manifestEntry(puzzle, { id, title }) {
+export function manifestEntry(puzzle, { id, title, blind }) {
   return {
     id,
     title,
     cells: puzzle.cells.length,
     colours: puzzle.palette.length,
     thumb: puzzle.palette.slice(0, 5).map((p) => p.hex),
+    ...(blind ? { blind: true } : {}),
   };
 }
 
-export function writePuzzle(puzzle, { id, title }) {
+export function writePuzzle(puzzle, { id, title, blind }) {
   fs.mkdirSync(PUZZLE_DIR, { recursive: true });
   const { preview, ...rest } = puzzle;
   const sourceImage = encodeSourceImage(preview);
+  if (blind) rest.blind = true;
   const out = path.join(PUZZLE_DIR, `${id}.json`);
   fs.writeFileSync(out, JSON.stringify({ id, title, ...rest, sourceImage }));
-  updateManifest(manifestEntry(puzzle, { id, title }));
+  updateManifest(manifestEntry(puzzle, { id, title, blind }));
   return out;
 }
 
@@ -102,7 +107,7 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const src = opts._[0];
   if (!src) {
-    console.error('usage: node tools/mapify.mjs <image> [--id slug] [--title "Name"]');
+    console.error('usage: node tools/mapify.mjs <image> [--id slug] [--title "Name"] [--blind]');
     console.error('       [--detail chunky|normal|detailed|insane]');
     console.error('       [--size 768] [--colours 14] [--cells 64] [--min-area 0.0016]');
     console.error('accepts PNG or JPEG');
@@ -115,7 +120,7 @@ async function main() {
 
   const started = Date.now();
   const puzzle = buildPuzzle(image.data, image.width, image.height, opts);
-  const out = writePuzzle(puzzle, { id, title });
+  const out = writePuzzle(puzzle, { id, title, blind: opts.blind });
 
   console.log(`  ${image.width}x${image.height} -> ${puzzle.width}x${puzzle.height} in ${Date.now() - started}ms`);
   reportPuzzle(puzzle, title, out);

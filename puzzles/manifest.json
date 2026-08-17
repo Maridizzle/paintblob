@@ -1,5 +1,19 @@
 [
   {
+    "id": "aurora-over-ice",
+    "title": "Aurora Over Ice",
+    "cells": 90,
+    "colours": 16,
+    "thumb": [
+      "#95acc4",
+      "#0f213f",
+      "#073256",
+      "#c8d0d9",
+      "#325076"
+    ],
+    "blind": true
+  },
+  {
     "id": "cactus-mesa",
     "title": "Cactus Mesa",
     "cells": 16,
@@ -39,6 +53,34 @@
     ]
   },
   {
+    "id": "humpback-whale",
+    "title": "Humpback Whale",
+    "cells": 90,
+    "colours": 14,
+    "thumb": [
+      "#103f5e",
+      "#0e304c",
+      "#1f6b88",
+      "#2e8199",
+      "#bfd6ce"
+    ],
+    "blind": true
+  },
+  {
+    "id": "kintsugi-bowl-and-magnolias",
+    "title": "Kintsugi Bowl And Magnolias",
+    "cells": 90,
+    "colours": 16,
+    "thumb": [
+      "#3b393a",
+      "#23181b",
+      "#596762",
+      "#673058",
+      "#2f282d"
+    ],
+    "blind": true
+  },
+  {
     "id": "koi-pond",
     "title": "Koi Pond",
     "cells": 19,
@@ -50,5 +92,33 @@
       "#f6a978",
       "#d7cfc0"
     ]
+  },
+  {
+    "id": "library-in-the-clouds",
+    "title": "Library In The Clouds",
+    "cells": 90,
+    "colours": 13,
+    "thumb": [
+      "#2f1f15",
+      "#19100c",
+      "#4c2815",
+      "#573a24",
+      "#654d34"
+    ],
+    "blind": true
+  },
+  {
+    "id": "sunset-tidepool",
+    "title": "Sunset Tidepool",
+    "cells": 90,
+    "colours": 16,
+    "thumb": [
+      "#2d424f",
+      "#20303f",
+      "#45342f",
+      "#18222e",
+      "#844a39"
+    ],
+    "blind": true
   }
 ]

@@ -1,10 +1,10 @@
 name: weekly-mystery
 
-# Publishes a downloadable "mystery pack" — five new pictures, zipped — as a
-# GitHub Release. It is exactly the kind of .zip a player can already drag
-# onto the app by hand (README.md's blind-pack drop), so nothing about the
-# app itself changes; this just automates building and shipping that zip
-# from whatever source photos are queued in puzzles/queue/.
+# Bakes five new mystery pictures straight into the app's bundled puzzle
+# library (puzzles/*.json + puzzles/manifest.json, blind: true — the same
+# way the 4 demo puzzles ship) from whatever source photos are queued in
+# puzzles/queue/, then cuts a new app version so they're just *there* the
+# next time someone is on that version — no download, no drag-and-drop.
 #
 # Run by hand from the Actions tab to ship early, or to retry a week whose
 # queue came up short.
@@ -16,7 +16,7 @@ permissions:
   contents: write
 
 jobs:
-  pack:
+  bake:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,36 +25,29 @@ jobs:
           node-version: 22
           cache: npm
 
-      # Only pngjs/jpeg-js are needed to validate the queued images — skip
+      # Only pngjs/jpeg-js are needed to build the queued images — skip
       # Electron's own postinstall download, which this job never uses.
       - run: npm ci
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: 1
 
-      - id: tag
-        run: echo "tag=mystery-$(date -u +%F)" >> "$GITHUB_OUTPUT"
+      - run: node tools/bake-weekly-mystery.mjs
 
-      - run: node tools/pack-weekly-mystery.mjs --tag "${{ steps.tag.outputs.tag }}"
+      # Re-checks geometry on every committed puzzle, these five included —
+      # same check ci.yml runs after `npm run seed`.
+      - run: npm run verify
 
-      - name: Commit the consumed queue files
+      - name: Commit the new pictures and cut a release
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add puzzles/queue
-          git commit -m "Weekly mystery pack: ${{ steps.tag.outputs.tag }}"
+          git add puzzles
+          git commit -m "Weekly mystery pictures: $(date -u +%F)"
+          npm version patch
           # github.event.repository.default_branch is unset on `schedule`
           # triggers — github.ref_name is the branch actually checked out,
-          # on every trigger this workflow uses.
-          git push origin HEAD:${{ github.ref_name }}
-
-      - name: Publish the pack as a release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh release create "${{ steps.tag.outputs.tag }}" \
-            "dist/${{ steps.tag.outputs.tag }}.zip" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Mystery pack — ${{ steps.tag.outputs.tag }}" \
-            --notes "5 new mystery pictures. Download the zip and drag it onto paintblob (or drop it on the Pictures list) to add them — each one stays hidden as \"Mystery picture\" until you finish painting it."
+          # on every trigger this workflow uses. --follow-tags pushes the
+          # version-bump commit and its vX.Y.Z tag together; the pushed tag
+          # is what triggers release.yml to actually build and publish.
+          git push --follow-tags origin HEAD:${{ github.ref_name }}
