@@ -42,6 +42,13 @@ function parseArgs(argv) {
 
 const todayTag = () => `mystery-${new Date().toISOString().slice(0, 10)}`;
 
+// The queue's date prefix (see puzzles/queue/README.md) exists only to
+// control pick order. It must not survive into the zip: the app derives
+// each picture's revealed title straight from its filename inside the
+// archive (titleFrom in src/import.js), so a leftover "2026-08-24-" would
+// show up as part of the title once a player finishes painting it.
+const stripOrderPrefix = (name) => name.replace(/^\d{4}-\d{2}-\d{2}-/, '');
+
 /**
  * True when the image actually produces a paintable picture — the same bar
  * the app's own import applies (src/import.js:187). A queue file that fails
@@ -88,9 +95,23 @@ function main() {
   fs.mkdirSync(DIST_DIR, { recursive: true });
   const out = path.join(DIST_DIR, `${tag}.zip`);
   fs.rmSync(out, { force: true });
-  // -j junks the stored path, so the zip holds bare filenames at its root —
-  // tidy, though src/zip.js strips folder paths on read regardless.
-  execFileSync('zip', ['-qj', out, ...picked.map((n) => path.join(QUEUE_DIR, n))]);
+
+  // Stage renamed copies (prefix stripped) in a scratch dir, then zip that —
+  // `zip` has no flag to give an entry a name other than its source
+  // basename, and the archive's filenames are exactly what the app titles
+  // the picture from.
+  const stageDir = fs.mkdtempSync(path.join(DIST_DIR, '.pack-'));
+  try {
+    const staged = picked.map((name) => {
+      const dest = path.join(stageDir, stripOrderPrefix(name));
+      fs.copyFileSync(path.join(QUEUE_DIR, name), dest);
+      return dest;
+    });
+    // -j junks the stored path, so the zip holds bare filenames at its root.
+    execFileSync('zip', ['-qj', out, ...staged]);
+  } finally {
+    fs.rmSync(stageDir, { recursive: true, force: true });
+  }
 
   if (!opts.dryRun) {
     for (const name of picked) fs.rmSync(path.join(QUEUE_DIR, name));
