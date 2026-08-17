@@ -30,10 +30,13 @@ const STYLE = [
   'flat vector poster illustration',
   'bold simple shapes with clean silhouettes',
   'strictly flat areas of solid colour',
+  'vivid, richly saturated colours — no washed-out, muted or pastel tones',
   'no gradients, no shading, no texture, no grain, no noise, no halftone',
-  'limited palette of roughly 12 well separated colours',
+  'varied palette of roughly 16 well separated, vibrant colours',
   'strong contrast between neighbouring shapes',
-  'large clear regions, nothing finer than a fingertip',
+  // Zoom/pan is built into the app now, so shapes a bit finer than a
+  // fingertip stay paintable — no need to blow them up into slivers.
+  'large clear regions, with room for some smaller detail shapes',
   'centred composition, full bleed, no border, no frame',
   'no text, no letters, no numbers, no signature, no watermark',
 ].join(', ');

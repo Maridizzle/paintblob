@@ -22,10 +22,16 @@ export const DEFAULTS = {
   // shape can survive tracing, so raising it is what actually buys detail.
   // Cost is linear-ish and still lands well under a second.
   size: 900,
-  maxColours: 16,   // paint tubs
-  maxCells: 90,     // clickable regions
-  minAreaFrac: 0.0011,
+  maxColours: 17,   // paint tubs
+  maxCells: 110,    // clickable regions
+  minAreaFrac: 0.0008,
   denoise: 1,
+  // Nudges every pixel away from its own luma before quantisation, so the
+  // palette lands on richer colour instead of whatever muted average the
+  // source happened to have. 1 leaves colours untouched; small cells being
+  // easier to see and paint since zoom/pan shipped is what buys room for
+  // this on top of the maxCells bump above.
+  saturate: 1.25,
 };
 
 /**
@@ -45,12 +51,30 @@ export const DEFAULTS = {
  */
 export const DETAIL_PRESETS = {
   chunky: { maxColours: 11, maxCells: 38, minAreaFrac: 0.0035 },
-  normal: { maxColours: 16, maxCells: 90, minAreaFrac: 0.0011 },
+  normal: { maxColours: 17, maxCells: 110, minAreaFrac: 0.0008 },
   detailed: { maxColours: 18, maxCells: 150, minAreaFrac: 0.00045 },
   insane: {
     maxColours: 20, maxCells: 280, minAreaFrac: 0.0002, size: 1200,
   },
 };
+
+/**
+ * Vibrance boost: pushes each channel away from the pixel's own luma by
+ * `factor`, run right before quantisation so the palette picks up the
+ * richer colour rather than a photo's washed-out average. 1 is a no-op;
+ * Uint8ClampedArray clips the result so nothing wraps.
+ */
+export function boostSaturation(rgba, factor) {
+  if (factor === 1) return rgba;
+  const out = new Uint8ClampedArray(rgba);
+  for (let i = 0; i < out.length; i += 4) {
+    const luma = 0.299 * out[i] + 0.587 * out[i + 1] + 0.114 * out[i + 2];
+    out[i] = luma + (out[i] - luma) * factor;
+    out[i + 1] = luma + (out[i + 1] - luma) * factor;
+    out[i + 2] = luma + (out[i + 2] - luma) * factor;
+  }
+  return out;
+}
 
 /**
  * Box-filter downscale. Averaging beats nearest here: it kills stray pixels
@@ -120,8 +144,9 @@ export function buildPuzzle(rgba, srcW, srcH, opts = {}) {
   // already averaged some of it away.
   const grain = o.smooth ?? passesForGrain(estimateGrain(resized, width, height));
   const pixels = despeckle(resized, width, height, grain);
+  const vivid = boostSaturation(pixels, o.saturate ?? 1);
 
-  const { palette, indices } = quantize(pixels, width, height, o.maxColours);
+  const { palette, indices } = quantize(vivid, width, height, o.maxColours);
   const cleaned = o.denoise > 0
     ? denoiseIndices(indices, width, height, o.denoise, palette.length)
     : indices;
