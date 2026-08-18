@@ -217,8 +217,6 @@ function createWindow() {
 
 /* -------------------------------------------------------------------- smoke */
 
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 async function runSmokeTest(target) {
   const errors = [];
   // A file chooser may only open from a real user gesture, and this test
@@ -234,7 +232,19 @@ async function runSmokeTest(target) {
 
   try {
     await new Promise((resolve) => target.webContents.once('did-finish-load', resolve));
-    await wait(1200);
+    // A fixed sleep here used to race a slow boot on a loaded CI runner —
+    // worst on a 500-cell picture, whose prepareCells() has the most Path2D
+    // parsing to do. Poll for the game to actually be ready to paint instead
+    // of hoping a fixed delay was long enough; the deadline is only there so
+    // a genuinely broken boot fails fast rather than hanging.
+    await target.webContents.executeJavaScript(`(async () => {
+      const deadline = Date.now() + 8000;
+      while (Date.now() < deadline) {
+        const t = window.__paintblobTest;
+        if (t?.state?.puzzle && t.state.selected >= 0 && t.state.cells.length > 0) return;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    })()`);
 
     // Click an actual cell of the auto-selected first tub, found through the
     // same anchor point the renderer uses for its number — not a blind spray
