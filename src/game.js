@@ -439,6 +439,7 @@ function launch(cell, point) {
     seed: S.seed++,
     speed: S.save.settings.speed ?? 1,
     density: S.save.settings.density ?? 1,
+    opacity: S.save.settings.opacity ?? 0.7,
   });
   burst.cell = cell;
   burst.applied = false;
@@ -1426,6 +1427,7 @@ function renderSettings(body) {
   slider('Volume', 'volume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`, (v) => sfx.setVolume(v));
   slider('Blob speed', 'speed', 0.6, 1.8, 0.1, (v) => `${v.toFixed(1)}×`);
   slider('Blob density', 'density', 0.4, 1.6, 0.1, (v) => `${v.toFixed(1)}×`);
+  slider('Blob opacity', 'opacity', 0.25, 1, 0.05, (v) => `${Math.round(v * 100)}%`);
 
   const reset = row('clickable');
   reset.innerHTML = '<div class="grow"><div class="label">Repaint this picture</div>' +
@@ -1582,6 +1584,9 @@ async function boot() {
 
   S.save = await api.readSave();
   S.save.settings.speed ??= 1;
+  // Ships translucent: the splat covers most of the picture at its peak, and
+  // seeing the artwork through it is the point. The slider goes back to 100%.
+  S.save.settings.opacity ??= 0.7;
   S.save.stats.mutedCells ??= 0;
   S.save.stats.patientLandings ??= 0;
   S.save.stats.hints ??= 0;

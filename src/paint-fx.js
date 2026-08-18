@@ -304,6 +304,9 @@ export class Burst {
    * @param {number} o.reach  cell's furthest corner from the anchor
    * @param {number} [o.speed]  playback rate; 1 = normal, 2 = twice as fast
    * @param {number} [o.density] 0.4..1.6 blob count multiplier
+   * @param {number} [o.opacity] 0..1 for the flying splat only — the cell
+   *   flood in drawFill() stays opaque, since it becomes the cell's
+   *   permanent colour.
    */
   constructor(o) {
     this.origin = o.origin;
@@ -311,6 +314,7 @@ export class Burst {
     this.colour = o.colour;
     this.reach = o.reach;
     this.speed = o.speed ?? 1;
+    this.opacity = o.opacity ?? 1;
     this.cellPath = o.cellPath;
     this.width = o.width;
     this.height = o.height;
@@ -508,6 +512,12 @@ export class Burst {
     // dominated the whole frame — 21ms of a 22ms budget — and it is also
     // *sharper*, which is the opposite of what this upscale is here to do.
     ctx.imageSmoothingQuality = 'low';
+    // The whole splat has already been resolved into `scratch` above, so
+    // fading it here scales every blob, droplet, smear and highlight as one
+    // object — the internal sheen/shadow relationships survive intact, which
+    // per-shape alpha would not manage. drawFill() is untouched: that flood
+    // becomes the cell's permanent colour.
+    ctx.globalAlpha = this.opacity;
     ctx.drawImage(scratch, 0, 0, this.width, this.height);
     ctx.restore();
   }

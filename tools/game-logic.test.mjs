@@ -19,6 +19,7 @@ import {
   activate, isActive, consumeActive, NUMBER_RECOLOR_CYCLE, nextNumberRecolorIndex,
 } from '../src/abilities.js';
 import { WARDROBE_ITEMS } from '../src/wardrobe.js';
+import { Burst } from '../src/paint-fx.js';
 import {
   buildAvatarSVG, defaultAvatarCustomize, setVariant, VARIANTS, RACE_PROFILE, raceSkinPalette,
 } from '../src/avatar.js';
@@ -548,4 +549,40 @@ test('both DEFAULT_SAVE literals declare a race, and boot backfills it', () => {
   const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
   assert.match(game, /customize\.race \?\?= 'human'/,
     'boot() must backfill customize.race or every returning player loses their avatar');
+});
+
+/* ------------------------------------------------------------- paint blob */
+
+// Burst's constructor never touches the DOM (the scratch canvas is only
+// created inside drawBlobs), so the opacity knob is checkable here.
+
+test('a Burst stores its opacity and defaults to fully opaque', () => {
+  const base = {
+    origin: { x: 10, y: 10 },
+    sink: { x: 20, y: 20 },
+    colour: '#ff0000',
+    width: 100,
+    height: 100,
+    reach: 12,
+    seed: 1,
+  };
+  assert.equal(new Burst(base).opacity, 1, 'an omitted opacity must not fade the blob');
+  assert.equal(new Burst({ ...base, opacity: 0.7 }).opacity, 0.7);
+  assert.equal(new Burst({ ...base, opacity: 0 }).opacity, 0, '0 must survive the ?? guard');
+});
+
+test('game.js passes an opacity through to every Burst it launches', () => {
+  const text = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  const constructions = [...text.matchAll(/new Burst\(\{[\s\S]*?\}\)/g)];
+  assert.equal(constructions.length, 1, 'expected exactly one Burst construction site');
+  assert.match(constructions[0][0], /opacity:/, 'the blob opacity setting is not reaching the Burst');
+});
+
+test('both DEFAULT_SAVE literals ship the blob opacity, and boot backfills it', () => {
+  for (const f of ['src/platform.js', 'electron/main.cjs']) {
+    const text = fs.readFileSync(path.join(ROOT, f), 'utf8');
+    assert.match(text, /settings: \{[^}]*opacity:/, `${f} is missing opacity in DEFAULT_SAVE.settings`);
+  }
+  const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  assert.match(game, /settings\.opacity \?\?=/, 'boot() should backfill settings.opacity');
 });
