@@ -586,3 +586,32 @@ test('both DEFAULT_SAVE literals ship the blob opacity, and boot backfills it', 
   const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
   assert.match(game, /settings\.opacity \?\?=/, 'boot() should backfill settings.opacity');
 });
+
+test('every panel renderer bands its list', () => {
+  const text = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  // Each renderer's body, from its signature to the next top-level function.
+  for (const name of ['renderPictures', 'renderTrophies', 'renderAvatarPanel', 'renderSettings']) {
+    const start = text.indexOf(`function ${name}(`);
+    assert.ok(start > 0, `${name} is missing from game.js`);
+    const end = text.indexOf('\nfunction ', start + 1);
+    const body = text.slice(start, end === -1 ? text.length : end);
+    assert.match(body, /\bband\(/, `${name} does not band its rows`);
+  }
+});
+
+test('the band tint is distinct from both the base row and the hover tint', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'src/styles.css'), 'utf8');
+  const tint = (selector) => {
+    const m = css.match(new RegExp(`${selector}\\s*\\{[^}]*background: (rgba\\([^)]*\\))`));
+    assert.ok(m, `no background found for ${selector}`);
+    return m[1];
+  };
+  // `\\s*{` keeps the bare `.row` pattern off `.row.alt`.
+  const base = tint('\\.row');
+  const alt = tint('\\.row\\.alt');
+  const hover = tint('\\.row\\.clickable:hover');
+  assert.notEqual(alt, base, 'a banded row must not match the base row');
+  // Without this, hovering an alt row would give no feedback at all.
+  assert.notEqual(hover, alt, 'hover must not match the band tint');
+  assert.notEqual(hover, base, 'hover must not match the base tint');
+});

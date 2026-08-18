@@ -485,6 +485,45 @@ check('both mystery pictures are listed with hidden titles and no colour swatche
   mysteryRows.count >= 2 && mysteryRows.swatchCounts.every((n) => n === 0),
   JSON.stringify(mysteryRows));
 
+// Banding is applied in JS, so the thing worth checking is the property CSS
+// alone could not guarantee: that the stripes actually alternate once the
+// headings and controls each panel interleaves with its rows are in the DOM.
+const banding = await page.evaluate(async () => {
+  const out = {};
+  for (const panel of ['pictures', 'trophies', 'avatar', 'settings']) {
+    document.querySelector(`[data-act="${panel}"]`).click();
+    await new Promise((r) => setTimeout(r, 250));
+    // Group by parent: the avatar panel nests its rows in .avatar-section
+    // rather than directly under #panelBody, and each container bands alone.
+    const groups = new Map();
+    for (const el of document.querySelectorAll('#panelBody .row')) {
+      if (!groups.has(el.parentElement)) groups.set(el.parentElement, []);
+      groups.get(el.parentElement).push(el);
+    }
+    out[panel] = [...groups.values()].map((rows) => {
+      // Two rows sit outside the stripe by design: .earned carries its own
+      // amber tint, and whichever row the mouse happens to be parked over
+      // from an earlier check is showing its hover tint.
+      const tints = rows.map((r) => (r.classList.contains('earned') || r.matches(':hover')
+        ? null : getComputedStyle(r).backgroundColor));
+      const alternates = tints.every((t, i) => {
+        if (t === null || i === 0 || tints[i - 1] === null) return true;
+        return t !== tints[i - 1];
+      });
+      const distinct = new Set(tints.filter(Boolean)).size;
+      return { rows: rows.length, distinct, alternates };
+    });
+    document.querySelector('[data-act="panel-close"]')?.click();
+    await new Promise((r) => setTimeout(r, 60));
+  }
+  return out;
+});
+const bandGroups = Object.values(banding).flat().filter((g) => g.rows > 1);
+check('every panel list is banded in alternating stripes',
+  bandGroups.length >= 4
+    && bandGroups.every((g) => g.alternates && g.distinct === 2),
+  JSON.stringify(banding));
+
 // The picker itself: a real chooser needs a user gesture, so click() is
 // stubbed and the events a chooser emits are dispatched instead. What matters
 // is that nothing resolves the picker early — finishing detaches the input,

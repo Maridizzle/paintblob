@@ -723,6 +723,18 @@ function row(cls = '') {
   return el;
 }
 
+/**
+ * Zebra-stripes a panel list. Counts only the direct `.row` children of
+ * `container`, so the add-picture control, the trophy summary line and the
+ * avatar tab strip don't throw the alternation off — and a skipped hidden
+ * achievement can't either, since this reads the DOM rather than a loop
+ * index. CSS `:nth-child` can do neither: every one of those is a <div>.
+ */
+function band(container) {
+  container.querySelectorAll(':scope > .row')
+    .forEach((el, i) => el.classList.toggle('alt', i % 2 === 1));
+}
+
 function renderPictures(body) {
   body.append(buildAddRow(body));
 
@@ -789,6 +801,7 @@ function renderPictures(body) {
     });
     body.append(el);
   }
+  band(body);
 }
 
 /* ------------------------------------------------------------------ import */
@@ -990,6 +1003,7 @@ function renderTrophies(body) {
 
     body.append(el);
   }
+  band(body);
 }
 
 /* --------------------------------------------------------------------- avatar */
@@ -1052,6 +1066,8 @@ function renderAvatarPanel(body) {
   if (S.avatarTab === 'outfits') renderAvatarOutfits(section, stage);
   else if (S.avatarTab === 'abilities') renderAvatarAbilities(section);
   else renderAvatarCustomize(section, stage);
+  // One call covers all three tabs: they append synchronously into `section`.
+  band(section);
 }
 
 function renderAvatarCustomize(section, stage) {
@@ -1439,6 +1455,7 @@ function renderSettings(body) {
     await loadPuzzle(S.puzzle.id);
   });
   body.append(reset);
+  band(body);
 }
 
 function syncSoundIcon() {
