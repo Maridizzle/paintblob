@@ -237,14 +237,23 @@ async function runSmokeTest(target) {
     // parsing to do. Poll for the game to actually be ready to paint instead
     // of hoping a fixed delay was long enough; the deadline is only there so
     // a genuinely broken boot fails fast rather than hanging.
-    await target.webContents.executeJavaScript(`(async () => {
-      const deadline = Date.now() + 8000;
-      while (Date.now() < deadline) {
+    const bootPoll = await target.webContents.executeJavaScript(`(async () => {
+      const start = Date.now();
+      const deadline = start + 8000;
+      for (;;) {
         const t = window.__paintblobTest;
-        if (t?.state?.puzzle && t.state.selected >= 0 && t.state.cells.length > 0) return;
+        const ready = !!(t?.state?.puzzle && t.state.selected >= 0 && t.state.cells.length > 0);
+        if (ready || Date.now() >= deadline) {
+          return {
+            ready, elapsedMs: Date.now() - start, hasHook: !!t,
+            hasPuzzle: !!t?.state?.puzzle, selected: t?.state?.selected,
+            cellsLen: t?.state?.cells?.length ?? null,
+          };
+        }
         await new Promise((r) => setTimeout(r, 50));
       }
     })()`);
+    console.log(`smoke: boot poll ${JSON.stringify(bootPoll)}`);
 
     // Click an actual cell of the auto-selected first tub, found through the
     // same anchor point the renderer uses for its number — not a blind spray
