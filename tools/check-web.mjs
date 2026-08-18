@@ -89,9 +89,11 @@ await page.waitForFunction(
 
 // Switch to the picture with the most paint tubs. A tray of eighteen is what
 // actually threatens a phone layout; whichever puzzle happens to sort first
-// tells you nothing.
+// tells you nothing. Blind picture titles are hidden in the list (that's the
+// whole point of them), so clicking one by its real title further down would
+// never find a row — restrict the search to picked ones a title click works.
 const manifest = JSON.parse(fs.readFileSync(path.join(WEB, 'puzzles', 'manifest.json'), 'utf8'));
-const busiest = [...manifest].sort((a, b) => b.colours - a.colours)[0];
+const busiest = [...manifest].filter((p) => !p.blind).sort((a, b) => b.colours - a.colours)[0];
 await page.click('[data-act="pictures"]');
 await page.click(`.row.clickable:has-text("${busiest.title}")`);
 await page.waitForFunction(

@@ -3,13 +3,13 @@
     "id": "aurora-over-ice",
     "title": "Aurora Over Ice",
     "cells": 110,
-    "colours": 17,
+    "colours": 22,
     "thumb": [
-      "#2b538c",
-      "#78a1cd",
       "#063258",
-      "#0b1f43",
-      "#084d6f"
+      "#78a1cc",
+      "#2b538b",
+      "#0b1e43",
+      "#a0bad8"
     ],
     "blind": true
   },
@@ -43,7 +43,7 @@
     "id": "harbour-row",
     "title": "Harbour Row",
     "cells": 69,
-    "colours": 18,
+    "colours": 19,
     "thumb": [
       "#372e4f",
       "#d2e9f0",
@@ -58,11 +58,11 @@
     "cells": 110,
     "colours": 14,
     "thumb": [
-      "#0b4467",
-      "#0f587b",
+      "#093658",
+      "#0d5073",
       "#248eaa",
-      "#bcdfd0",
-      "#08233f"
+      "#bcdfcf",
+      "#116386"
     ],
     "blind": true
   },
@@ -70,13 +70,13 @@
     "id": "kintsugi-bowl-and-magnolias",
     "title": "Kintsugi Bowl And Magnolias",
     "cells": 110,
-    "colours": 17,
+    "colours": 22,
     "thumb": [
-      "#2e4d39",
-      "#3f766b",
-      "#2d1615",
-      "#2c1d2e",
-      "#9b49a0"
+      "#311713",
+      "#2a1b2c",
+      "#803178",
+      "#9a499f",
+      "#2d4c39"
     ],
     "blind": true
   },
@@ -97,13 +97,13 @@
     "id": "library-in-the-clouds",
     "title": "Library In The Clouds",
     "cells": 110,
-    "colours": 17,
+    "colours": 16,
     "thumb": [
       "#30190c",
-      "#1a0e09",
       "#432210",
-      "#7f3b17",
-      "#572810"
+      "#572810",
+      "#190e08",
+      "#633719"
     ],
     "blind": true
   },
@@ -111,12 +111,12 @@
     "id": "sunset-tidepool",
     "title": "Sunset Tidepool",
     "cells": 110,
-    "colours": 17,
+    "colours": 29,
     "thumb": [
-      "#24455d",
-      "#1b3046",
+      "#25445b",
+      "#1b2f46",
       "#122033",
-      "#5f3125",
+      "#76b2b5",
       "#0e101d"
     ],
     "blind": true

@@ -34,6 +34,10 @@ function parseArgs(argv) {
       case 'cells': opts.maxCells = Number(value); break;
       case 'min-area': opts.minAreaFrac = Number(value); break;
       case 'denoise': opts.denoise = Number(value); break;
+      // Overrides the grain-driven despeckle pass count buildPuzzle() would
+      // otherwise measure automatically — for isolating whether pre-quantise
+      // smoothing, not region merging, is what's eating a fine detail.
+      case 'smooth': opts.smooth = Number(value); break;
       case 'id': opts.id = value; break;
       case 'title': opts.title = value; break;
       // Boolean flag — undo the lookahead above unless `--blind=...` was
