@@ -98,6 +98,16 @@ export class Board {
     this.reveal = filled.size === cells.length ? 1 : 0;
     this.resetZoom();
 
+    // Colour Flash and Golden Cell both reference this picture's own cell
+    // array/palette — carrying either into a different picture would flash
+    // the wrong colour or, worse, hand a stray cell the 5x Golden Cell
+    // award in commitFill(). Number Recolor has no such reference, but an
+    // ability's effect outliving the puzzle it was cast in is surprising
+    // either way, so it goes too.
+    this.colourFlash = null;
+    this.numberOverride = null;
+    this.goldenCell = null;
+
     this.showSource = false;
     this.sourceBitmap?.close();
     this.sourceBitmap = null;

@@ -1,7 +1,7 @@
 import { Board } from './render.js';
 import { Burst, audioCue } from './paint-fx.js';
 import { Sfx } from './audio.js';
-import { Achievements, StreakTracker } from './achievements.js';
+import { ACHIEVEMENTS, Achievements, StreakTracker } from './achievements.js';
 import { accruePassiveHint, grantHints, spendHint, pickHintTarget } from './hints.js';
 import { prepareCells, cellAt, cellNear } from './geometry.js';
 import { importImages, imagesFromDrop } from './import.js';
@@ -1563,6 +1563,17 @@ async function boot() {
     persist();
   });
   achievements.sync(S.save.stats);
+
+  // sync() only fires onUnlock for a threshold NEWLY crossed this boot — a
+  // player who already earned blob-1000/pic-10 in a past session, before
+  // this feature existed, has that id sitting in achievements.unlocked
+  // already, so onUnlock never re-fires for it and the tied outfit would
+  // otherwise never arrive. Backfill from the full unlocked set instead.
+  for (const def of ACHIEVEMENTS) {
+    if (def.outfit && achievements.has(def.id) && !S.save.avatar.unlocked.includes(def.outfit)) {
+      S.save.avatar.unlocked.push(def.outfit);
+    }
+  }
 
   document.querySelector('[data-act="pin"]')
     ?.classList.toggle('on', S.save.settings.alwaysOnTop !== false);
