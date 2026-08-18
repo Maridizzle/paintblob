@@ -6,6 +6,13 @@ import { accruePassiveHint, grantHints, spendHint, pickHintTarget } from './hint
 import { prepareCells, cellAt, cellNear } from './geometry.js';
 import { importImages, imagesFromDrop } from './import.js';
 import { createPlatform } from './platform.js';
+import { buildAvatarSVG, defaultAvatarCustomize, DEFAULT_PALETTE, VARIANTS, setVariant } from './avatar.js';
+import { grantPoints, spendPoints, levelForPoints, pointsIntoLevel } from './points.js';
+import {
+  ABILITIES, defaultAbilityState, getDef, isUnlocked, grantLevelUpCharges,
+  activate as activateAbility, isActive as isAbilityActive, consumeActive,
+} from './abilities.js';
+import { WARDROBE_ITEMS } from './wardrobe.js';
 
 let api;
 const $ = (id) => document.getElementById(id);
@@ -33,6 +40,8 @@ const S = {
   importing: false,
   hintsThisPuzzle: 0,
   pending: new Set(), // cells with a burst already in flight, claimed but not yet filled
+  avatarTab: 'customize', // UI-only, not persisted — resets to Customize each time the panel opens
+  avatarSlot: null,       // which avatar part is currently being recoloured
 };
 
 // Read-only handle for the smoke test (electron/main.cjs) so it can click a
@@ -59,6 +68,7 @@ function persist(immediate = false) {
       stats: S.save.stats,
       settings: S.save.settings,
       unlocked: S.save.unlocked,
+      avatar: S.save.avatar,
     });
   };
   if (immediate) flush();
@@ -368,8 +378,14 @@ function tryPaint(clientX, clientY, pointerType) {
   const { point, cell } = pointerToCell(clientX, clientY);
 
   // Aimed squarely at an unpainted cell of another colour: that is a genuine
-  // mistake and deserves the buzz, not a silent correction.
+  // mistake and deserves the buzz, not a silent correction — unless Streak
+  // Shield is up, which exists precisely to absorb one of these.
   if (cell && !S.filled.has(cell.id) && !S.pending.has(cell.id) && cell.colour !== S.selected) {
+    if (isAbilityActive(S.save.avatar.abilities, 'streak-shield', Date.now())) {
+      consumeActive(S.save.avatar.abilities, 'streak-shield');
+      syncAbilityRow();
+      return;
+    }
     sfx.play('nope');
     streaks.wrong();
     const tub = $('tubs').children[cell.colour];
@@ -384,8 +400,9 @@ function tryPaint(clientX, clientY, pointerType) {
     // Missed everything, or landed on a cell already done or already claimed
     // by a burst still in flight. Look just around the point — small cells
     // are fiddly with a mouse and much worse under a fingertip, which covers
-    // several at once.
-    const slack = (pointerType === 'touch' ? 18 : 7) / board.scale;
+    // several at once. Steady Hand widens this further on request.
+    const steady = isAbilityActive(S.save.avatar.abilities, 'steady-hand', Date.now()) ? 1.6 : 1;
+    const slack = ((pointerType === 'touch' ? 18 : 7) * steady) / board.scale;
     const spokenFor = S.pending.size ? new Set([...S.filled, ...S.pending]) : S.filled;
     target = cellNear(S.cells, point.x, point.y, {
       colour: S.selected,
@@ -431,10 +448,12 @@ function launch(cell, point) {
 
 function commitFill(burst) {
   const cell = burst.cell;
+  const wasGolden = board.goldenCell?.id === cell.id;
   S.filled.add(cell.id);
   S.pending.delete(cell.id);
   S.remaining[cell.colour]--;
   board.markFilled(cell.id);
+  if (wasGolden) board.goldenCell = null;
 
   S.save.stats.cells++;
   if (!sfx.enabled) S.save.stats.mutedCells = (S.save.stats.mutedCells || 0) + 1;
@@ -442,6 +461,22 @@ function commitFill(burst) {
     sfx.play('bank');
     syncHints();
   }
+
+  // Points/levels: only a real successful click ever reaches commitFill —
+  // tryPaint() returns early on every kind of miss — so this is structurally
+  // the one and only place points get granted.
+  const surging = isAbilityActive(S.save.avatar.abilities, 'colour-surge', Date.now());
+  const award = (wasGolden ? 5 : 1) * (surging ? 2 : 1);
+  const beforeLevel = levelForPoints(S.save.stats.pointsEarned);
+  grantPoints(S.save.stats, award);
+  const afterLevel = levelForPoints(S.save.stats.pointsEarned);
+  for (let lv = beforeLevel + 1; lv <= afterLevel; lv++) grantLevelUpCharges(S.save.avatar.abilities, lv);
+  if (afterLevel > beforeLevel) {
+    toast({ icon: '⭐', name: `Level ${afterLevel}`, desc: 'Your avatar levelled up.' }, '', { sticky: true });
+    sfx.play('achievement');
+  }
+  syncAvatarWidget();
+  syncAbilityRow();
 
   for (const id of streaks.fill(Date.now())) achievements.award(id);
   achievements.sync(S.save.stats);
@@ -455,6 +490,36 @@ function commitFill(burst) {
   persist();
 
   if (S.filled.size === S.cells.length) finish();
+}
+
+/**
+ * Half Fill's effect: paints half of the held colour's remaining cells
+ * outright. Deliberately bypasses commitFill entirely — no stats.cells++, no
+ * points, no streak credit — because no click happened. "Points for each
+ * SUCCESSFUL click" means exactly that; this is the one ability that hands
+ * over direct progress instead of an edge, so it must never look like one.
+ */
+function autoFillHalfOfHeldColour() {
+  if (S.finished || S.selected < 0) return 0;
+  const candidates = S.cells.filter(
+    (c) => c.colour === S.selected && !S.filled.has(c.id) && !S.pending.has(c.id),
+  );
+  const n = Math.ceil(candidates.length / 2);
+  for (let i = 0; i < n; i++) {
+    const cell = candidates[i];
+    S.filled.add(cell.id);
+    S.remaining[cell.colour]--;
+    board.markFilled(cell.id);
+  }
+  if (n && S.remaining[S.selected] === 0) {
+    achievements.award('tub-empty');
+    nextTub();
+  }
+  syncTubs();
+  persist();
+  ensureFrame();
+  if (S.filled.size === S.cells.length) finish();
+  return n;
 }
 
 function finish() {
@@ -578,7 +643,8 @@ function frame(now) {
   }
 
   // Full rate while anything is moving, a lazy 30fps for the idle pulse.
-  const busy = S.bursts.length > 0 || S.revealFrom > 0 || board.hintTarget;
+  const busy = S.bursts.length > 0 || S.revealFrom > 0 || board.hintTarget
+    || board.colourFlash || board.numberOverride || board.goldenCell;
   if (busy || now - lastDraw > 33) {
     lastDraw = now;
     board.draw(S.bursts, now);
@@ -598,8 +664,10 @@ async function openPanel(kind) {
   S.panel = kind;
   const body = $('panelBody');
   body.textContent = '';
-  $('panelTitle').textContent =
-    kind === 'pictures' ? 'Pictures' : kind === 'trophies' ? 'Achievements' : 'Settings';
+  $('panelTitle').textContent = kind === 'pictures' ? 'Pictures'
+    : kind === 'trophies' ? 'Achievements'
+    : kind === 'avatar' ? 'Avatar'
+    : 'Settings';
   $('panel').classList.remove('hidden');
 
   if (kind === 'pictures') {
@@ -610,6 +678,8 @@ async function openPanel(kind) {
     renderPictures(body);
   } else if (kind === 'trophies') {
     renderTrophies(body);
+  } else if (kind === 'avatar') {
+    renderAvatarPanel(body);
   } else {
     renderSettings(body);
   }
@@ -895,6 +965,341 @@ function renderTrophies(body) {
   }
 }
 
+/* --------------------------------------------------------------------- avatar */
+
+function wireAvatarPartClicks(stageEl) {
+  stageEl.addEventListener('click', (e) => {
+    const part = e.target.closest('[data-slot]');
+    if (!part) return;
+    S.avatarSlot = part.dataset.slot;
+    S.avatarTab = 'customize';
+    renderAvatarPanel($('panelBody'));
+  });
+}
+
+function renderAvatarPanel(body) {
+  body.textContent = '';
+  const customize = S.save.avatar.customize;
+  const level = levelForPoints(S.save.stats.pointsEarned);
+  const { into, span } = pointsIntoLevel(S.save.stats.pointsEarned);
+
+  const head = document.createElement('div');
+  head.className = 'avatar-head';
+  const stage = document.createElement('div');
+  stage.className = 'avatar-stage';
+  stage.innerHTML = buildAvatarSVG(customize);
+  wireAvatarPartClicks(stage);
+
+  const levelbar = document.createElement('div');
+  levelbar.className = 'avatar-levelbar';
+  const label = document.createElement('div');
+  label.className = 'label';
+  label.textContent = `Level ${level} · ${S.save.stats.points ?? 0}🪙 to spend`;
+  const bar = document.createElement('div');
+  bar.className = 'bar';
+  const fill = document.createElement('i');
+  fill.style.width = `${span ? (into / span) * 100 : 100}%`;
+  bar.append(fill);
+  levelbar.append(label, bar);
+  head.append(stage, levelbar);
+  body.append(head);
+
+  const tabs = document.createElement('div');
+  tabs.className = 'segmented avatar-tabs';
+  for (const key of ['customize', 'outfits', 'abilities']) {
+    const btn = document.createElement('button');
+    btn.textContent = key[0].toUpperCase() + key.slice(1);
+    btn.className = S.avatarTab === key ? 'on' : '';
+    btn.addEventListener('click', () => {
+      S.avatarTab = key;
+      renderAvatarPanel(body);
+    });
+    tabs.append(btn);
+  }
+  body.append(tabs);
+
+  const section = document.createElement('div');
+  section.className = 'avatar-section';
+  body.append(section);
+
+  if (S.avatarTab === 'outfits') renderAvatarOutfits(section, stage);
+  else if (S.avatarTab === 'abilities') renderAvatarAbilities(section);
+  else renderAvatarCustomize(section, stage);
+}
+
+function renderAvatarCustomize(section, stage) {
+  const customize = S.save.avatar.customize;
+  const redraw = () => {
+    stage.innerHTML = buildAvatarSVG(customize);
+    wireAvatarPartClicks(stage);
+    persist();
+    syncAvatarWidget();
+  };
+
+  const pick = (label, options, get, set) => {
+    const r = row();
+    const text = document.createElement('div');
+    text.className = 'label';
+    text.style.width = '68px';
+    text.textContent = label;
+    const seg = document.createElement('div');
+    seg.className = 'segmented grow';
+    for (const opt of options) {
+      const b = document.createElement('button');
+      b.textContent = opt[0].toUpperCase() + opt.slice(1);
+      b.className = get() === opt ? 'on' : '';
+      b.addEventListener('click', () => {
+        set(opt);
+        redraw();
+        [...seg.children].forEach((c) => c.classList.toggle('on', c === b));
+      });
+      seg.append(b);
+    }
+    r.append(text, seg);
+    section.append(r);
+  };
+
+  pick('Gender', VARIANTS.gender, () => customize.gender, (v) => setVariant(customize, 'gender', v));
+  pick('Hair', VARIANTS.hairStyle, () => customize.hair.style, (v) => setVariant(customize, 'hair', v));
+  pick('Eyes', VARIANTS.eyesStyle, () => customize.eyes.style, (v) => setVariant(customize, 'eyes', v));
+  pick('Face', VARIANTS.faceShape, () => customize.face.shape, (v) => setVariant(customize, 'face', v));
+
+  const sizeSlider = (label, key, min, max, step) => {
+    const r = row();
+    const text = document.createElement('div');
+    text.className = 'label';
+    text.style.width = '68px';
+    text.textContent = label;
+    const field = document.createElement('div');
+    field.className = 'field grow';
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = min;
+    input.max = max;
+    input.step = step;
+    input.value = customize[key];
+    const value = document.createElement('span');
+    value.className = 'value';
+    value.textContent = `${Math.round(customize[key] * 100)}%`;
+    input.addEventListener('input', () => {
+      customize[key] = Number(input.value);
+      value.textContent = `${Math.round(customize[key] * 100)}%`;
+      redraw();
+    });
+    field.append(input, value);
+    r.append(text, field);
+    section.append(r);
+  };
+  sizeSlider('Height', 'height', 0.85, 1.2, 0.01);
+  sizeSlider('Weight', 'weight', 0.8, 1.3, 0.01);
+
+  const hint = document.createElement('div');
+  hint.className = 'empty';
+  hint.textContent = S.avatarSlot
+    ? `Recolouring: ${S.avatarSlot}`
+    : 'Tap a part of your avatar above to recolour it.';
+  section.append(hint);
+
+  const target = S.avatarSlot && customize[S.avatarSlot];
+  if (target && 'colour' in target) {
+    const swatches = document.createElement('div');
+    swatches.className = 'swatch-row';
+    const palette = S.puzzle?.palette?.map((p) => p.hex) ?? DEFAULT_PALETTE;
+    for (const hex of palette) {
+      const sw = document.createElement('button');
+      sw.className = 'swatch';
+      sw.style.background = hex;
+      sw.title = hex;
+      sw.addEventListener('click', () => {
+        target.colour = hex;
+        redraw();
+      });
+      swatches.append(sw);
+    }
+    section.append(swatches);
+  }
+}
+
+function renderAvatarOutfits(section, stage) {
+  const customize = S.save.avatar.customize;
+  const owned = new Set(S.save.avatar.unlocked);
+
+  const head = document.createElement('div');
+  head.className = 'empty';
+  head.style.padding = '2px 4px 8px';
+  head.textContent = `${owned.size} of ${WARDROBE_ITEMS.length} owned · ${S.save.stats.points ?? 0}🪙 to spend`;
+  section.append(head);
+
+  const redraw = () => {
+    stage.innerHTML = buildAvatarSVG(customize);
+    wireAvatarPartClicks(stage);
+    persist();
+    syncAvatarWidget();
+    renderAvatarPanel($('panelBody'));
+  };
+
+  for (const item of WARDROBE_ITEMS) {
+    const has = owned.has(item.id);
+    const equipped = customize[item.slot]?.itemId === item.id;
+    const el = row(has ? 'clickable' : 'locked');
+    const text = document.createElement('div');
+    text.className = 'grow';
+    text.innerHTML = '<div class="label"></div><div class="sub"></div>';
+    text.querySelector('.label').textContent = item.name;
+    text.querySelector('.sub').textContent = equipped
+      ? 'equipped'
+      : has
+        ? 'owned · tap to equip'
+        : item.source === 'achievement' ? 'earned from an achievement' : `${item.price}🪙`;
+    el.append(text);
+
+    if (equipped) {
+      const tick = document.createElement('span');
+      tick.className = 'glyph';
+      tick.textContent = '✓';
+      el.append(tick);
+      if (item.slot === 'dress') {
+        el.classList.add('clickable');
+        el.title = 'Tap to remove the dress';
+        el.addEventListener('click', () => {
+          customize.dress.itemId = null;
+          redraw();
+        });
+      }
+    } else if (has) {
+      el.addEventListener('click', () => {
+        customize[item.slot].itemId = item.id;
+        redraw();
+      });
+    } else if (item.source === 'store') {
+      const buy = document.createElement('button');
+      buy.className = 'primary';
+      buy.textContent = 'Buy';
+      buy.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!spendPoints(S.save.stats, item.price)) {
+          sfx.play('nope');
+          return;
+        }
+        S.save.avatar.unlocked.push(item.id);
+        toast({ icon: '👕', name: `Unlocked ${item.name}`, desc: 'Equip it from Outfits.' });
+        redraw();
+      });
+      el.append(buy);
+    }
+    section.append(el);
+  }
+}
+
+function renderAvatarAbilities(section) {
+  const level = levelForPoints(S.save.stats.pointsEarned);
+
+  for (const def of ABILITIES) {
+    const unlocked = isUnlocked(def, level);
+    const s = S.save.avatar.abilities[def.id] ?? { charges: 0 };
+    const el = row(unlocked ? 'clickable' : 'locked');
+    const glyph = document.createElement('span');
+    glyph.className = 'glyph';
+    glyph.textContent = unlocked ? def.icon : '🔒';
+
+    const text = document.createElement('div');
+    text.className = 'grow';
+    text.innerHTML = '<div class="label"></div><div class="sub"></div>';
+    text.querySelector('.label').textContent = def.name;
+    text.querySelector('.sub').textContent = unlocked ? def.desc : `Unlocks at level ${def.unlockLevel}`;
+    el.append(text);
+
+    if (unlocked) {
+      const reward = document.createElement('span');
+      reward.className = 'reward';
+      reward.textContent = `${s.charges}/${def.maxCharges}`;
+      el.append(reward);
+      el.addEventListener('click', () => {
+        triggerAbility(def.id);
+        renderAvatarPanel($('panelBody'));
+      });
+    }
+    section.append(el);
+  }
+}
+
+function triggerAbility(id) {
+  if (!S.puzzle || S.finished) return;
+  const def = getDef(id);
+  const level = levelForPoints(S.save.stats.pointsEarned);
+  if (!def || !isUnlocked(def, level)) return;
+  const now = Date.now();
+  if (!activateAbility(S.save.avatar.abilities, id, now)) {
+    sfx.play('nope');
+    return;
+  }
+
+  switch (id) {
+    case 'precision-ping': {
+      const target = pickHintTarget(S.cells, S.filled, S.selected);
+      if (target) board.showHint(target.id, performance.now());
+      break;
+    }
+    case 'number-recolor':
+      board.setNumberOverride('#ffffff', def.durationMs, performance.now());
+      break;
+    case 'colour-flash':
+      if (S.selected >= 0) board.flashColour(S.selected, performance.now(), def.durationMs);
+      break;
+    case 'golden-cell': {
+      const pool = S.cells.filter((c) => c.colour === S.selected && !S.filled.has(c.id));
+      if (pool.length) {
+        const cell = pool[Math.floor(Math.random() * pool.length)];
+        board.markGolden(cell.id, def.durationMs, performance.now());
+      }
+      break;
+    }
+    case 'half-fill': {
+      const n = autoFillHalfOfHeldColour();
+      toast({ icon: def.icon, name: def.name, desc: `Auto-painted ${n} cells` });
+      break;
+    }
+    // steady-hand, colour-surge, streak-shield: the activation window set by
+    // activateAbility() above IS the whole effect — tryPaint()/commitFill()
+    // read it back directly via isAbilityActive()/consumeActive().
+    default:
+      break;
+  }
+  sfx.play('pick', 3);
+  persist();
+  syncAbilityRow();
+  ensureFrame();
+}
+
+function syncAvatarWidget() {
+  const pill = $('avatarPill');
+  if (!pill || !S.save) return;
+  const level = levelForPoints(S.save.stats.pointsEarned);
+  pill.innerHTML = `${buildAvatarSVG(S.save.avatar.customize)}<span class="level-badge">${level}</span>`;
+}
+
+function syncAbilityRow() {
+  const wrap = $('abilityRow');
+  if (!wrap || !S.save) return;
+  const level = levelForPoints(S.save.stats.pointsEarned);
+  wrap.textContent = '';
+  for (const def of ABILITIES) {
+    if (!isUnlocked(def, level)) continue;
+    const s = S.save.avatar.abilities[def.id] ?? { charges: 0 };
+    const btn = document.createElement('button');
+    btn.className = 'ability-btn';
+    btn.classList.toggle('empty', s.charges <= 0);
+    btn.dataset.ability = def.id;
+    btn.title = `${def.name} — ${s.charges}/${def.maxCharges}`;
+    btn.textContent = def.icon;
+    const badge = document.createElement('span');
+    badge.className = 'badge';
+    badge.textContent = String(s.charges);
+    btn.append(badge);
+    wrap.append(btn);
+  }
+}
+
 function renderSettings(body) {
   const settings = S.save.settings;
 
@@ -989,7 +1394,7 @@ document.addEventListener('click', async (e) => {
     case 'hint': useHint(); break;
     case 'zoom-reset': board.resetZoom(); syncZoom(); ensureFrame(); break;
     case 'toggle-source': board.setShowSource(!board.showSource); syncCompare(); ensureFrame(); break;
-    case 'pictures': case 'trophies': case 'settings':
+    case 'pictures': case 'trophies': case 'settings': case 'avatar':
       if (S.panel === act) closePanel();
       else await openPanel(act);
       break;
@@ -1004,6 +1409,14 @@ document.addEventListener('click', async (e) => {
 // part, same as the close button, dismisses it without leaving the picture.
 $('finish').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) $('finish').classList.add('hidden');
+});
+
+// A repeated list of icon buttons keyed by ability id, not a single fixed
+// [data-act] — its own small delegated listener rather than overloading the
+// chrome switch above with a dynamic case.
+$('abilityRow').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-ability]');
+  if (btn) triggerAbility(btn.dataset.ability);
 });
 
 document.addEventListener('keydown', (e) => {
@@ -1108,7 +1521,21 @@ async function boot() {
   S.save.stats.hintsUsed ??= 0;
   S.save.stats.imported ??= 0;
   S.save.stats.daysVisited ??= 0;
+  S.save.stats.points ??= 0;
+  S.save.stats.pointsEarned ??= 0;
   S.save.settings.detail ??= 'normal';
+
+  // A save from before this feature existed has no `avatar` key at all — the
+  // DEFAULT_SAVE merge in platform.js/main.cjs already covers that case with
+  // a complete literal. What it can't cover is a save that already HAS an
+  // avatar (this feature already shipped) but predates a newly added
+  // ability — abilities.js's own defaults backfill any charge state missing
+  // from what was saved, same idea as the ??= lines above.
+  const starterItems = WARDROBE_ITEMS.filter((i) => i.source === 'starter').map((i) => i.id);
+  S.save.avatar ??= { customize: defaultAvatarCustomize(), unlocked: starterItems, abilities: {} };
+  S.save.avatar.customize ??= defaultAvatarCustomize();
+  S.save.avatar.unlocked ??= starterItems;
+  S.save.avatar.abilities = { ...defaultAbilityState(), ...S.save.avatar.abilities };
   // Phones have far less GPU headroom than a laptop, and the burst is the most
   // expensive thing here. Start them lighter; the slider still goes to 1.6.
   S.save.settings.density ??= matchMedia('(pointer: coarse)').matches ? 0.7 : 1;
@@ -1127,6 +1554,10 @@ async function boot() {
     const reward = def.hint ?? 1;
     grantHints(S.save.stats, reward);
     syncHints();
+    if (def.outfit && !S.save.avatar.unlocked.includes(def.outfit)) {
+      S.save.avatar.unlocked.push(def.outfit);
+      syncAvatarWidget();
+    }
     toast(def, `+${reward}✦`, { sticky: true });
     sfx.play('achievement');
     persist();
@@ -1137,6 +1568,8 @@ async function boot() {
     ?.classList.toggle('on', S.save.settings.alwaysOnTop !== false);
   syncSoundIcon();
   syncHints();
+  syncAvatarWidget();
+  syncAbilityRow();
 
   S.manifest = await api.listPuzzles();
   ro.observe($('stage'));

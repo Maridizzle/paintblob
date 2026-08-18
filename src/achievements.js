@@ -4,6 +4,7 @@
 // Anything with `track` is a plain counter against `goal` and shows a progress
 // bar. Anything with `event` is unlocked by the game calling award() directly.
 // `hint` is how many hints unlocking it grants — defaults to 1 when absent.
+// `outfit`, when present, is a WARDROBE_ITEMS id unlocked alongside the hints.
 
 export const ACHIEVEMENTS = [
   // --- the main ladder ------------------------------------------------------
@@ -11,7 +12,7 @@ export const ACHIEVEMENTS = [
   { id: 'blob-10', icon: '💧', name: 'Getting Messy', desc: 'Fill 10 cells.', track: 'cells', goal: 10 },
   { id: 'blob-50', icon: '🖌️', name: 'Sploosh', desc: 'Fill 50 cells.', track: 'cells', goal: 50 },
   { id: 'blob-250', icon: '🪣', name: 'Bucket Brigade', desc: 'Fill 250 cells.', track: 'cells', goal: 250 },
-  { id: 'blob-1000', icon: '🌊', name: 'Tidal Wave', desc: 'Fill 1,000 cells.', track: 'cells', goal: 1000 },
+  { id: 'blob-1000', icon: '🌊', name: 'Tidal Wave', desc: 'Fill 1,000 cells.', track: 'cells', goal: 1000, outfit: 'shoes-boots' },
   { id: 'blob-5000', icon: '🌋', name: 'Chromatic Eruption', desc: 'Fill 5,000 cells.', track: 'cells', goal: 5000 },
   { id: 'blob-25000', icon: '🏆', name: 'Pigment Deity', desc: 'Fill 25,000 cells.', track: 'cells', goal: 25000 },
   { id: 'blob-100000', icon: '🌌', name: 'Chromatic Singularity', desc: 'Fill 100,000 cells.', track: 'cells', goal: 100000, hint: 25 },
@@ -19,7 +20,7 @@ export const ACHIEVEMENTS = [
   // --- pictures -------------------------------------------------------------
   { id: 'pic-1', icon: '🖼️', name: 'Framed', desc: 'Finish a picture.', track: 'puzzles', goal: 1 },
   { id: 'pic-3', icon: '🏛️', name: 'Small Gallery', desc: 'Finish 3 pictures.', track: 'puzzles', goal: 3 },
-  { id: 'pic-10', icon: '🎭', name: 'Curator', desc: 'Finish 10 pictures.', track: 'puzzles', goal: 10 },
+  { id: 'pic-10', icon: '🎭', name: 'Curator', desc: 'Finish 10 pictures.', track: 'puzzles', goal: 10, outfit: 'dress-flowy' },
   { id: 'pic-25', icon: '👑', name: 'Old Master', desc: 'Finish 25 pictures.', track: 'puzzles', goal: 25 },
   { id: 'pic-50', icon: '🖨️', name: 'Print Run', desc: 'Finish 50 pictures.', track: 'puzzles', goal: 50, hint: 12 },
   { id: 'pic-100', icon: '🏅', name: 'Century', desc: 'Finish 100 pictures.', track: 'puzzles', goal: 100, hint: 20 },

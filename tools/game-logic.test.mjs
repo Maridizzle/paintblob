@@ -13,6 +13,12 @@ import { ACHIEVEMENTS, Achievements, StreakTracker } from '../src/achievements.j
 import {
   PASSIVE_HINT_INTERVAL, accruePassiveHint, grantHints, spendHint, pickHintTarget,
 } from '../src/hints.js';
+import { grantPoints, spendPoints, levelForPoints, cumulativeForLevel } from '../src/points.js';
+import {
+  ABILITIES, getDef, isUnlocked, defaultAbilityState, grantLevelUpCharges,
+  activate, isActive, consumeActive,
+} from '../src/abilities.js';
+import { WARDROBE_ITEMS } from '../src/wardrobe.js';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const IDS = new Set(ACHIEVEMENTS.map((a) => a.id));
@@ -220,6 +226,142 @@ test('StreakTracker.fill flags night-owl and early-bird from distinct, non-overl
   assert.ok(!s.fill(at(12)).includes('early-bird'));
 });
 
+/* ---------------------------------------------------------------- points */
+
+test('grantPoints raises both the spendable balance and the lifetime total', () => {
+  const stats = {};
+  grantPoints(stats, 3);
+  grantPoints(stats, 2);
+  assert.equal(stats.points, 5);
+  assert.equal(stats.pointsEarned, 5);
+});
+
+test('grantPoints defaults to a single point', () => {
+  const stats = {};
+  grantPoints(stats);
+  assert.equal(stats.points, 1);
+});
+
+test('spendPoints refuses an insufficient balance without touching it', () => {
+  const stats = { points: 3 };
+  assert.equal(spendPoints(stats, 5), false);
+  assert.equal(stats.points, 3);
+});
+
+test('spendPoints on a fresh stats object with no points field fails cleanly', () => {
+  assert.equal(spendPoints({}, 1), false);
+});
+
+test('spendPoints succeeds exactly at the balance and leaves zero behind', () => {
+  const stats = { points: 5 };
+  assert.equal(spendPoints(stats, 5), true);
+  assert.equal(stats.points, 0);
+});
+
+test('levelForPoints starts at 1 and only rises once the next level\'s cost is met', () => {
+  assert.equal(levelForPoints(0), 1);
+  assert.equal(levelForPoints(cumulativeForLevel(2) - 1), 1);
+  assert.equal(levelForPoints(cumulativeForLevel(2)), 2);
+  assert.equal(levelForPoints(cumulativeForLevel(5)), 5);
+});
+
+/* -------------------------------------------------------------- abilities */
+
+test('every ability id is unique', () => {
+  const ids = ABILITIES.map((a) => a.id);
+  assert.equal(new Set(ids).size, ids.length);
+});
+
+test('ability cost tiers strictly rise in unlock level as max charges falls', () => {
+  const byUnlock = [...ABILITIES].sort((a, b) => a.unlockLevel - b.unlockLevel);
+  for (let i = 1; i < byUnlock.length; i++) {
+    assert.ok(
+      byUnlock[i].maxCharges <= byUnlock[i - 1].maxCharges,
+      `${byUnlock[i].id} (unlocks later) should not have more max charges than ${byUnlock[i - 1].id}`,
+    );
+  }
+});
+
+test('defaultAbilityState gives every ability a full charge pool up front', () => {
+  const state = defaultAbilityState();
+  for (const a of ABILITIES) assert.equal(state[a.id].charges, a.maxCharges);
+});
+
+test('activate spends exactly one charge and refuses at zero', () => {
+  const state = defaultAbilityState();
+  const def = getDef('precision-ping');
+  for (let i = 0; i < def.maxCharges; i++) assert.equal(activate(state, def.id, 0), true);
+  assert.equal(state[def.id].charges, 0);
+  assert.equal(activate(state, def.id, 0), false);
+});
+
+test('activate on an ability with a duration opens an active window isActive sees', () => {
+  const state = defaultAbilityState();
+  activate(state, 'colour-surge', 1000);
+  assert.equal(isActive(state, 'colour-surge', 1500), true);
+  assert.equal(isActive(state, 'colour-surge', 1000 + getDef('colour-surge').durationMs + 1), false);
+});
+
+test('activate on a zero-duration ability (an instant effect) opens no active window', () => {
+  const state = defaultAbilityState();
+  activate(state, 'precision-ping', 1000);
+  assert.equal(isActive(state, 'precision-ping', 1000), false);
+});
+
+test('consumeActive ends a window early, e.g. Streak Shield used up by the click it protected', () => {
+  const state = defaultAbilityState();
+  activate(state, 'streak-shield', 0);
+  assert.equal(isActive(state, 'streak-shield', 10), true);
+  consumeActive(state, 'streak-shield');
+  assert.equal(isActive(state, 'streak-shield', 10), false);
+});
+
+test('isUnlocked gates purely on level vs unlockLevel', () => {
+  const def = getDef('half-fill');
+  assert.equal(isUnlocked(def, def.unlockLevel - 1), false);
+  assert.equal(isUnlocked(def, def.unlockLevel), true);
+});
+
+test('grantLevelUpCharges refills one charge per level-up, capped at max, only once unlocked', () => {
+  const state = defaultAbilityState();
+  const def = getDef('colour-flash'); // unlocks at level 2, maxCharges 4
+  activate(state, def.id, 0);
+  activate(state, def.id, 0);
+  assert.equal(state[def.id].charges, 2);
+  grantLevelUpCharges(state, 1); // below unlockLevel: no-op
+  assert.equal(state[def.id].charges, 2);
+  grantLevelUpCharges(state, 2);
+  assert.equal(state[def.id].charges, 3);
+  grantLevelUpCharges(state, 3);
+  grantLevelUpCharges(state, 4);
+  grantLevelUpCharges(state, 5); // would overshoot max without the cap
+  assert.equal(state[def.id].charges, def.maxCharges);
+});
+
+test('half-fill only regains a charge every second level-up, per its slower levelsPerCharge', () => {
+  const state = defaultAbilityState();
+  const def = getDef('half-fill'); // unlocks at level 5, maxCharges 1, levelsPerCharge 2
+  activate(state, def.id, 0);
+  assert.equal(state[def.id].charges, 0);
+  grantLevelUpCharges(state, 5);
+  assert.equal(state[def.id].charges, 0, 'one level-up since unlock is not enough yet');
+  grantLevelUpCharges(state, 6);
+  assert.equal(state[def.id].charges, 1, 'the second level-up since unlock grants the charge');
+});
+
+/* --------------------------------------------------------------- wardrobe */
+
+test('every wardrobe item id is unique', () => {
+  const ids = WARDROBE_ITEMS.map((i) => i.id);
+  assert.equal(new Set(ids).size, ids.length);
+});
+
+test('every starter wardrobe item is free', () => {
+  for (const item of WARDROBE_ITEMS) {
+    if (item.source === 'starter') assert.equal(item.price, 0, `${item.id} is a starter item but has a price`);
+  }
+});
+
 /* ----------------------------------------------------- referential integrity */
 
 // Achievements.award() silently no-ops on an id with no matching definition —
@@ -247,4 +389,11 @@ test('every achievement id checked with unlocked.has() in achievements.js exists
   const ids = [...text.matchAll(/unlocked\.has\('([^']+)'\)/g)].map((m) => m[1]);
   assert.ok(ids.length > 0, 'sanity check: the scan should find at least the completionist check');
   for (const id of ids) assert.ok(IDS.has(id), `references unknown achievement id "${id}"`);
+});
+
+test('every achievement outfit field references a real WARDROBE_ITEMS id', () => {
+  const wardrobeIds = new Set(WARDROBE_ITEMS.map((i) => i.id));
+  const outfits = ACHIEVEMENTS.filter((a) => a.outfit).map((a) => a.outfit);
+  assert.ok(outfits.length > 0, 'sanity check: the scan should find at least one outfit field');
+  for (const id of outfits) assert.ok(wardrobeIds.has(id), `unknown wardrobe item id "${id}"`);
 });

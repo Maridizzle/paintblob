@@ -18,6 +18,22 @@ const DEFAULT_SAVE = {
   unlocked: [],
   settings: { sound: true, volume: 0.7, alwaysOnTop: true, scale: 1 },
   bounds: null,
+  avatar: {
+    customize: {
+      gender: 'nb', height: 1, weight: 1,
+      hair: { style: 'short', colour: '#3b2a1a' },
+      eyes: { style: 'round', colour: '#4a7a8c' },
+      face: { shape: 'oval' },
+      skin: { colour: '#e0b088' },
+      shirt: { itemId: 'shirt-basic', colour: '#c9c9c9' },
+      bottoms: { itemId: 'bottoms-basic', colour: '#3a3a3a' },
+      dress: { itemId: null, colour: '#c9c9c9' },
+      socks: { itemId: 'socks-basic', colour: '#ffffff' },
+      shoes: { itemId: 'shoes-basic', colour: '#2a2a2a' },
+    },
+    unlocked: ['shirt-basic', 'bottoms-basic', 'socks-basic', 'shoes-basic'],
+    abilities: {},
+  },
 };
 
 /* ------------------------------------------------------------------- indexeddb */
