@@ -6,7 +6,10 @@ import { accruePassiveHint, grantHints, spendHint, pickHintTarget } from './hint
 import { prepareCells, cellAt, cellNear } from './geometry.js';
 import { importImages, imagesFromDrop } from './import.js';
 import { createPlatform } from './platform.js';
-import { buildAvatarSVG, defaultAvatarCustomize, DEFAULT_PALETTE, VARIANTS, setVariant } from './avatar.js';
+import {
+  buildAvatarSVG, defaultAvatarCustomize, DEFAULT_PALETTE, VARIANTS, setVariant,
+  RACE_PROFILE, raceSkinPalette,
+} from './avatar.js';
 import { grantPoints, spendPoints, levelForPoints, pointsIntoLevel } from './points.js';
 import {
   ABILITIES, defaultAbilityState, getDef, isUnlocked, grantLevelUpCharges,
@@ -1059,14 +1062,16 @@ function renderAvatarCustomize(section, stage) {
     syncAvatarWidget();
   };
 
-  const pick = (label, options, get, set) => {
+  const pick = (label, options, get, set, wrap = false) => {
     const r = row();
     const text = document.createElement('div');
     text.className = 'label';
     text.style.width = '68px';
     text.textContent = label;
     const seg = document.createElement('div');
-    seg.className = 'segmented grow';
+    // `.segmented` is overflow:hidden with no wrap, so a six-option row
+    // would silently clip its last buttons off the end.
+    seg.className = wrap ? 'segmented grow wrap' : 'segmented grow';
     for (const opt of options) {
       const b = document.createElement('button');
       b.textContent = opt[0].toUpperCase() + opt.slice(1);
@@ -1082,6 +1087,7 @@ function renderAvatarCustomize(section, stage) {
     section.append(r);
   };
 
+  pick('Race', VARIANTS.race, () => customize.race, (v) => setVariant(customize, 'race', v), true);
   pick('Gender', VARIANTS.gender, () => customize.gender, (v) => setVariant(customize, 'gender', v));
   pick('Hair', VARIANTS.hairStyle, () => customize.hair.style, (v) => setVariant(customize, 'hair', v));
   pick('Eyes', VARIANTS.eyesStyle, () => customize.eyes.style, (v) => setVariant(customize, 'eyes', v));
@@ -1125,21 +1131,33 @@ function renderAvatarCustomize(section, stage) {
 
   const target = S.avatarSlot && customize[S.avatarSlot];
   if (target && 'colour' in target) {
-    const swatches = document.createElement('div');
-    swatches.className = 'swatch-row';
-    const palette = S.puzzle?.palette?.map((p) => p.hex) ?? DEFAULT_PALETTE;
-    for (const hex of palette) {
-      const sw = document.createElement('button');
-      sw.className = 'swatch';
-      sw.style.background = hex;
-      sw.title = hex;
-      sw.addEventListener('click', () => {
-        target.colour = hex;
-        redraw();
-      });
-      swatches.append(sw);
+    const swatchRow = (hexes) => {
+      const swatches = document.createElement('div');
+      swatches.className = 'swatch-row';
+      for (const hex of hexes) {
+        const sw = document.createElement('button');
+        sw.className = 'swatch';
+        sw.style.background = hex;
+        sw.title = hex;
+        sw.addEventListener('click', () => {
+          target.colour = hex;
+          redraw();
+        });
+        swatches.append(sw);
+      }
+      return swatches;
+    };
+    // Skin gets its race's own tones offered first — green is a long way
+    // from anything a landscape's palette will hand you — but the paint
+    // from the current picture stays right below it, unchanged.
+    if (S.avatarSlot === 'skin') {
+      const label = document.createElement('div');
+      label.className = 'empty';
+      label.style.padding = '2px 4px 0';
+      label.textContent = `${RACE_PROFILE[customize.race]?.label ?? 'Human'} skin tones`;
+      section.append(label, swatchRow(raceSkinPalette(customize.race)));
     }
-    section.append(swatches);
+    section.append(swatchRow(S.puzzle?.palette?.map((p) => p.hex) ?? DEFAULT_PALETTE));
   }
 }
 
@@ -1584,6 +1602,11 @@ async function boot() {
   const starterItems = WARDROBE_ITEMS.filter((i) => i.source === 'starter').map((i) => i.id);
   S.save.avatar ??= { customize: defaultAvatarCustomize(), unlocked: starterItems, abilities: {} };
   S.save.avatar.customize ??= defaultAvatarCustomize();
+  // Neither backend deep-merges `avatar` — an existing save's avatar object
+  // replaces DEFAULT_SAVE.avatar wholesale — so adding `race` to those two
+  // literals only ever reaches a brand-new save. This backfill is the only
+  // thing that gets it to a returning player.
+  S.save.avatar.customize.race ??= 'human';
   S.save.avatar.unlocked ??= starterItems;
   S.save.avatar.abilities = { ...defaultAbilityState(), ...S.save.avatar.abilities };
   // Phones have far less GPU headroom than a laptop, and the burst is the most

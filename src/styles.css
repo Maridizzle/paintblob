@@ -247,12 +247,18 @@ button {
   transition: transform 120ms;
 }
 .avatar-pill:hover { transform: translateY(-1px); }
+/* A head-and-shoulders portrait crop. With preserveAspectRatio meet on the
+   120x210 viewBox, the window is 210/k user units square at
+   x0 = 210(left − 0.2143k)/k, y0 = 210·top/k — so 300%/-100%/-11% frames
+   x 25..95, y 8..78, which clears a halfling's crown and a tiefling's horn
+   tips. Both percentages assume viewBox 0 0 120 210 and head centre y=38;
+   re-run the formula if either moves. */
 .avatar-pill svg {
   position: absolute;
-  left: -55%;
-  top: -12%;
-  width: 210%;
-  height: 210%;
+  left: -100%;
+  top: -11%;
+  width: 300%;
+  height: 300%;
   pointer-events: none;
 }
 .avatar-pill .level-badge {
@@ -628,6 +634,21 @@ button {
 .segmented button + button { border-left: 1px solid var(--edge); }
 .segmented button:hover { background: rgba(255, 255, 255, 0.09); color: var(--text); }
 .segmented button.on { background: var(--accent); color: #221803; }
+
+/* For option sets too long for one row (the six fantasy races). The base
+   .segmented is overflow:hidden with no wrap, which would silently clip
+   the last options off the end rather than showing them. */
+.segmented.wrap {
+  flex-wrap: wrap;
+  gap: 4px;
+  border: 0;
+  overflow: visible;
+}
+.segmented.wrap button {
+  border: 1px solid var(--edge);
+  border-radius: 7px;
+}
+.segmented.wrap button + button { border-left: 1px solid var(--edge); }
 
 .add-hint {
   grid-column: 1 / -1;

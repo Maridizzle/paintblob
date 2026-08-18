@@ -1,12 +1,30 @@
 // Builds the avatar as an inline SVG string from the player's saved
 // customization. Every paintable part is its own `<g data-slot="...">`, left
-// with no fill of its own so the group's fill attribute (set from
-// `customize`) is inherited by every child shape — recolouring a part is
-// just `group.setAttribute('fill', hex)`, and "point at a part" is answered
-// by ordinary DOM delegation on `[data-slot]`, no custom hit-testing.
+// with no fill of its own so the group's fill is inherited by every child
+// shape, and "point at a part" is answered by ordinary DOM delegation on
+// `[data-slot]` — no custom hit-testing. (Recolouring re-renders the whole
+// string rather than patching the DOM, which is why more than one group may
+// safely carry the same data-slot: that's how hair gets a mass *behind* the
+// head as well as a cap in front of it.)
 //
-// gender/height/weight are width-swaps and a scale transform rather than
-// separate full figures — a handful of table entries, not an art project.
+// Two conventions do most of the visual work:
+//
+//   * The figure is drawn only from smooth cubic Bézier outlines — no
+//     <rect>, no straight outer edges. Overlapping pieces share one flat
+//     fill, so their joins vanish and only each piece's own silhouette
+//     shows. Symmetric outlines are authored as a right half and mirrored
+//     (see mirrorPath), which makes them exactly symmetric for free.
+//   * Shading and garment detail — collars, cuffs, seams, pockets — are
+//     translucent overlays carrying their OWN fill, which overrides the
+//     group's inherited one. Being washes rather than computed darker
+//     shades, they read correctly over any colour the player picks:
+//     green orc skin, white socks and a neon shirt alike, with no colour
+//     maths and one code path.
+//
+// Everything geometric comes from metrics() below. Race, gender, face
+// shape and the height/weight sliders all feed that one function, and every
+// path — skin and cloth — reads only from its output, which is what keeps
+// garments sitting on the body's actual contours for every combination.
 
 import { WARDROBE_ITEMS } from './wardrobe.js';
 
@@ -17,20 +35,139 @@ export const DEFAULT_PALETTE = [
   '#e07a5f', '#3a86ff', '#2ec4b6', '#ff8fb1', '#4a4a4a', '#ffffff',
 ];
 
+// Frame invariants. The .avatar-pill CSS crop is derived from these three
+// numbers, so races and sliders change proportions *within* the frame and
+// never the frame itself — the head centre and the ground stay put no
+// matter who you build.
+const CX = 60;
+const HEAD_CY = 38;
+const FOOT_Y = 193;
+const VIEW_H = 210;
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+/* ------------------------------------------------------- overlay helpers */
+
+const shade = (d, a = 0.12) => `<path d="${d}" fill="rgba(0,0,0,${a})"/>`;
+const light = (d, a = 0.12) => `<path d="${d}" fill="rgba(255,255,255,${a})"/>`;
+/** A thin seam/fold/lace, drawn as a stroke — `fill:none` is an explicit
+ *  override too, and far cheaper than authoring a sliver polygon. */
+const seam = (d, w = 1.2, a = 0.16) =>
+  `<path d="${d}" fill="none" stroke="rgba(0,0,0,${a})" stroke-width="${w}" stroke-linecap="round"/>`;
+const seamLight = (d, w = 1.2, a = 0.2) =>
+  `<path d="${d}" fill="none" stroke="rgba(255,255,255,${a})" stroke-width="${w}" stroke-linecap="round"/>`;
+/** Emits a shape and its mirror — for parts that come in pairs (ears, arms,
+ *  legs, shoes) rather than crossing the centreline. */
+const pair = (make) => make(1) + make(-1);
+
+const n = (v) => Number(v).toFixed(2);
+const seg = (c1, c2, to) => ({ c1, c2, to });
+
+/**
+ * Closes a perfectly symmetric outline from a right-half description.
+ * `start` and the final segment's `to` must both sit on x = CX; the left
+ * half is this same list mirrored about CX and walked backwards (reversing
+ * a cubic just swaps its two control points). Authoring one side means the
+ * two can never drift apart.
+ */
+function mirrorPath(start, segs) {
+  const p = ([x, y]) => `${n(x)},${n(y)}`;
+  const m = ([x, y]) => `${n(2 * CX - x)},${n(y)}`;
+  let d = `M${p(start)}`;
+  for (const s of segs) d += ` C${p(s.c1)} ${p(s.c2)} ${p(s.to)}`;
+  for (let i = segs.length - 1; i >= 0; i--) {
+    const from = i ? segs[i - 1].to : start;
+    d += ` C${m(segs[i].c2)} ${m(segs[i].c1)} ${m(from)}`;
+  }
+  return `${d} Z`;
+}
+
+/* ------------------------------------------------------------- variation */
+
 export const VARIANTS = {
+  race: ['human', 'elf', 'dwarf', 'orc', 'halfling', 'tiefling'],
   gender: ['nb', 'fem', 'masc'],
   hairStyle: ['short', 'long', 'ponytail'],
   eyesStyle: ['round', 'happy', 'sparkle'],
   faceShape: ['oval', 'round', 'square'],
 };
 
+// Shoulder/hip half-widths and a waist multiplier, by gender. Hips stay
+// well inside the shoulder line: the arms hang just outside the ribcage,
+// so a torso as wide as the shoulders would swallow them entirely.
+const TORSO_SHAPE = {
+  nb: { shoulder: 20, hip: 15, waist: 1.0 },
+  fem: { shoulder: 17.5, hip: 18.5, waist: 0.86 },
+  masc: { shoulder: 23, hip: 14.5, waist: 1.06 },
+};
+
+// Face shape drives the same four skull numbers race does, so the two
+// compose instead of fighting. `chin` is chin *tension*: low pulls the
+// chin square and flat, high rounds it off.
+const FACE_SHAPE = {
+  oval: { rx: 1.0, ry: 1.0, cheek: 1.0, jaw: 0.74, chin: 0.55 },
+  round: { rx: 1.12, ry: 0.9, cheek: 1.08, jaw: 0.88, chin: 0.92 },
+  square: { rx: 1.04, ry: 0.96, cheek: 1.02, jaw: 0.98, chin: 0.24 },
+};
+
+/**
+ * `head` scales the whole skull, `legs` is the fraction of shoulder-to-floor
+ * that is leg (which is what actually reads as "short" or "leggy"), `build`
+ * scales shoulder/hip width, `neck` the neck length. `jaw`/`cheek`/`brow`
+ * shape the face; `ear` and `extras` add the distinguishing silhouette bits.
+ */
+export const RACE_PROFILE = {
+  human: {
+    label: 'Human',
+    head: 1.0, legs: 0.52, build: 1.0, neck: 1.0,
+    jaw: 1.0, cheek: 1.0, brow: 0.5, ear: 'round', extras: [],
+    skin: ['#f5d5b8', '#e0b088', '#c98d5e', '#a26a3f', '#7a4b2b', '#5a3520'],
+  },
+  elf: {
+    label: 'Elf',
+    head: 0.93, legs: 0.58, build: 0.87, neck: 1.3,
+    jaw: 0.8, cheek: 0.96, brow: 0.2, ear: 'long', extras: [],
+    skin: ['#f7e3d3', '#f0d8c0', '#e2c6ad', '#d9e6e2', '#e6dcf2', '#c9a887'],
+  },
+  dwarf: {
+    label: 'Dwarf',
+    head: 1.16, legs: 0.42, build: 1.22, neck: 0.6,
+    jaw: 1.16, cheek: 1.06, brow: 1.0, ear: 'round', extras: ['beard'],
+    skin: ['#f0c8a0', '#d99b6c', '#c07a4e', '#a2603a', '#e8b48c', '#7d4a2e'],
+  },
+  orc: {
+    label: 'Orc',
+    head: 1.06, legs: 0.5, build: 1.3, neck: 0.65,
+    jaw: 1.24, cheek: 1.02, brow: 1.3, ear: 'broad', extras: ['tusks'],
+    skin: ['#9bbf6e', '#7a9c5a', '#5d7c44', '#4a6a52', '#6f8f7a', '#8a8f66'],
+  },
+  halfling: {
+    label: 'Halfling',
+    head: 1.2, legs: 0.44, build: 0.96, neck: 0.85,
+    jaw: 0.92, cheek: 1.12, brow: 0.3, ear: 'roundBig', extras: [],
+    skin: ['#f7dcbd', '#e8bd93', '#d3a071', '#b5804f', '#8f6238', '#f0cba6'],
+  },
+  tiefling: {
+    label: 'Tiefling',
+    head: 0.98, legs: 0.54, build: 0.94, neck: 1.1,
+    jaw: 0.9, cheek: 0.98, brow: 0.7, ear: 'point', extras: ['horns'],
+    skin: ['#d2716f', '#b4595c', '#8f3f45', '#6d2c36', '#c98fa0', '#7b4a6e'],
+  },
+};
+
+/** The suggested skin tones for a race — offered alongside (never instead
+ *  of) the current picture's palette in the customize tab. */
+export function raceSkinPalette(race) {
+  return (RACE_PROFILE[race] ?? RACE_PROFILE.human).skin;
+}
+
 export function defaultAvatarCustomize() {
   return {
-    gender: 'nb', height: 1, weight: 1,
+    race: 'human', gender: 'nb', height: 1, weight: 1,
     hair: { style: 'short', colour: '#3b2a1a' },
     eyes: { style: 'round', colour: '#4a7a8c' },
     face: { shape: 'oval' },
-    skin: { colour: '#e0b088' },
+    skin: { colour: RACE_PROFILE.human.skin[1] },
     shirt: { itemId: 'shirt-basic', colour: '#c9c9c9' },
     bottoms: { itemId: 'bottoms-basic', colour: '#3a3a3a' },
     dress: { itemId: null, colour: '#c9c9c9' },
@@ -39,115 +176,405 @@ export function defaultAvatarCustomize() {
   };
 }
 
-// Shoulder/hip half-widths (from centre x=60), by gender — the "width-swap"
-// the plan describes, rather than a transform that would also skew the head.
-const TORSO_SHAPE = {
-  nb: { shoulder: 20, hip: 18 },
-  fem: { shoulder: 17, hip: 22 },
-  masc: { shoulder: 23, hip: 17 },
-};
+/* --------------------------------------------------------------- metrics */
 
-// 'square' gets an actual distinct silhouette (a rounded rect) rather than
-// just different ellipse radii, so the three face shapes read as genuinely
-// different rather than squashed/stretched copies of one oval.
-const HEAD_SHAPE = {
-  oval: { kind: 'ellipse', rx: 14, ry: 19 },
-  round: { kind: 'ellipse', rx: 17, ry: 17 },
-  square: { kind: 'rect', hw: 15.5, hh: 16.5, r: 6 },
-};
+/**
+ * Every landmark the rest of the file draws from. Each line depends only on
+ * the ones above it, so race/gender/face/slider changes propagate in one
+ * pass — and because cloth reads the same numbers as skin, a garment can't
+ * drift off the body it's drawn on.
+ *
+ * height and weight fold in here rather than as an outer scale transform:
+ * a transform anchored at the hips pushed a tall avatar's crown clean out
+ * of the viewBox, and it would have multiplied with a race's own build
+ * instead of composing with it. Height biases leg *fraction* (a tall person
+ * has long legs, not a giant head) and weight becomes a girth multiplier.
+ */
+function metrics(c) {
+  const P = RACE_PROFILE[c.race] ?? RACE_PROFILE.human;
+  const G = TORSO_SHAPE[c.gender] ?? TORSO_SHAPE.nb;
+  const F = FACE_SHAPE[c.face?.shape] ?? FACE_SHAPE.oval;
+  const h = clamp(c.height ?? 1, 0.85, 1.2);
+  const w = clamp(c.weight ?? 1, 0.8, 1.3);
+  const girth = 0.9 + (w - 0.8) * 0.4;
 
-function headMarkup(shape) {
-  const h = HEAD_SHAPE[shape] ?? HEAD_SHAPE.oval;
-  if (h.kind === 'rect') {
-    return `<rect x="${60 - h.hw}" y="${38 - h.hh}" width="${h.hw * 2}" height="${h.hh * 2}" rx="${h.r}"/>`;
-  }
-  return `<ellipse cx="60" cy="38" rx="${h.rx}" ry="${h.ry}"/>`;
-}
+  const headRy = 18.5 * P.head * F.ry;
+  const headRx = 14 * P.head * F.rx * (0.97 + girth * 0.05);
+  const chinY = HEAD_CY + headRy;
+  const neckLen = 9 * P.neck * (0.94 + h * 0.06);
+  const shoulderY = chinY + neckLen * 0.8;
+  const shoulderHalf = G.shoulder * P.build * girth;
+  const hipHalf = G.hip * P.build * girth;
+  const span = FOOT_Y - shoulderY;
+  const legFrac = clamp(P.legs + (h - 1) * 0.35, 0.38, 0.64);
+  const hipY = shoulderY + span * (1 - legFrac);
+  const legLen = FOOT_Y - hipY;
+  const thighH = hipHalf * 0.46;
 
-function torsoPoints(gender) {
-  const t = TORSO_SHAPE[gender] ?? TORSO_SHAPE.nb;
   return {
-    shoulderL: 60 - t.shoulder, shoulderR: 60 + t.shoulder,
-    hipL: 60 - t.hip, hipR: 60 + t.hip,
+    P,
+    headRx,
+    headRy,
+    crownY: HEAD_CY - headRy,
+    chinY,
+    browY: HEAD_CY - headRy * 0.26,
+    eyeY: HEAD_CY - headRy * 0.04,
+    noseY: HEAD_CY + headRy * 0.22,
+    mouthY: HEAD_CY + headRy * 0.46,
+    cheekY: HEAD_CY + headRy * 0.2,
+    browHalf: headRx * 0.9,
+    cheekHalf: headRx * F.cheek * P.cheek,
+    jawHalf: headRx * F.jaw * P.jaw,
+    jawY: HEAD_CY + headRy * 0.62,
+    chinTension: F.chin,
+    earX: headRx * F.cheek * P.cheek - 1,
+    earY: HEAD_CY - headRy * 0.04 + 2,
+
+    neckLen,
+    neckHalf: headRx * 0.36,
+    shoulderY,
+    shoulderHalf,
+    hipHalf,
+    hipY,
+    waistY: shoulderY + (hipY - shoulderY) * 0.62,
+    waistHalf: (shoulderHalf * 0.30 + hipHalf * 0.34) * G.waist,
+    chestY: shoulderY + (hipY - shoulderY) * 0.28,
+    armpitY: shoulderY + 14 * (span / 136),
+
+    legLen,
+    legCx: hipHalf * 0.5,
+    thighH,
+    kneeH: thighH * 0.7,
+    calfH: thighH * 0.66,
+    ankleH: thighH * 0.42,
+    crotchY: hipY + 8,
+    kneeY: hipY + legLen * 0.5,
+    ankleY: FOOT_Y - 9,
+
+    // The arm hangs just inside the shoulder line, so its outer edge and
+    // the deltoid agree while its inner edge clears the narrowed waist.
+    armCx: shoulderHalf - shoulderHalf * 0.3 * 0.5,
+    upperH: shoulderHalf * 0.3,
+    elbowH: shoulderHalf * 0.3 * 0.82,
+    wristH: shoulderHalf * 0.3 * 0.58,
+    elbowY: shoulderY + (hipY - shoulderY) * 0.62,
+    wristY: hipY + 6,
   };
 }
 
-// A curved torso — rounded shoulders, a waist taper, a curved hip line —
-// in place of the flat trapezoid this used to be. Everything downstream
-// (arms, clothing, the hips-anchored height/weight scale) still keys off
-// the same shoulderL/R, hipL/R landmarks torsoPoints() hands out, so this
-// is a self-contained upgrade.
-function torsoPath(gender, hemY = 130) {
-  const { shoulderL, shoulderR, hipL, hipR } = torsoPoints(gender);
-  const topY = 60;
-  const waistY = 96;
-  const waistL = (shoulderL + hipL) / 2 + 2;
-  const waistR = (shoulderR + hipR) / 2 - 2;
-  const midHipY = (waistY + hemY) / 2;
-  return `M${shoulderL},${topY} ` +
-    `Q60,${topY - 4} ${shoulderR},${topY} ` +
-    `Q${shoulderR + 3},${topY + 18} ${waistR},${waistY} ` +
-    `Q${hipR + 2},${midHipY} ${hipR},${hemY} ` +
-    `L${hipL},${hemY} ` +
-    `Q${hipL - 2},${midHipY} ${waistL},${waistY} ` +
-    `Q${shoulderL - 3},${topY + 18} ${shoulderL},${topY} Z`;
+/* ------------------------------------------------------------ silhouette */
+
+/**
+ * Neck, torso, both arms and both legs as ONE closed outline. Running down
+ * the outside of a limb and back up its inside makes the arm gap and the
+ * crotch V concavities *of a single contour* rather than gaps between
+ * abutted shapes — which is the whole difference between this and a figure
+ * that reads as assembled blocks.
+ */
+function bodyOutline(M) {
+  const handY = M.wristY + M.wristH * 1.3;
+  return mirrorPath([CX, M.chinY - 2], [
+    // neck
+    seg([CX + M.neckHalf * 0.7, M.chinY - 1], [CX + M.neckHalf, M.chinY + 3],
+      [CX + M.neckHalf, M.shoulderY - 3]),
+    // trapezius into the deltoid cap
+    seg([CX + M.neckHalf + 2, M.shoulderY - 2], [CX + M.armCx + M.upperH - 3, M.shoulderY - 3],
+      [CX + M.armCx + M.upperH, M.shoulderY + 3]),
+    // upper arm, outer edge
+    seg([CX + M.armCx + M.upperH + 1.2, M.shoulderY + 16], [CX + M.armCx + M.elbowH + 1, M.elbowY - 10],
+      [CX + M.armCx + M.elbowH, M.elbowY]),
+    // forearm, outer edge
+    seg([CX + M.armCx + M.elbowH - 0.4, M.elbowY + 12], [CX + M.armCx + M.wristH + 0.8, M.wristY - 8],
+      [CX + M.armCx + M.wristH, M.wristY]),
+    // hand — a rounded paddle, no fingers at this size
+    seg([CX + M.armCx + M.wristH + 1.4, handY + 2], [CX + M.armCx - M.wristH - 1.4, handY + 2],
+      [CX + M.armCx - M.wristH * 0.9, M.wristY]),
+    // back up the inside of the arm
+    seg([CX + M.armCx - M.wristH - 0.6, M.wristY - 14], [CX + M.armCx - M.upperH * 0.8, M.armpitY + 12],
+      [CX + M.armCx - M.upperH * 0.62, M.armpitY]),
+    // armpit into the waist
+    seg([CX + M.armCx - M.upperH * 0.5, M.armpitY + 5], [CX + M.waistHalf + 1.5, M.waistY - 12],
+      [CX + M.waistHalf, M.waistY]),
+    // waist over the hip
+    seg([CX + M.waistHalf + 1, M.waistY + 10], [CX + M.hipHalf, M.hipY - 12],
+      [CX + M.hipHalf, M.hipY]),
+    // hip down the outer thigh to the knee
+    seg([CX + M.hipHalf - 0.5, M.hipY + 9], [CX + M.legCx + M.kneeH + 1.5, M.kneeY - 14],
+      [CX + M.legCx + M.kneeH, M.kneeY]),
+    // knee to ankle
+    seg([CX + M.legCx + M.kneeH - 0.6, M.kneeY + 14], [CX + M.legCx + M.ankleH + 0.8, M.ankleY - 8],
+      [CX + M.legCx + M.ankleH, M.ankleY]),
+    // the foot
+    seg([CX + M.legCx + M.ankleH + 1.2, FOOT_Y - 2], [CX + M.legCx + M.ankleH + 1, FOOT_Y],
+      [CX + M.legCx - M.ankleH * 0.7, FOOT_Y]),
+    // inner ankle back up to the knee
+    seg([CX + M.legCx - M.ankleH - 0.6, FOOT_Y - 5], [CX + M.legCx - M.calfH * 0.62, M.ankleY - 6],
+      [CX + M.legCx - M.calfH * 0.55, M.kneeY]),
+    // inner thigh into the crotch
+    seg([CX + M.legCx - M.calfH * 0.5, M.kneeY - 16], [CX + 2.5, M.crotchY + 7],
+      [CX, M.crotchY]),
+  ]);
 }
 
-/** A tapered limb: full width at `topHalf` narrowing to `botHalf`, bowed
- *  gently outward on the far side from the body. `dir` is -1 for a limb
- *  extending left of `attachX`, +1 for one extending right — the inner
- *  edge (against the torso/hip) stays a plain vertical since it's the same
- *  flat "skin" fill as whatever it overlaps, so the seam is invisible. */
-function limbPath(attachX, dir, topY, botY, topHalf, botHalf, bow) {
-  const outerTopX = attachX + dir * topHalf;
-  const outerBotX = attachX + dir * botHalf;
-  const outerBowX = attachX + dir * (Math.max(topHalf, botHalf) + bow);
-  const midY = (topY + botY) / 2;
-  return `<path d="M${attachX},${topY} L${outerTopX},${topY} ` +
-    `Q${outerBowX},${midY} ${outerBotX},${botY} L${attachX},${botY} ` +
-    `Q${attachX + dir * 2},${midY} ${attachX},${topY} Z"/>`;
+/** The skull: temples widest, tapering through the cheek to the jaw and
+ *  chin. One path covers every face shape × race combination. */
+function headOutline(M) {
+  const chinW = M.jawHalf * M.chinTension;
+  return mirrorPath([CX, M.crownY], [
+    seg([CX + M.headRx * 0.6, M.crownY], [CX + M.browHalf + 0.5, M.browY - M.headRy * 0.42],
+      [CX + M.browHalf + 0.5, M.browY]),
+    seg([CX + M.cheekHalf, M.browY + M.headRy * 0.22], [CX + M.cheekHalf, M.cheekY - 2],
+      [CX + M.cheekHalf, M.cheekY]),
+    seg([CX + M.cheekHalf, M.cheekY + 3], [CX + M.jawHalf, M.jawY - 3.5],
+      [CX + M.jawHalf, M.jawY]),
+    seg([CX + M.jawHalf * 0.94, M.jawY + (M.chinY - M.jawY) * 0.55], [CX + chinW, M.chinY],
+      [CX, M.chinY]),
+  ]);
 }
 
-function hairPaths(style) {
-  // Brows live in the hair group (not a slot of their own) so they always
-  // colour-match the hair, the way real brows do.
-  const brows = '<path d="M45,29 Q51.5,25.8 58,28.2 L58,30.4 Q51.5,28.4 45,31 Z"/>' +
-    '<path d="M62,28.2 Q68.5,25.8 75,29 L75,31 Q68.5,28.4 62,30.4 Z"/>';
-  switch (style) {
-    case 'long':
-      return '<path d="M40,34 Q41,14 60,12 Q79,14 80,34 Q80,23 60,21 Q40,23 40,34 Z"/>' +
-        '<path d="M39,32 Q35,50 39,72 Q44,55 43,32 Z"/>' +
-        '<path d="M81,32 Q85,50 81,72 Q76,55 77,32 Z"/>' + brows;
-    case 'ponytail':
-      return '<path d="M40,34 Q41,14 60,12 Q79,14 80,34 Q80,23 60,21 Q40,23 40,34 Z"/>' +
-        '<path d="M78,30 Q96,36 92,58 Q90,68 82,70 Q90,52 78,38 Z"/>' + brows;
-    case 'short':
-    default:
-      return '<path d="M40,34 Q41,13 60,11 Q79,13 80,34 Q80,22 60,20 Q40,22 40,34 Z"/>' + brows;
+function earMarkup(M) {
+  const kind = M.P.ear;
+  const spec = {
+    round: { out: 3.4, up: 4.6, w: 2.6 },
+    roundBig: { out: 4.6, up: 6.2, w: 3.5 },
+    point: { out: 8, up: 8, w: 2.8 },
+    long: { out: 13, up: 13, w: 2.6 },
+    broad: { out: 10, up: 5, w: 4.2 },
+  }[kind] ?? { out: 3.4, up: 4.6, w: 2.6 };
+  return pair((d) => {
+    const x = CX + d * M.earX;
+    const y = M.earY;
+    const tipX = x + d * spec.out;
+    const tipY = y - spec.up;
+    return `<path d="M${n(x)},${n(y - spec.w)} ` +
+      `C${n(x + d * spec.out * 0.55)},${n(y - spec.w - spec.up * 0.35)} ` +
+      `${n(tipX - d * 1)},${n(tipY + 2)} ${n(tipX)},${n(tipY)} ` +
+      `C${n(tipX - d * 1.5)},${n(tipY + spec.up * 0.55)} ` +
+      `${n(x + d * spec.w * 1.2)},${n(y + spec.w * 0.6)} ${n(x)},${n(y + spec.w * 1.5)} Z"/>` +
+      shade(`M${n(x + d * 0.6)},${n(y - spec.w * 0.5)} ` +
+        `C${n(x + d * (spec.w + 0.6))},${n(y - spec.w * 0.4)} ` +
+        `${n(x + d * (spec.w + 0.4))},${n(y + spec.w * 0.5)} ${n(x + d * 0.4)},${n(y + spec.w * 0.8)} Z`, 0.14);
+  });
+}
+
+/**
+ * Extras that belong on top of the hair rather than under it. Emitted into
+ * a second `skin` group after the hair — harmless because recolouring
+ * re-renders the whole string, and `closest('[data-slot]')` resolves a tap
+ * on a horn to the skin slot either way.
+ */
+function raceExtrasOverHair(M) {
+  if (!M.P.extras.includes('horns')) return '';
+  // Solid mid-tone rather than the translucent wash used everywhere else:
+  // horns are the one feature that sticks out past the silhouette onto the
+  // backdrop, and a dark wash vanished completely against the widget pill's
+  // near-black background. This reads on both the light panel and the pill.
+  return pair((d) => {
+    const x = CX + d * M.browHalf * 0.86;
+    const y = M.crownY + 3;
+    return `<path d="M${n(x + d * 1.5)},${n(y + 3)} C${n(x + d * 4)},${n(y - 3)} ` +
+      `${n(x + d * 6)},${n(y - 7)} ${n(x + d * 7.5)},${n(y - 12)} ` +
+      `C${n(x + d * 4.5)},${n(y - 9.5)} ${n(x + d * 1)},${n(y - 3)} ${n(x - d * 3.5)},${n(y + 3.5)} Z" ` +
+      `fill="#8d7183"/>` +
+      seamLight(`M${n(x + d * 1)},${n(y + 1)} C${n(x + d * 3.4)},${n(y - 4)} ` +
+        `${n(x + d * 5.4)},${n(y - 8)} ${n(x + d * 6.6)},${n(y - 11)}`, 1, 0.3);
+  });
+}
+
+function raceExtras(M) {
+  const out = [];
+  if (M.P.extras.includes('tusks')) {
+    // Ivory, explicitly — a tusk must not inherit green skin.
+    // Rooted at the lower lip and curving up over it — short and stout, or
+    // at this scale they read as tear streaks rather than tusks.
+    out.push(pair((d) => {
+      const x = CX + d * M.jawHalf * 0.5;
+      const y = M.mouthY + 2.6;
+      return `<path d="M${n(x - d * 2.1)},${n(y)} C${n(x - d * 2.4)},${n(y - 3.4)} ` +
+        `${n(x + d * 0.6)},${n(y - 4.6)} ${n(x + d * 1.7)},${n(y - 5.6)} ` +
+        `C${n(x + d * 2.4)},${n(y - 3)} ${n(x + d * 2.1)},${n(y + 0.4)} ${n(x - d * 2.1)},${n(y)} Z" ` +
+        `fill="#f3ece0"/>`;
+    }));
   }
+  return out.join('');
 }
 
-// A small white highlight dot per eye, with its own explicit `fill` so it
-// overrides the group's inherited eye-colour fill — same override trick the
-// mouth below uses. Purely decorative; still resolves to data-slot="eyes".
-const EYE_SPARKLE = '<circle cx="53" cy="34.6" r="0.9" fill="#fff"/><circle cx="69" cy="34.6" r="0.9" fill="#fff"/>';
+/** Nose, mouth and the skin shading. Nine shapes, and the nose alone is the
+ *  single biggest "reads as a face" gain over the old flat oval. */
+function faceAndShading(M) {
+  const noseW = M.headRx * 0.16;
+  return [
+    // nose — a soft wedge with a lit bridge beside it
+    shade(`M${n(CX)},${n(M.noseY - M.headRy * 0.2)} ` +
+      `C${n(CX + noseW * 0.7)},${n(M.noseY - 2)} ${n(CX + noseW * 1.5)},${n(M.noseY)} ` +
+      `${n(CX + noseW * 1.1)},${n(M.noseY + 1.6)} ` +
+      `C${n(CX)},${n(M.noseY + 2.6)} ${n(CX - noseW * 1.1)},${n(M.noseY + 1.6)} ` +
+      `${n(CX - noseW * 1.5)},${n(M.noseY)} Z`, 0.13),
+    light(`M${n(CX - noseW * 0.5)},${n(M.noseY - M.headRy * 0.28)} ` +
+      `C${n(CX - noseW * 0.1)},${n(M.noseY - 3)} ${n(CX - noseW * 0.2)},${n(M.noseY - 1)} ` +
+      `${n(CX - noseW * 0.7)},${n(M.noseY + 0.4)} Z`, 0.12),
+    // mouth
+    `<path d="M${n(CX - M.headRx * 0.3)},${n(M.mouthY)} ` +
+      `Q${n(CX)},${n(M.mouthY + 3.2)} ${n(CX + M.headRx * 0.3)},${n(M.mouthY)} ` +
+      `Q${n(CX)},${n(M.mouthY + 1.4)} ${n(CX - M.headRx * 0.3)},${n(M.mouthY)} Z" ` +
+      `fill="rgba(150,74,74,0.62)"/>`,
+    light(`M${n(CX - M.headRx * 0.2)},${n(M.mouthY + 2.4)} ` +
+      `Q${n(CX)},${n(M.mouthY + 3.6)} ${n(CX + M.headRx * 0.2)},${n(M.mouthY + 2.4)} ` +
+      `Q${n(CX)},${n(M.mouthY + 3)} ${n(CX - M.headRx * 0.2)},${n(M.mouthY + 2.4)} Z`, 0.14),
+    // brow ridge — heavier for orc/dwarf
+    shade(`M${n(CX - M.browHalf * 0.85)},${n(M.browY + 1)} ` +
+      `Q${n(CX)},${n(M.browY - 1.4)} ${n(CX + M.browHalf * 0.85)},${n(M.browY + 1)} ` +
+      `Q${n(CX)},${n(M.browY + 2.6)} ${n(CX - M.browHalf * 0.85)},${n(M.browY + 1)} Z`,
+    0.05 + M.P.brow * 0.09),
+    // lit forehead and cheek, upper-left
+    light(`M${n(CX - M.browHalf * 0.8)},${n(M.browY - 2)} ` +
+      `C${n(CX - M.browHalf * 0.5)},${n(M.crownY + 2)} ${n(CX - 1)},${n(M.crownY + 2)} ` +
+      `${n(CX - 1)},${n(M.browY - 3)} Z`, 0.1),
+    light(`M${n(CX - M.cheekHalf * 0.86)},${n(M.cheekY - 1)} ` +
+      `C${n(CX - M.cheekHalf * 0.5)},${n(M.cheekY + 3)} ${n(CX - M.cheekHalf * 0.3)},${n(M.cheekY + 1)} ` +
+      `${n(CX - M.cheekHalf * 0.4)},${n(M.cheekY - 3)} Z`, 0.09),
+    // under-chin shadow onto the neck
+    shade(`M${n(CX - M.jawHalf * 0.8)},${n(M.chinY - 1)} ` +
+      `Q${n(CX)},${n(M.chinY + M.neckLen * 0.55)} ${n(CX + M.jawHalf * 0.8)},${n(M.chinY - 1)} ` +
+      `Q${n(CX)},${n(M.chinY + 1)} ${n(CX - M.jawHalf * 0.8)},${n(M.chinY - 1)} Z`, 0.15),
+    // torso core shadow hugging the right silhouette
+    shade(`M${n(CX + M.waistHalf * 0.98)},${n(M.armpitY)} ` +
+      `C${n(CX + M.waistHalf + 1)},${n(M.waistY)} ${n(CX + M.hipHalf)},${n(M.hipY - 12)} ` +
+      `${n(CX + M.hipHalf)},${n(M.hipY)} ` +
+      `L${n(CX + M.hipHalf - 5)},${n(M.hipY)} ` +
+      `C${n(CX + M.hipHalf - 5)},${n(M.hipY - 12)} ${n(CX + M.waistHalf - 4)},${n(M.waistY)} ` +
+      `${n(CX + M.waistHalf * 0.98 - 4)},${n(M.armpitY)} Z`, 0.09),
+    // lit left shoulder cap
+    light(`M${n(CX - M.armCx - M.upperH)},${n(M.shoulderY + 4)} ` +
+      `C${n(CX - M.armCx - M.upperH + 1)},${n(M.shoulderY - 3)} ${n(CX - M.neckHalf - 3)},${n(M.shoulderY - 3)} ` +
+      `${n(CX - M.neckHalf)},${n(M.shoulderY)} ` +
+      `C${n(CX - M.neckHalf - 4)},${n(M.shoulderY + 2)} ${n(CX - M.armCx - M.upperH + 2)},${n(M.shoulderY + 7)} ` +
+      `${n(CX - M.armCx - M.upperH)},${n(M.shoulderY + 4)} Z`, 0.11),
+    // inner-leg shadow, both legs
+    pair((d) => shade(`M${n(CX + d * (M.legCx - M.thighH * 0.55))},${n(M.crotchY)} ` +
+      `C${n(CX + d * (M.legCx - M.calfH * 0.6))},${n(M.kneeY)} ` +
+      `${n(CX + d * (M.legCx - M.ankleH * 0.7))},${n(M.ankleY - 10)} ` +
+      `${n(CX + d * (M.legCx - M.ankleH * 0.6))},${n(M.ankleY)} ` +
+      `L${n(CX + d * (M.legCx - M.ankleH * 0.6 + 3))},${n(M.ankleY)} ` +
+      `C${n(CX + d * (M.legCx - M.calfH * 0.5 + 3))},${n(M.kneeY)} ` +
+      `${n(CX + d * (M.legCx - M.thighH * 0.5 + 3))},${n(M.crotchY + 6)} ` +
+      `${n(CX + d * (M.legCx - M.thighH * 0.55 + 2))},${n(M.crotchY)} Z`, 0.07)),
+  ].join('');
+}
 
-function eyesShapes(style) {
-  switch (style) {
-    case 'happy':
-      return '<ellipse cx="52" cy="37" rx="3.4" ry="1.4"/><ellipse cx="68" cy="37" rx="3.4" ry="1.4"/>';
-    case 'sparkle':
-      return `<circle cx="52" cy="36" r="3.6"/><circle cx="68" cy="36" r="3.6"/>${EYE_SPARKLE}`;
-    case 'round':
-    default:
-      return `<circle cx="52" cy="36" r="2.8"/><circle cx="68" cy="36" r="2.8"/>${EYE_SPARKLE}`;
+/* ------------------------------------------------------------------ hair */
+
+function hairBack(style, M) {
+  const { crownY, cheekHalf, headRx } = M;
+  if (style === 'long') {
+    return `<path d="M${n(CX - cheekHalf - 2)},${n(M.browY)} ` +
+      `C${n(CX - cheekHalf - 5)},${n(M.chinY + 18)} ${n(CX - cheekHalf - 3)},${n(M.shoulderY + 22)} ` +
+      `${n(CX - cheekHalf + 1)},${n(M.shoulderY + 26)} ` +
+      `L${n(CX + cheekHalf - 1)},${n(M.shoulderY + 26)} ` +
+      `C${n(CX + cheekHalf + 3)},${n(M.shoulderY + 22)} ${n(CX + cheekHalf + 5)},${n(M.chinY + 18)} ` +
+      `${n(CX + cheekHalf + 2)},${n(M.browY)} Z"/>` +
+      shade(`M${n(CX + cheekHalf * 0.3)},${n(M.browY + 4)} ` +
+        `C${n(CX + cheekHalf + 2)},${n(M.chinY + 14)} ${n(CX + cheekHalf)},${n(M.shoulderY + 20)} ` +
+        `${n(CX + cheekHalf - 1)},${n(M.shoulderY + 26)} ` +
+        `L${n(CX + cheekHalf - 6)},${n(M.shoulderY + 26)} ` +
+        `C${n(CX + cheekHalf - 5)},${n(M.chinY + 14)} ${n(CX + cheekHalf * 0.2)},${n(M.browY + 6)} ` +
+        `${n(CX + cheekHalf * 0.3)},${n(M.browY + 4)} Z`, 0.12);
   }
+  if (style === 'ponytail') {
+    const x = CX + cheekHalf + 1;
+    return `<path d="M${n(x - 2)},${n(crownY + 6)} ` +
+      `C${n(x + 12)},${n(crownY + 10)} ${n(x + 15)},${n(M.chinY + 6)} ${n(x + 9)},${n(M.chinY + 20)} ` +
+      `C${n(x + 6)},${n(M.chinY + 26)} ${n(x + 1)},${n(M.chinY + 24)} ${n(x + 2)},${n(M.chinY + 18)} ` +
+      `C${n(x + 6)},${n(M.chinY + 4)} ${n(x + 4)},${n(crownY + 14)} ${n(x - 4)},${n(crownY + 10)} Z"/>` +
+      shade(`M${n(x + 2)},${n(crownY + 9)} C${n(x + 11)},${n(crownY + 14)} ${n(x + 11)},${n(M.chinY + 8)} ` +
+        `${n(x + 6)},${n(M.chinY + 19)} C${n(x + 9)},${n(M.chinY + 6)} ${n(x + 7)},${n(crownY + 15)} ` +
+        `${n(x + 2)},${n(crownY + 9)} Z`, 0.12);
+  }
+  return '';
 }
 
-// A small mouth, given its own explicit fill (a soft rose) so it overrides
-// the inherited skin-tone fill of the group it lives in — the same
-// override technique the eye sparkle uses.
-const MOUTH = '<path d="M55,45 Q60,48.5 65,45 Q60,47 55,45 Z" fill="rgba(150,74,74,0.65)"/>';
+function hairFront(style, M) {
+  const { crownY, browY, browHalf, cheekHalf, headRx, headRy } = M;
+  // The cap follows the skull curve, so it fits every race head size.
+  const cap = mirrorPath([CX, crownY - 2.5], [
+    seg([CX + headRx * 0.62, crownY - 2.5], [CX + cheekHalf + 1.5, browY - headRy * 0.4],
+      [CX + cheekHalf + 1.5, browY + 1]),
+    seg([CX + cheekHalf + 1, browY - 1], [CX + browHalf * 0.94, browY - 3],
+      [CX + browHalf * 0.7, browY - 3.2]),
+    seg([CX + browHalf * 0.4, browY - 3.6], [CX + browHalf * 0.2, crownY + 4],
+      [CX, crownY + 3.2]),
+  ]);
+  const sheen = light(`M${n(CX - browHalf * 0.75)},${n(crownY + 4)} ` +
+    `C${n(CX - browHalf * 0.4)},${n(crownY - 0.5)} ${n(CX + browHalf * 0.15)},${n(crownY - 0.8)} ` +
+    `${n(CX + browHalf * 0.45)},${n(crownY + 2.5)} ` +
+    `C${n(CX + browHalf * 0.1)},${n(crownY + 1.5)} ${n(CX - browHalf * 0.4)},${n(crownY + 2)} ` +
+    `${n(CX - browHalf * 0.75)},${n(crownY + 4)} Z`, 0.15);
+  // Brows live in the hair group so they always colour-match, as real ones do.
+  const brows = pair((d) => `<path d="M${n(CX + d * browHalf * 0.28)},${n(browY + 2.6)} ` +
+    `Q${n(CX + d * browHalf * 0.6)},${n(browY + 0.4)} ${n(CX + d * browHalf * 0.92)},${n(browY + 2.2)} ` +
+    `L${n(CX + d * browHalf * 0.92)},${n(browY + 3.6)} ` +
+    `Q${n(CX + d * browHalf * 0.6)},${n(browY + 2)} ${n(CX + d * browHalf * 0.28)},${n(browY + 4)} Z"/>`);
+  const capTag = `<path d="${cap}"/>`;
+  const sideburns = style === 'short'
+    ? pair((d) => `<path d="M${n(CX + d * (cheekHalf + 0.5))},${n(browY + 1)} ` +
+        `L${n(CX + d * (cheekHalf + 1.5))},${n(M.cheekY - 1)} ` +
+        `L${n(CX + d * (cheekHalf - 1.5))},${n(M.cheekY - 2)} Z"/>`)
+    : '';
+  const beard = M.P.extras.includes('beard') ? beardMarkup(M) : '';
+  return capTag + sideburns + sheen + brows + beard;
+}
+
+function beardMarkup(M) {
+  const { cheekHalf, chinY, jawHalf, mouthY } = M;
+  const bottom = chinY + M.headRy * 0.62;
+  // Sideburns start at the cheekbone, not the eyeline — any higher and the
+  // beard reads as a mask over the whole face.
+  const topY = M.cheekY + 3;
+  return `<path d="M${n(CX - cheekHalf - 0.5)},${n(topY)} ` +
+    `C${n(CX - cheekHalf - 2)},${n(chinY - 2)} ${n(CX - jawHalf * 0.9)},${n(bottom - 2)} ` +
+    `${n(CX)},${n(bottom)} ` +
+    `C${n(CX + jawHalf * 0.9)},${n(bottom - 2)} ${n(CX + cheekHalf + 2)},${n(chinY - 2)} ` +
+    `${n(CX + cheekHalf + 0.5)},${n(topY)} ` +
+    `C${n(CX + cheekHalf * 0.55)},${n(mouthY + 1)} ${n(CX - cheekHalf * 0.55)},${n(mouthY + 1)} ` +
+    `${n(CX - cheekHalf - 0.5)},${n(topY)} Z"/>` +
+    // moustache, then a shadow separating it from the lower lip
+    `<path d="M${n(CX - jawHalf * 0.6)},${n(mouthY - 2.4)} ` +
+    `Q${n(CX)},${n(mouthY - 4.5)} ${n(CX + jawHalf * 0.6)},${n(mouthY - 2.4)} ` +
+    `Q${n(CX)},${n(mouthY + 0.6)} ${n(CX - jawHalf * 0.6)},${n(mouthY - 2.4)} Z"/>` +
+    shade(`M${n(CX - jawHalf * 0.5)},${n(mouthY + 3.4)} ` +
+      `Q${n(CX)},${n(mouthY + 5.4)} ${n(CX + jawHalf * 0.5)},${n(mouthY + 3.4)} ` +
+      `Q${n(CX)},${n(mouthY + 4.2)} ${n(CX - jawHalf * 0.5)},${n(mouthY + 3.4)} Z`, 0.12) +
+    light(`M${n(CX - jawHalf * 0.7)},${n(chinY + 3)} ` +
+      `Q${n(CX - jawHalf * 0.2)},${n(chinY + 7)} ${n(CX + jawHalf * 0.1)},${n(chinY + 4)} ` +
+      `Q${n(CX - jawHalf * 0.2)},${n(chinY + 5.5)} ${n(CX - jawHalf * 0.7)},${n(chinY + 3)} Z`, 0.1);
+}
+
+/* ------------------------------------------------------------------ eyes */
+
+function eyesShapes(style, M) {
+  const ex = M.browHalf * 0.55;
+  const ey = M.eyeY + 1;
+  const r = M.headRx * 0.19;
+  if (style === 'happy') {
+    return pair((d) => seam(`M${n(CX + d * (ex - r * 1.3))},${n(ey + 0.6)} ` +
+      `Q${n(CX + d * ex)},${n(ey - r * 1.5)} ${n(CX + d * (ex + r * 1.3))},${n(ey + 0.6)}`, 1.6, 0.62)) +
+      pair((d) => `<ellipse cx="${n(CX + d * ex)}" cy="${n(ey + 1.6)}" rx="${n(r * 0.5)}" ry="${n(r * 0.3)}"/>`);
+  }
+  const big = style === 'sparkle';
+  const irisR = big ? r * 1.15 : r * 0.86;
+  return pair((d) => {
+    const x = CX + d * ex;
+    return `<ellipse cx="${n(x)}" cy="${n(ey)}" rx="${n(r * 1.32)}" ry="${n(r * 1.12)}" fill="#fff"/>` +
+      `<circle cx="${n(x)}" cy="${n(ey)}" r="${n(irisR)}"/>` +
+      `<circle cx="${n(x)}" cy="${n(ey)}" r="${n(irisR * 0.46)}" fill="rgba(0,0,0,0.75)"/>` +
+      `<circle cx="${n(x + 0.9)}" cy="${n(ey - 1)}" r="${n(irisR * 0.3)}" fill="#fff"/>` +
+      (big ? `<circle cx="${n(x - 1)}" cy="${n(ey + 1)}" r="${n(irisR * 0.16)}" fill="#fff"/>` : '') +
+      seam(`M${n(x - r * 1.32)},${n(ey - r * 0.5)} Q${n(x)},${n(ey - r * 1.5)} ${n(x + r * 1.32)},${n(ey - r * 0.5)}`,
+        0.9, 0.32);
+  });
+}
+
+/* -------------------------------------------------------------- garments */
 
 /** Resolves a worn item's shape style, falling back to 'basic' for an id the
  *  catalogue no longer has — a stored save can outlive a wardrobe rebalance. */
@@ -155,141 +582,345 @@ function styleOf(itemId) {
   return WARDROBE_BY_ID.get(itemId)?.style ?? 'basic';
 }
 
-/** Short tapered sleeve puffs at the shoulder, reusing the same limb-taper
- *  shape as the arms underneath but shorter and a touch rounder. */
-function sleevePaths(gender) {
-  const { shoulderL, shoulderR } = torsoPoints(gender);
-  return limbPath(shoulderL, -1, 62, 86, 15, 12, 3) + limbPath(shoulderR, 1, 62, 86, 15, 12, 3);
+/**
+ * A garment shell: the torso contour plus `puff` units of cloth. Because it
+ * reads the same landmarks the body does, it sits on the figure for every
+ * race/gender/slider combination by construction.
+ */
+function shell(M, { puff = 2, topY, hemY, neckDip = 4, inset = 0, flare = 0 }) {
+  const sh = M.shoulderHalf - inset + puff;
+  const wa = M.waistHalf + puff;
+  const hp = M.hipHalf + puff;
+  const hem = hp + flare;
+  const midY = (M.hipY + hemY) / 2;
+  return mirrorPath([CX, topY + neckDip], [
+    seg([CX + sh * 0.45, topY + neckDip * 0.95], [CX + sh * 0.82, topY + 0.5], [CX + sh, topY + 1]),
+    seg([CX + sh + 1, M.armpitY], [CX + wa + 1.5, M.waistY - 10], [CX + wa, M.waistY]),
+    seg([CX + wa + 1, M.waistY + 10], [CX + hp, M.hipY - 10], [CX + hp, M.hipY]),
+    seg([CX + hp + flare * 0.45, midY], [CX + hem, hemY - 6], [CX + hem, hemY]),
+    seg([CX + hem * 0.62, hemY + 4], [CX + hem * 0.3, hemY + 5], [CX, hemY + 5]),
+  ]);
 }
 
-function shirtPath(gender, style) {
-  const { shoulderL, shoulderR, hipL, hipR } = torsoPoints(gender);
-  const hemY = 118;
-  // How far down the neckline dips at the centre — below the shoulder line
-  // (y=62), not above it, so the shirt's fill actually opens toward the
-  // chest (exposing the skin group underneath) rather than climbing up
-  // toward the chin.
-  const neckDipY = style === 'vneck' ? 84 : 66;
-  const waistY = 92;
-  // Control points pulled *inward* of the shoulder-hip midpoint (toward the
-  // centreline, x=60) so the curve actually nips at the waist instead of
-  // bulging outward past the shoulders.
-  const waistL = (shoulderL + hipL) / 2 + 3;
-  const waistR = (shoulderR + hipR) / 2 - 3;
-  const notch = `M${shoulderL},62 Q60,${neckDipY} ${shoulderR},62 ` +
-    `Q${waistR},${waistY} ${hipR},${hemY} Q60,${hemY + 5} ${hipL},${hemY} Q${waistL},${waistY} ${shoulderL},62 Z`;
-  return `<path d="${notch}"/>${sleevePaths(gender)}`;
+/** Sleeves, as a pair of tapered tubes down the arm. */
+function sleeves(M, hemY, puff = 2) {
+  return pair((d) => {
+    const cx = CX + d * M.armCx;
+    const up = M.upperH + puff;
+    const lo = M.elbowH + puff * 0.9;
+    return `<path d="M${n(cx - d * up)},${n(M.shoulderY + 1)} ` +
+      `C${n(cx - d * (up + 0.5))},${n(M.shoulderY - 3)} ${n(cx + d * (up - 0.5))},${n(M.shoulderY - 3.5)} ` +
+      `${n(cx + d * up)},${n(M.shoulderY + 1)} ` +
+      `C${n(cx + d * (up + 1))},${n(M.shoulderY + 14)} ${n(cx + d * (lo + 0.5))},${n(hemY - 8)} ` +
+      `${n(cx + d * lo)},${n(hemY)} ` +
+      `C${n(cx + d * lo * 0.4)},${n(hemY + 2.5)} ${n(cx - d * lo * 0.4)},${n(hemY + 2.5)} ` +
+      `${n(cx - d * lo)},${n(hemY)} ` +
+      `C${n(cx - d * (lo + 0.5))},${n(hemY - 8)} ${n(cx - d * (up + 1))},${n(M.shoulderY + 14)} ` +
+      `${n(cx - d * up)},${n(M.shoulderY + 1)} Z"/>`;
+  });
 }
 
-function bottomsPath(gender, style) {
-  const { hipL, hipR } = torsoPoints(gender);
-  const hemY = style === 'shorts' ? 148 : 188;
-  const gap = 3;
-  const midL = (hipL + hipR) / 2 - gap;
-  const midR = (hipL + hipR) / 2 + gap;
-  const flare = style === 'shorts' ? 1 : 2;
-  return `<path d="M${hipL},130 L${midL},130 Q${midL - 1},${(130 + hemY) / 2} ${midL - flare},${hemY} ` +
-    `L${hipL + 3 + flare},${hemY} Q${hipL + 2},${(130 + hemY) / 2} ${hipL},130 Z"/>` +
-    `<path d="M${midR},130 L${hipR},130 Q${hipR - 2},${(130 + hemY) / 2} ${hipR - 3 - flare},${hemY} ` +
-    `L${midR + flare},${hemY} Q${midR + 1},${(130 + hemY) / 2} ${midR},130 Z"/>`;
+/** One trouser/sock/boot leg tube. */
+function legTube(M, d, { puff = 1.5, topY, hemY }) {
+  const cx = CX + d * M.legCx;
+  const th = M.thighH + puff;
+  const kn = M.kneeH + puff;
+  const an = M.ankleH + puff;
+  const kneeY = clamp(M.kneeY, topY + 2, hemY - 2);
+  return `<path d="M${n(cx - th)},${n(topY)} L${n(cx + th)},${n(topY)} ` +
+    `C${n(cx + th)},${n(kneeY - 10)} ${n(cx + kn)},${n(kneeY - 4)} ${n(cx + kn)},${n(kneeY)} ` +
+    `C${n(cx + kn)},${n(hemY - 10)} ${n(cx + an)},${n(hemY - 5)} ${n(cx + an)},${n(hemY)} ` +
+    `L${n(cx - an)},${n(hemY)} ` +
+    `C${n(cx - an)},${n(hemY - 5)} ${n(cx - kn)},${n(hemY - 10)} ${n(cx - kn)},${n(kneeY)} ` +
+    `C${n(cx - kn)},${n(kneeY - 4)} ${n(cx - th)},${n(kneeY - 10)} ${n(cx - th)},${n(topY)} Z"/>`;
 }
 
-function dressPath(gender, style) {
-  const { shoulderL, shoulderR, hipL, hipR } = torsoPoints(gender);
-  const hemY = style === 'flowy' ? 178 : 168;
-  const flare = style === 'flowy' ? 20 : 8;
-  const midHemY = 100 + (hemY - 100) * 0.55;
-  const bodice = `M${shoulderL},62 Q60,58 ${shoulderR},62 Q${shoulderR + 2},84 ${hipR},130`;
-  const skirt = `Q${hipR + flare * 0.6},${midHemY} ${hipR + flare},${hemY} ` +
-    `Q60,${hemY + 6} ${hipL - flare},${hemY} Q${hipL - flare * 0.6},${midHemY} ${hipL},130`;
-  const close = `Q${shoulderL - 2},84 ${shoulderL},62 Z`;
-  return `<path d="${bodice} ${skirt} ${close}"/>${sleevePaths(gender)}`;
-}
+function shirtMarkup(M, style) {
+  const hemY = style === 'hoodie' ? M.hipY + 12 : M.hipY + 6;
+  const puff = style === 'hoodie' ? 3.4 : style === 'tank' ? 1.4 : 2;
+  const inset = style === 'tank' ? M.shoulderHalf * 0.36 : 0;
+  const neckDip = style === 'vneck' ? M.headRx * 0.85 : 4;
+  const body = shell(M, { puff, topY: M.shoulderY, hemY, neckDip, inset });
+  const sleeveHemY = style === 'hoodie' ? M.wristY - 2 : M.elbowY - 2;
+  const out = [`<path d="${body}"/>`];
 
-function socksShapes(gender, style) {
-  const { hipL, hipR } = torsoPoints(gender);
-  const gap = 3;
-  const midL = (hipL + hipR) / 2 - gap;
-  const midR = (hipL + hipR) / 2 + gap;
-  const h = style === 'tall' ? 26 : 12;
-  const y = 190 - h;
-  return `<rect x="${hipL + 2}" y="${y}" width="${midL - hipL - 2}" height="${h}" rx="3"/>` +
-    `<rect x="${midR}" y="${y}" width="${hipR - midR - 2}" height="${h}" rx="3"/>`;
-}
+  if (style !== 'tank') out.push(sleeves(M, sleeveHemY, puff));
 
-function shoesShapes(gender, style) {
-  const { hipL, hipR } = torsoPoints(gender);
-  const gap = 3;
-  const midL = (hipL + hipR) / 2 - gap;
-  const midR = (hipL + hipR) / 2 + gap;
-  const cxL = (hipL + midL) / 2;
-  const cxR = (midR + hipR) / 2;
-  if (style === 'boots') {
-    return `<rect x="${cxL - 6}" y="176" width="12" height="18" rx="4"/>` +
-      `<rect x="${cxR - 6}" y="176" width="12" height="18" rx="4"/>`;
+  // shared cloth shading
+  const sh = M.shoulderHalf + puff;
+  out.push(shade(`M${n(CX + sh * 0.9)},${n(M.armpitY)} ` +
+    `C${n(CX + M.waistHalf + puff + 1)},${n(M.waistY)} ${n(CX + M.hipHalf + puff)},${n(M.hipY - 8)} ` +
+    `${n(CX + M.hipHalf + puff)},${n(hemY)} L${n(CX + M.hipHalf + puff - 5)},${n(hemY)} ` +
+    `C${n(CX + M.hipHalf + puff - 5)},${n(M.hipY - 8)} ${n(CX + M.waistHalf + puff - 4)},${n(M.waistY)} ` +
+    `${n(CX + sh * 0.9 - 4)},${n(M.armpitY)} Z`, 0.1));
+
+  if (style === 'vneck') {
+    out.push(pair((d) => seam(`M${n(CX + d * sh * 0.5)},${n(M.shoulderY + 2)} ` +
+      `L${n(CX)},${n(M.shoulderY + neckDip)}`, 2.2, 0.18)));
+  } else if (style === 'tank') {
+    out.push(seam(`M${n(CX - sh + inset)},${n(M.shoulderY + 1.5)} ` +
+      `Q${n(CX)},${n(M.shoulderY + neckDip + 1.5)} ${n(CX + sh - inset)},${n(M.shoulderY + 1.5)}`, 1.5, 0.18));
+  } else {
+    // crew collar
+    out.push(seam(`M${n(CX - sh * 0.42)},${n(M.shoulderY + 1)} ` +
+      `Q${n(CX)},${n(M.shoulderY + neckDip + 2)} ${n(CX + sh * 0.42)},${n(M.shoulderY + 1)}`, 2.4, 0.2));
   }
-  return `<ellipse cx="${cxL}" cy="192" rx="9" ry="5.5"/><ellipse cx="${cxR}" cy="192" rx="9" ry="5.5"/>`;
+
+  if (style === 'hoodie') {
+    // The hood reads as a roll bunched around the neck base — it needs no
+    // z-order surgery (the shirt group necessarily paints after skin) and
+    // it lands inside the widget crop, so a hoodie is visible in the pill.
+    out.push(`<path d="M${n(CX - sh * 0.72)},${n(M.shoulderY + 3)} ` +
+      `C${n(CX - sh * 0.66)},${n(M.chinY - 1)} ${n(CX + sh * 0.66)},${n(M.chinY - 1)} ` +
+      `${n(CX + sh * 0.72)},${n(M.shoulderY + 3)} ` +
+      `C${n(CX + sh * 0.4)},${n(M.shoulderY + 7)} ${n(CX - sh * 0.4)},${n(M.shoulderY + 7)} ` +
+      `${n(CX - sh * 0.72)},${n(M.shoulderY + 3)} Z"/>`);
+    out.push(shade(`M${n(CX - sh * 0.52)},${n(M.shoulderY + 3.4)} ` +
+      `C${n(CX - sh * 0.46)},${n(M.chinY + 2)} ${n(CX + sh * 0.46)},${n(M.chinY + 2)} ` +
+      `${n(CX + sh * 0.52)},${n(M.shoulderY + 3.4)} ` +
+      `C${n(CX + sh * 0.3)},${n(M.shoulderY + 5.6)} ${n(CX - sh * 0.3)},${n(M.shoulderY + 5.6)} ` +
+      `${n(CX - sh * 0.52)},${n(M.shoulderY + 3.4)} Z`, 0.18));
+    // drawstrings
+    out.push(pair((d) => seamLight(`M${n(CX + d * sh * 0.2)},${n(M.shoulderY + 6)} ` +
+      `Q${n(CX + d * sh * 0.26)},${n(M.chestY + 4)} ${n(CX + d * sh * 0.18)},${n(M.chestY + 12)}`, 1.6, 0.24)));
+    out.push(pair((d) => `<circle cx="${n(CX + d * sh * 0.18)}" cy="${n(M.chestY + 13)}" r="1.1" fill="rgba(255,255,255,0.28)"/>`));
+    // kangaroo pocket
+    const pkTop = M.waistY + (hemY - M.waistY) * 0.42;
+    out.push(seam(`M${n(CX - M.hipHalf * 0.72)},${n(pkTop)} ` +
+      `L${n(CX - M.hipHalf * 0.78)},${n(hemY - 5)} L${n(CX + M.hipHalf * 0.78)},${n(hemY - 5)} ` +
+      `L${n(CX + M.hipHalf * 0.72)},${n(pkTop)}`, 1.3, 0.17));
+    out.push(pair((d) => seam(`M${n(CX + d * M.hipHalf * 0.72)},${n(pkTop)} ` +
+      `L${n(CX + d * M.hipHalf * 0.5)},${n(pkTop + 4)}`, 1.6, 0.22)));
+    // ribbed cuffs and hem
+    out.push(ribBand(CX - M.hipHalf - puff + 1, CX + M.hipHalf + puff - 1, hemY - 4.5, 4.5, 5));
+    out.push(pair((d) => ribBand(CX + d * M.armCx - M.elbowH - 1.5, CX + d * M.armCx + M.elbowH + 1.5,
+      sleeveHemY - 3.5, 3.5, 3)));
+  } else if (style !== 'tank') {
+    // plain cuffs + hem line
+    out.push(pair((d) => seam(`M${n(CX + d * M.armCx - M.elbowH - 1)},${n(sleeveHemY - 1.5)} ` +
+      `L${n(CX + d * M.armCx + M.elbowH + 1)},${n(sleeveHemY - 1.5)}`, 1.8, 0.15)));
+    out.push(seam(`M${n(CX - M.hipHalf - puff + 2)},${n(hemY - 1)} ` +
+      `Q${n(CX)},${n(hemY + 3)} ${n(CX + M.hipHalf + puff - 2)},${n(hemY - 1)}`, 1.5, 0.13));
+  } else {
+    out.push(seam(`M${n(CX - M.hipHalf - puff + 2)},${n(hemY - 1)} ` +
+      `Q${n(CX)},${n(hemY + 3)} ${n(CX + M.hipHalf + puff - 2)},${n(hemY - 1)}`, 1.5, 0.13));
+  }
+  return out.join('');
 }
+
+/** A ribbed band — the cuff/hem detail that makes knitwear read as knitwear. */
+function ribBand(x0, x1, y, h, ticks) {
+  let out = `<rect x="${n(x0)}" y="${n(y)}" width="${n(x1 - x0)}" height="${n(h)}" rx="1.4" fill="rgba(0,0,0,0.17)"/>`;
+  for (let i = 1; i < ticks; i++) {
+    const x = x0 + ((x1 - x0) * i) / ticks;
+    out += seam(`M${n(x)},${n(y + 0.6)} L${n(x)},${n(y + h - 0.6)}`, 0.7, 0.1);
+  }
+  return out;
+}
+
+const BOTTOMS_HEM = { basic: 1.0, capri: 0.72, shorts: 0.34 };
+
+function bottomsMarkup(M, style) {
+  const frac = BOTTOMS_HEM[style] ?? 1;
+  const hemY = style === 'basic' ? M.ankleY - 1 : M.hipY + M.legLen * frac;
+  const topY = M.hipY - 2;
+  const puff = 1.6;
+  const out = [pair((d) => legTube(M, d, { puff, topY, hemY }))];
+  // the seat/crotch join
+  out.push(`<path d="M${n(CX - M.hipHalf - puff)},${n(topY)} L${n(CX + M.hipHalf + puff)},${n(topY)} ` +
+    `L${n(CX + M.hipHalf + puff - 1)},${n(M.crotchY + 2)} ` +
+    `Q${n(CX)},${n(M.crotchY - 3)} ${n(CX - M.hipHalf - puff + 1)},${n(M.crotchY + 2)} Z"/>`);
+  // waistband, fly, button
+  out.push(`<rect x="${n(CX - M.hipHalf - puff)}" y="${n(topY - 1)}" width="${n((M.hipHalf + puff) * 2)}" height="5" rx="1.6" fill="rgba(0,0,0,0.18)"/>`);
+  out.push(seam(`M${n(CX)},${n(topY + 5)} L${n(CX)},${n(topY + 15)}`, 1.2, 0.25));
+  out.push(`<circle cx="${n(CX)}" cy="${n(topY + 1.5)}" r="1.2" fill="rgba(0,0,0,0.3)"/>`);
+  // front pockets
+  out.push(pair((d) => seam(`M${n(CX + d * (M.hipHalf * 0.52))},${n(topY + 5)} ` +
+    `Q${n(CX + d * (M.hipHalf + puff - 1))},${n(topY + 9)} ${n(CX + d * (M.hipHalf + puff - 1.5))},${n(topY + 15)}`,
+  1.2, 0.16)));
+  // inner-leg shading + knee folds
+  out.push(pair((d) => shade(`M${n(CX + d * (M.legCx - M.thighH * 0.5))},${n(M.crotchY)} ` +
+    `C${n(CX + d * (M.legCx - M.calfH * 0.55))},${n(M.kneeY)} ` +
+    `${n(CX + d * (M.legCx - M.ankleH * 0.6))},${n(hemY - 8)} ${n(CX + d * (M.legCx - M.ankleH * 0.55))},${n(hemY)} ` +
+    `L${n(CX + d * (M.legCx - M.ankleH * 0.55 + 3.4))},${n(hemY)} ` +
+    `C${n(CX + d * (M.legCx - M.calfH * 0.45 + 3))},${n(M.kneeY)} ` +
+    `${n(CX + d * (M.legCx - M.thighH * 0.45 + 3))},${n(M.crotchY + 6)} ` +
+    `${n(CX + d * (M.legCx - M.thighH * 0.5 + 2))},${n(M.crotchY)} Z`, 0.09)));
+  if (hemY > M.kneeY + 6) {
+    out.push(pair((d) => seam(`M${n(CX + d * M.legCx - M.kneeH)},${n(M.kneeY + 2)} ` +
+      `Q${n(CX + d * M.legCx)},${n(M.kneeY + 4.5)} ${n(CX + d * M.legCx + M.kneeH)},${n(M.kneeY + 2)}`, 0.9, 0.08)));
+  }
+  // hem cuffs
+  const cuffH = style === 'shorts' ? 3.6 : 3;
+  out.push(pair((d) => `<rect x="${n(CX + d * M.legCx - M.ankleH - puff)}" y="${n(hemY - cuffH)}" ` +
+    `width="${n((M.ankleH + puff) * 2)}" height="${n(cuffH)}" rx="1.2" fill="rgba(0,0,0,0.15)"/>`));
+  return out.join('');
+}
+
+const DRESS = {
+  mini: { hem: 0.28, flare: 4, folds: 3 },
+  basic: { hem: 0.55, flare: 9, folds: 4 },
+  flowy: { hem: 0.72, flare: 21, folds: 5 },
+  gown: { hem: 0.98, flare: 30, folds: 6 },
+};
+
+function dressMarkup(M, style) {
+  const D = DRESS[style] ?? DRESS.basic;
+  const hemY = M.hipY + M.legLen * D.hem;
+  const puff = 1.6;
+  const neckDip = style === 'gown' ? M.headRx * 0.75 : 4;
+  const body = shell(M, { puff, topY: M.shoulderY, hemY, neckDip, flare: D.flare });
+  const out = [`<path d="${body}"/>`, sleeves(M, M.shoulderY + (M.elbowY - M.shoulderY) * 0.5, puff)];
+  // princess seams and a waistband
+  out.push(pair((d) => seam(`M${n(CX + d * M.shoulderHalf * 0.5)},${n(M.shoulderY + 4)} ` +
+    `Q${n(CX + d * M.waistHalf * 0.75)},${n(M.chestY)} ${n(CX + d * M.waistHalf * 0.6)},${n(M.waistY)}`, 1, 0.12)));
+  out.push(`<rect x="${n(CX - M.waistHalf - puff)}" y="${n(M.waistY - 2)}" ` +
+    `width="${n((M.waistHalf + puff) * 2)}" height="4" rx="1.4" fill="rgba(0,0,0,0.18)"/>`);
+  // skirt folds radiating from the waist
+  const hemHalf = M.hipHalf + puff + D.flare;
+  for (let i = 1; i < D.folds; i++) {
+    const t = i / D.folds;
+    const x0 = CX + (t - 0.5) * 2 * M.waistHalf * 0.9;
+    const x1 = CX + (t - 0.5) * 2 * hemHalf * 0.94;
+    out.push(seam(`M${n(x0)},${n(M.waistY + 3)} Q${n((x0 + x1) / 2)},${n((M.waistY + hemY) / 2)} ${n(x1)},${n(hemY - 2)}`,
+      0.9, 0.09));
+  }
+  // Edge bands traced from the skirt's OWN curve, offset inward — anything
+  // hand-approximated bulges outside the silhouette once the flare is big.
+  const hp = M.hipHalf + puff;
+  const midY = (M.hipY + hemY) / 2;
+  const skirtBand = (d, w, paint, a) => {
+    const e = (off) => [
+      [CX + d * (hp - off), M.hipY],
+      [CX + d * (hp + D.flare * 0.45 - off), midY],
+      [CX + d * (hemHalf - off), hemY - 6],
+      [CX + d * (hemHalf - off), hemY],
+    ];
+    const o = e(0);
+    const i = e(w);
+    return paint(`M${n(o[0][0])},${n(o[0][1])} ` +
+      `C${n(o[1][0])},${n(o[1][1])} ${n(o[2][0])},${n(o[2][1])} ${n(o[3][0])},${n(o[3][1])} ` +
+      `L${n(i[3][0])},${n(i[3][1])} ` +
+      `C${n(i[2][0])},${n(i[2][1])} ${n(i[1][0])},${n(i[1][1])} ${n(i[0][0])},${n(i[0][1])} Z`, a);
+  };
+  out.push(skirtBand(1, Math.max(5, D.flare * 0.3), shade, 0.1));
+  out.push(skirtBand(-1, Math.max(4, D.flare * 0.22), light, 0.09));
+  if (style === 'gown' || style === 'mini') {
+    out.push(seam(`M${n(CX - hemHalf * 0.92)},${n(hemY - 1)} Q${n(CX)},${n(hemY + 4)} ${n(CX + hemHalf * 0.92)},${n(hemY - 1)}`,
+      2, 0.16));
+  }
+  if (style === 'gown') {
+    out.push(seam(`M${n(CX)},${n(M.waistY + 3)} L${n(CX)},${n(hemY - 3)}`, 1, 0.12));
+  }
+  return out.join('');
+}
+
+const SOCK_TOP = { ankle: 0.06, basic: 0.22, tall: 0.62 };
+
+function socksMarkup(M, style) {
+  const topY = M.ankleY - M.legLen * (SOCK_TOP[style] ?? SOCK_TOP.basic);
+  const out = [pair((d) => legTube(M, d, { puff: 0.9, topY, hemY: FOOT_Y }))];
+  out.push(pair((d) => `<rect x="${n(CX + d * M.legCx - M.ankleH - 1.6)}" y="${n(topY)}" ` +
+    `width="${n((M.ankleH + 1.6) * 2)}" height="3.4" rx="1.2" fill="rgba(0,0,0,0.16)"/>`));
+  out.push(pair((d) => seam(`M${n(CX + d * M.legCx - M.ankleH - 1)},${n(topY + 5.5)} ` +
+    `L${n(CX + d * M.legCx + M.ankleH + 1)},${n(topY + 5.5)}`, 1, 0.12)));
+  out.push(pair((d) => shade(`M${n(CX + d * (M.legCx - M.ankleH - 0.6))},${n(topY + 2)} ` +
+    `L${n(CX + d * (M.legCx - M.ankleH * 0.3))},${n(topY + 2)} ` +
+    `L${n(CX + d * (M.legCx - M.ankleH * 0.3))},${n(FOOT_Y)} ` +
+    `L${n(CX + d * (M.legCx - M.ankleH - 0.4))},${n(FOOT_Y)} Z`, 0.08)));
+  return out.join('');
+}
+
+function shoesMarkup(M, style) {
+  const an = M.ankleH + 1.6;
+  const toe = an * 1.65;
+  return pair((d) => {
+    const cx = CX + d * M.legCx;
+    const top = style === 'boots' ? M.ankleY - M.legLen * 0.2 : M.ankleY - 1;
+    const solY = FOOT_Y + 3;
+    const out = [];
+    if (style === 'heels') {
+      out.push(`<path d="M${n(cx - an)},${n(top)} L${n(cx + an)},${n(top)} ` +
+        `C${n(cx + an + 1)},${n(solY - 6)} ${n(cx + toe)},${n(solY - 3)} ${n(cx + toe + 1)},${n(solY - 1)} ` +
+        `L${n(cx - an * 0.9)},${n(solY - 1)} Z"/>`);
+      out.push(`<path d="M${n(cx - an * 0.85)},${n(solY - 2)} L${n(cx - an * 0.3)},${n(solY - 2)} ` +
+        `L${n(cx - an * 0.45)},${n(solY + 3)} L${n(cx - an * 0.8)},${n(solY + 3)} Z"/>`);
+      out.push(seam(`M${n(cx - an * 0.9)},${n(solY - 1.4)} L${n(cx + toe)},${n(solY - 1.4)}`, 1.4, 0.18));
+      out.push(seam(`M${n(cx - an)},${n(top + 1.5)} Q${n(cx)},${n(top + 4)} ${n(cx + an)},${n(top + 1.5)}`, 1.1, 0.14));
+      return out.join('');
+    }
+    if (style === 'sandals') {
+      out.push(`<path d="M${n(cx - an)},${n(solY - 2)} C${n(cx - an)},${n(solY + 1)} ${n(cx + toe)},${n(solY + 1)} ` +
+        `${n(cx + toe)},${n(solY - 2)} C${n(cx + toe - 2)},${n(solY - 4)} ${n(cx - an + 1)},${n(solY - 4)} ` +
+        `${n(cx - an)},${n(solY - 2)} Z"/>`);
+      out.push(`<path d="M${n(cx - an * 0.7)},${n(solY - 4)} L${n(cx + toe * 0.55)},${n(solY - 9)} ` +
+        `L${n(cx + toe * 0.72)},${n(solY - 7.4)} L${n(cx - an * 0.5)},${n(solY - 2.6)} Z"/>`);
+      out.push(`<path d="M${n(cx - an * 0.7)},${n(solY - 8.4)} L${n(cx + toe * 0.6)},${n(solY - 4)} ` +
+        `L${n(cx + toe * 0.5)},${n(solY - 2.4)} L${n(cx - an * 0.55)},${n(solY - 6.8)} Z"/>`);
+      out.push(seam(`M${n(cx - an)},${n(solY - 2.2)} L${n(cx + toe)},${n(solY - 2.2)}`, 1, 0.12));
+      return out.join('');
+    }
+    // sneaker / boot shell
+    out.push(`<path d="M${n(cx - an)},${n(top)} L${n(cx + an)},${n(top)} ` +
+      `C${n(cx + an + 0.5)},${n(solY - 8)} ${n(cx + toe - 1)},${n(solY - 5)} ${n(cx + toe)},${n(solY - 2)} ` +
+      `C${n(cx + toe)},${n(solY + 1)} ${n(cx - an)},${n(solY + 1)} ${n(cx - an)},${n(solY - 2)} Z"/>`);
+    out.push(`<path d="M${n(cx - an)},${n(solY - 3)} C${n(cx - an)},${n(solY + 1)} ${n(cx + toe)},${n(solY + 1)} ` +
+      `${n(cx + toe)},${n(solY - 3)} L${n(cx + toe)},${n(solY - 1)} ` +
+      `C${n(cx + toe)},${n(solY + 2)} ${n(cx - an)},${n(solY + 2)} ${n(cx - an)},${n(solY - 1)} Z" fill="rgba(0,0,0,0.2)"/>`);
+    if (style === 'boots') {
+      out.push(`<rect x="${n(cx - an)}" y="${n(top)}" width="${n(an * 2)}" height="3.4" rx="1.2" fill="rgba(0,0,0,0.18)"/>`);
+      out.push(seam(`M${n(cx - an * 0.8)},${n(top + 7)} L${n(cx + an * 0.8)},${n(top + 9)}`, 1.2, 0.2));
+      out.push(seam(`M${n(cx - an * 0.8)},${n(top + 12)} L${n(cx + an * 0.8)},${n(top + 14)}`, 1.2, 0.2));
+      out.push(seam(`M${n(cx - an)},${n(solY - 7)} L${n(cx + toe * 0.8)},${n(solY - 7)}`, 1, 0.14));
+    } else {
+      out.push(seam(`M${n(cx + toe * 0.3)},${n(solY - 6.5)} Q${n(cx + toe * 0.7)},${n(solY - 5)} ` +
+        `${n(cx + toe * 0.92)},${n(solY - 2.6)}`, 1.1, 0.14));
+      out.push(seam(`M${n(cx - an * 0.7)},${n(top + 2.5)} L${n(cx + an * 0.5)},${n(top + 3.5)}`, 1.1, 0.2));
+      out.push(seam(`M${n(cx - an * 0.7)},${n(top + 6)} L${n(cx + an * 0.5)},${n(top + 7)}`, 1.1, 0.2));
+      out.push(seam(`M${n(cx - an * 0.55)},${n(top + 1.5)} L${n(cx - an * 0.2)},${n(top + 8)}`, 1, 0.12));
+    }
+    return out.join('');
+  });
+}
+
+/* ----------------------------------------------------------------- build */
 
 /**
  * @param {object} customize  S.save.avatar.customize
- * @returns {string}  a full <svg>...</svg> string, viewBox 0 0 120 220
+ * @returns {string}  a full <svg>...</svg> string, viewBox 0 0 120 210
  */
 export function buildAvatarSVG(customize) {
-  const c = customize;
-  const gender = c.gender ?? 'nb';
-  const { shoulderL, shoulderR, hipL, hipR } = torsoPoints(gender);
-  const legGap = 3;
-  const midL = (hipL + hipR) / 2 - legGap;
-  const midR = (hipL + hipR) / 2 + legGap;
-  // Feet always draw around y=190-198 regardless of outfit, so the viewBox
-  // stays a constant height too — a dress covers the upper legs but must
-  // never clip the feet it doesn't reach.
-  const legY = 190;
-
-  const skinParts =
-    limbPath(midL, -1, 130, legY, midL - hipL - 3, (midL - hipL - 3) * 0.72, 1) +
-    limbPath(midR, 1, 130, legY, hipR - midR - 3, (hipR - midR - 3) * 0.72, 1) +
-    torsoTag(gender) +
-    limbPath(shoulderL, -1, 64, 118, 13, 8, 3) +
-    limbPath(shoulderR, 1, 64, 118, 13, 8, 3) +
-    '<circle cx="' + (shoulderL - 10) + '" cy="120" r="4.2"/>' +
-    '<circle cx="' + (shoulderR + 10) + '" cy="120" r="4.2"/>' +
-    '<rect x="54" y="50" width="12" height="14" rx="4"/>' +
-    headMarkup(c.face?.shape) +
-    MOUTH;
-
+  const c = customize ?? {};
+  const M = metrics(c);
+  const hairStyle = c.hair?.style ?? 'short';
   const dressed = !!c.dress?.itemId;
 
   const parts = [
-    part('skin', c.skin?.colour, skinParts),
-    part('hair', c.hair?.colour, hairPaths(c.hair?.style)),
-    part('eyes', c.eyes?.colour, eyesShapes(c.eyes?.style)),
+    // Hair behind the head first — a separate group with the same data-slot,
+    // which is safe because recolouring re-renders rather than patching.
+    part('hair', c.hair?.colour, hairBack(hairStyle, M)),
+    part('skin', c.skin?.colour,
+      `<path d="${bodyOutline(M)}"/><path d="${headOutline(M)}"/>` +
+      earMarkup(M) + raceExtras(M) + faceAndShading(M)),
+    part('eyes', c.eyes?.colour, eyesShapes(c.eyes?.style ?? 'round', M)),
+    part('hair', c.hair?.colour, hairFront(hairStyle, M)),
+    part('skin', c.skin?.colour, raceExtrasOverHair(M)),
   ];
+
   if (dressed) {
-    parts.push(part('dress', c.dress?.colour, dressPath(gender, styleOf(c.dress.itemId))));
+    parts.push(part('dress', c.dress?.colour, dressMarkup(M, styleOf(c.dress.itemId))));
   } else {
-    parts.push(part('shirt', c.shirt?.colour, shirtPath(gender, styleOf(c.shirt?.itemId))));
-    parts.push(part('bottoms', c.bottoms?.colour, bottomsPath(gender, styleOf(c.bottoms?.itemId))));
+    parts.push(part('shirt', c.shirt?.colour, shirtMarkup(M, styleOf(c.shirt?.itemId))));
+    parts.push(part('bottoms', c.bottoms?.colour, bottomsMarkup(M, styleOf(c.bottoms?.itemId))));
   }
-  parts.push(part('socks', c.socks?.colour, socksShapes(gender, styleOf(c.socks?.itemId))));
-  parts.push(part('shoes', c.shoes?.colour, shoesShapes(gender, styleOf(c.shoes?.itemId))));
+  parts.push(part('socks', c.socks?.colour, socksMarkup(M, styleOf(c.socks?.itemId))));
+  parts.push(part('shoes', c.shoes?.colour, shoesMarkup(M, styleOf(c.shoes?.itemId))));
 
-  // height/weight are a uniform scale of the whole figure, anchored at the
-  // hips (y=130) so a taller avatar grows upward from the same footing
-  // rather than sinking its feet through the floor.
-  const sx = Math.max(0.8, Math.min(1.3, c.weight ?? 1));
-  const sy = Math.max(0.85, Math.min(1.2, c.height ?? 1));
-  const body = `<g transform="translate(60,130) scale(${sx},${sy}) translate(-60,-130)">${parts.join('')}</g>`;
-
-  return `<svg viewBox="0 0 120 ${legY + 20}" xmlns="http://www.w3.org/2000/svg">${body}</svg>`;
-}
-
-function torsoTag(gender) {
-  return `<path d="${torsoPath(gender)}"/>`;
+  return `<svg viewBox="0 0 120 ${VIEW_H}" xmlns="http://www.w3.org/2000/svg">${parts.join('')}</svg>`;
 }
 
 function part(slot, colour, inner) {
+  if (!inner) return '';
   return `<g data-slot="${slot}" fill="${colour ?? '#999'}">${inner}</g>`;
 }
 
@@ -297,10 +928,11 @@ function part(slot, colour, inner) {
  *  the known style variants — the caller (a button click) can only ever send
  *  a value it itself listed, but this keeps a stray save edit harmless too. */
 export function setVariant(customize, slot, value) {
-  const list = { hair: VARIANTS.hairStyle, eyes: VARIANTS.eyesStyle }[slot];
-  if (slot === 'face') {
-    if (!VARIANTS.faceShape.includes(value)) return;
-    customize.face.shape = value;
+  if (slot === 'race') {
+    if (!VARIANTS.race.includes(value)) return;
+    // Deliberately does NOT touch skin.colour: silently overwriting a colour
+    // the player chose is worse than offering the race's palette one tap away.
+    customize.race = value;
     return;
   }
   if (slot === 'gender') {
@@ -308,6 +940,12 @@ export function setVariant(customize, slot, value) {
     customize.gender = value;
     return;
   }
+  if (slot === 'face') {
+    if (!VARIANTS.faceShape.includes(value)) return;
+    customize.face.shape = value;
+    return;
+  }
+  const list = { hair: VARIANTS.hairStyle, eyes: VARIANTS.eyesStyle }[slot];
   if (!list || !list.includes(value)) return;
   customize[slot].style = value;
 }
