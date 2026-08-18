@@ -4,7 +4,7 @@ import { PNG } from 'pngjs';
 import jpeg from 'jpeg-js';
 
 import { decodeBuffer } from './lib/decode.mjs';
-import { quantize, denoiseIndices } from '../src/pipeline/quantize.js';
+import { quantize, denoiseIndices, colourDistance } from '../src/pipeline/quantize.js';
 import {
   estimateGrain, passesForGrain, despeckle, findContentBounds,
 } from '../src/pipeline/denoise.js';
@@ -88,6 +88,40 @@ test('small regions are merged away and the cell budget is respected', () => {
   const total = merged.areas.reduce((a, b) => a + b, 0);
   assert.equal(total, W * H);
   assert.ok([...merged.labels].every((l) => l >= 0 && l < merged.count));
+});
+
+test('a tiny region merges into a same-hue neighbour over a bigger, wrong-hue one', () => {
+  // Three regions: a big dark "rock" filling most of the grid, a big
+  // "variant" strip along the left edge that is a slightly different shade
+  // of yellow, and a tiny "bird" block sitting in rock territory but abutting
+  // the variant strip on one side. The bird shares far more border with rock
+  // (top, right, bottom) than with the variant (left only) — plain
+  // border-length picks rock; colour-awareness should flip that, since rock
+  // is nothing like the bird's colour and the variant is.
+  const ROCK = [30, 30, 30];
+  const BIRD = [230, 200, 30];
+  const VARIANT = [210, 190, 45]; // close to BIRD, unrelated to ROCK
+  const palette = [ROCK, VARIANT, BIRD];
+
+  const indices = new Uint8Array(W * H).fill(0); // rock everywhere
+  for (let y = 0; y < H; y++) for (let x = 0; x < 6; x++) indices[y * W + x] = 1; // variant strip
+  for (let y = 28; y < 33; y++) for (let x = 6; x < 11; x++) indices[y * W + x] = 2; // bird block
+
+  const raw = labelRegions(indices, W, H);
+  assert.equal(raw.count, 3, 'rock, variant strip, bird block');
+
+  const aware = mergeSmallRegions(raw, W, H, { minArea: 50, maxCells: 16, palette });
+  const awareColour = palette[aware.colours[aware.labels[30 * W + 8]]];
+  assert.ok(
+    colourDistance(...awareColour, ...BIRD) < colourDistance(...awareColour, ...ROCK),
+    `expected the bird to land near its own hue, got ${awareColour}`,
+  );
+
+  // Same geometry, no palette: today's border-length-only fallback must be
+  // unchanged, and still picks rock.
+  const blind = mergeSmallRegions(raw, W, H, { minArea: 50, maxCells: 16 });
+  const blindColour = palette[blind.colours[blind.labels[30 * W + 8]]];
+  assert.deepEqual(blindColour, ROCK, 'without a palette, longest border still wins');
 });
 
 test('contours of a ring cell carry a hole with correct winding', () => {

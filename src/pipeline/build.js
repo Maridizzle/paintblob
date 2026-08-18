@@ -201,7 +201,7 @@ export function buildPuzzle(rgba, srcW, srcH, opts = {}) {
     labelRegions(cleaned, width, height),
     width,
     height,
-    { minArea, maxCells: o.maxCells },
+    { minArea, maxCells: o.maxCells, palette },
   );
 
   const cells = [];

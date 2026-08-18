@@ -5,6 +5,18 @@
 // area threshold is absorbed into whichever neighbour it shares the most
 // border with. Merging is done with union-find so relabelling stays cheap.
 
+import { colourDistance } from './quantize.js';
+
+// Border length alone is a fine tie-breaker between two shades of the same
+// object, but it happily swallows a small, differently-coloured region (a
+// bird, a lone anemone) into whichever huge neighbour it happens to share
+// the longest edge with, purely because that neighbour is big. Discount a
+// neighbour's shared-border score by how far its colour actually is from
+// the region being dissolved: a same-object shading gap barely moves the
+// score, while a genuinely different hue crushes it enough that a
+// same-hue neighbour touching only a sliver of the border wins instead.
+const COLOUR_SCALE = 6000;
+
 export function labelRegions(indices, width, height) {
   const labels = new Int32Array(width * height).fill(-1);
   const stack = new Int32Array(width * height);
@@ -136,8 +148,12 @@ class AreaHeap {
 /**
  * Absorbs undersized regions into neighbours until every surviving cell is at
  * least `minArea` pixels and there are no more than `maxCells` of them.
+ *
+ * @param {number[][]} [palette] [r,g,b] per palette index, as returned by
+ *   quantize(). When given, neighbour choice favours colour over raw border
+ *   length (see COLOUR_SCALE above); omitted, merging is pure border length.
  */
-export function mergeSmallRegions(labelling, width, height, { minArea, maxCells }) {
+export function mergeSmallRegions(labelling, width, height, { minArea, maxCells, palette } = {}) {
   const { labels, colours, areas, count } = labelling;
   if (count === 0) return { ...labelling, order: [] };
 
@@ -188,13 +204,21 @@ export function mergeSmallRegions(labelling, width, height, { minArea, maxCells 
   };
 
   const bestNeighbour = (root) => {
+    const rootRGB = palette ? palette[colour[root]] : null;
     let best = -1;
-    let bestShared = -1;
+    let bestScore = -Infinity;
     for (const [other, shared] of adj[root]) {
       const r = find(other);
       if (r === root) continue;
-      if (shared > bestShared) {
-        bestShared = shared;
+      let score = shared;
+      if (rootRGB) {
+        const [rr, rg, rb] = rootRGB;
+        const [nr, ng, nb] = palette[colour[r]];
+        const d = colourDistance(rr, rg, rb, nr, ng, nb);
+        score = shared / (1 + d / COLOUR_SCALE);
+      }
+      if (score > bestScore) {
+        bestScore = score;
         best = r;
       }
     }
