@@ -21,7 +21,7 @@ export const ACHIEVEMENTS = [
   { id: 'pic-1', icon: '🖼️', name: 'Framed', desc: 'Finish a picture.', track: 'puzzles', goal: 1 },
   { id: 'pic-3', icon: '🏛️', name: 'Small Gallery', desc: 'Finish 3 pictures.', track: 'puzzles', goal: 3 },
   { id: 'pic-10', icon: '🎭', name: 'Curator', desc: 'Finish 10 pictures.', track: 'puzzles', goal: 10, outfit: 'dress-flowy' },
-  { id: 'pic-25', icon: '👑', name: 'Old Master', desc: 'Finish 25 pictures.', track: 'puzzles', goal: 25 },
+  { id: 'pic-25', icon: '👑', name: 'Old Master', desc: 'Finish 25 pictures.', track: 'puzzles', goal: 25, outfit: 'dress-gown' },
   { id: 'pic-50', icon: '🖨️', name: 'Print Run', desc: 'Finish 50 pictures.', track: 'puzzles', goal: 50, hint: 12 },
   { id: 'pic-100', icon: '🏅', name: 'Century', desc: 'Finish 100 pictures.', track: 'puzzles', goal: 100, hint: 20 },
 

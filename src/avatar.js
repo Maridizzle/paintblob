@@ -176,14 +176,28 @@ function shirtPath(gender, style) {
   // bulging outward past the shoulders.
   const waistL = (shoulderL + hipL) / 2 + 3;
   const waistR = (shoulderR + hipR) / 2 - 3;
-  const notch = `M${shoulderL},62 Q60,${neckDipY} ${shoulderR},62 ` +
-    `Q${waistR},${waistY} ${hipR},${hemY} Q60,${hemY + 5} ${hipL},${hemY} Q${waistL},${waistY} ${shoulderL},62 Z`;
-  return `<path d="${notch}"/>${sleevePaths(gender)}`;
+  // A tank top's straps sit well inside the shoulder line rather than out
+  // to the very edge of it — the skin group underneath shows through where
+  // a sleeve would otherwise be.
+  const topL = style === 'tank' ? shoulderL + 7 : shoulderL;
+  const topR = style === 'tank' ? shoulderR - 7 : shoulderR;
+  const notch = `M${topL},62 Q60,${neckDipY} ${topR},62 ` +
+    `Q${waistR},${waistY} ${hipR},${hemY} Q60,${hemY + 5} ${hipL},${hemY} Q${waistL},${waistY} ${topL},62 Z`;
+  if (style === 'tank') return `<path d="${notch}"/>`;
+  const sleeves = sleevePaths(gender);
+  // A hoodie's hood bunches up in two small flaps just past each shoulder
+  // — safely clear of the head ellipse itself (shoulderL/R already sit
+  // outside its width), same fill as the rest of the shirt.
+  const hood = style === 'hoodie'
+    ? `<path d="M${shoulderL - 1},58 Q${shoulderL - 6},47 ${shoulderL + 6},52 Q${shoulderL + 2},58 ${shoulderL - 1},58 Z"/>` +
+      `<path d="M${shoulderR + 1},58 Q${shoulderR + 6},47 ${shoulderR - 6},52 Q${shoulderR - 2},58 ${shoulderR + 1},58 Z"/>`
+    : '';
+  return `${hood}<path d="${notch}"/>${sleeves}`;
 }
 
 function bottomsPath(gender, style) {
   const { hipL, hipR } = torsoPoints(gender);
-  const hemY = style === 'shorts' ? 148 : 188;
+  const hemY = style === 'shorts' ? 148 : style === 'capri' ? 162 : 188;
   const gap = 3;
   const midL = (hipL + hipR) / 2 - gap;
   const midR = (hipL + hipR) / 2 + gap;
@@ -194,10 +208,13 @@ function bottomsPath(gender, style) {
     `L${midR + flare},${hemY} Q${midR + 1},${(130 + hemY) / 2} ${midR},130 Z"/>`;
 }
 
+const DRESS_HEM = { basic: 168, flowy: 178, mini: 145, gown: 195 };
+const DRESS_FLARE = { basic: 8, flowy: 20, mini: 4, gown: 30 };
+
 function dressPath(gender, style) {
   const { shoulderL, shoulderR, hipL, hipR } = torsoPoints(gender);
-  const hemY = style === 'flowy' ? 178 : 168;
-  const flare = style === 'flowy' ? 20 : 8;
+  const hemY = DRESS_HEM[style] ?? DRESS_HEM.basic;
+  const flare = DRESS_FLARE[style] ?? DRESS_FLARE.basic;
   const midHemY = 100 + (hemY - 100) * 0.55;
   const bodice = `M${shoulderL},62 Q60,58 ${shoulderR},62 Q${shoulderR + 2},84 ${hipR},130`;
   const skirt = `Q${hipR + flare * 0.6},${midHemY} ${hipR + flare},${hemY} ` +
@@ -211,7 +228,7 @@ function socksShapes(gender, style) {
   const gap = 3;
   const midL = (hipL + hipR) / 2 - gap;
   const midR = (hipL + hipR) / 2 + gap;
-  const h = style === 'tall' ? 26 : 12;
+  const h = style === 'tall' ? 26 : style === 'ankle' ? 5 : 12;
   const y = 190 - h;
   return `<rect x="${hipL + 2}" y="${y}" width="${midL - hipL - 2}" height="${h}" rx="3"/>` +
     `<rect x="${midR}" y="${y}" width="${hipR - midR - 2}" height="${h}" rx="3"/>`;
@@ -227,6 +244,17 @@ function shoesShapes(gender, style) {
   if (style === 'boots') {
     return `<rect x="${cxL - 6}" y="176" width="12" height="18" rx="4"/>` +
       `<rect x="${cxR - 6}" y="176" width="12" height="18" rx="4"/>`;
+  }
+  if (style === 'sandals') {
+    // A slim flat sole plus a single strap across the top of the foot.
+    return `<ellipse cx="${cxL}" cy="192" rx="9" ry="3.5"/><rect x="${cxL - 8}" y="187" width="16" height="3" rx="1.5"/>` +
+      `<ellipse cx="${cxR}" cy="192" rx="9" ry="3.5"/><rect x="${cxR - 8}" y="187" width="16" height="3" rx="1.5"/>`;
+  }
+  if (style === 'heels') {
+    // The usual flat sole, lifted slightly, plus a small wedge behind it —
+    // just enough of a silhouette change to read as a heel.
+    return `<ellipse cx="${cxL}" cy="190" rx="9" ry="5"/><path d="M${cxL - 2},193 L${cxL + 2},193 L${cxL + 1},199 L${cxL - 1},199 Z"/>` +
+      `<ellipse cx="${cxR}" cy="190" rx="9" ry="5"/><path d="M${cxR - 2},193 L${cxR + 2},193 L${cxR + 1},199 L${cxR - 1},199 Z"/>`;
   }
   return `<ellipse cx="${cxL}" cy="192" rx="9" ry="5.5"/><ellipse cx="${cxR}" cy="192" rx="9" ry="5.5"/>`;
 }
