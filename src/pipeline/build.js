@@ -22,7 +22,7 @@ export const DEFAULTS = {
   // shape can survive tracing, so raising it is what actually buys detail.
   // Cost is linear-ish and still lands well under a second.
   size: 900,
-  maxColours: 17,   // paint tubs
+  maxColours: 20,   // paint tubs
   maxCells: 110,    // clickable regions
   minAreaFrac: 0.0008,
   denoise: 1,
@@ -49,10 +49,10 @@ export const DEFAULTS = {
  */
 export const DETAIL_PRESETS = {
   chunky: { maxColours: 11, maxCells: 38, minAreaFrac: 0.0035 },
-  normal: { maxColours: 17, maxCells: 110, minAreaFrac: 0.0008 },
-  detailed: { maxColours: 18, maxCells: 150, minAreaFrac: 0.00045 },
+  normal: { maxColours: 20, maxCells: 110, minAreaFrac: 0.0008 },
+  detailed: { maxColours: 21, maxCells: 150, minAreaFrac: 0.00045 },
   insane: {
-    maxColours: 20, maxCells: 280, minAreaFrac: 0.0002, size: 1200,
+    maxColours: 23, maxCells: 280, minAreaFrac: 0.0002, size: 1200,
   },
 };
 

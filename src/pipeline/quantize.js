@@ -6,9 +6,17 @@
 // component labelling has clean plateaus to work with.
 
 // Squared redmean distance below which two palette entries are treated as the
-// same paint. Roughly an RGB gap of 12 per channel — close enough that two
-// tubs side by side look identical, which is confusing rather than expressive.
-const MERGE_DISTANCE = 1000;
+// same paint. Roughly an RGB gap of 8 per channel — chosen for the margin it
+// leaves above the closest legitimate same-image colour pair found while
+// tuning this (two deliberately different demo-art tones ~454 apart): tight
+// enough that nothing genuinely distinct gets swallowed, loose enough that a
+// smooth photo gradient still stops at "two tubs side by side look
+// identical" instead of stopping earlier and just looking flat. Was 1000
+// (an ~11-per-channel gap) — a smooth gradient's number of surviving shades
+// is bounded by its colour span divided by this step, not by maxColours, so
+// raising the colour budget alone barely moved photos like a monochrome
+// underwater scene; this is the knob that actually does.
+const MERGE_DISTANCE = 600;
 
 // A photographically-shaded subject — a bird's wing, a cluster of anemones —
 // never repeats the same exact colour twice, so its pixels scatter across
