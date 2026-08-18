@@ -19,6 +19,9 @@ import {
   activate, isActive, consumeActive, NUMBER_RECOLOR_CYCLE, nextNumberRecolorIndex,
 } from '../src/abilities.js';
 import { WARDROBE_ITEMS } from '../src/wardrobe.js';
+import {
+  buildAvatarSVG, defaultAvatarCustomize, setVariant, VARIANTS, RACE_PROFILE, raceSkinPalette,
+} from '../src/avatar.js';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const IDS = new Set(ACHIEVEMENTS.map((a) => a.id));
@@ -406,4 +409,143 @@ test('every achievement outfit field references a real WARDROBE_ITEMS id', () =>
   const outfits = ACHIEVEMENTS.filter((a) => a.outfit).map((a) => a.outfit);
   assert.ok(outfits.length > 0, 'sanity check: the scan should find at least one outfit field');
   for (const id of outfits) assert.ok(wardrobeIds.has(id), `unknown wardrobe item id "${id}"`);
+});
+
+/* ---------------------------------------------------------------- avatar */
+
+// avatar.js is pure ESM over wardrobe.js with no DOM, so the SVG builder
+// runs here directly. The failure mode of a coordinate-driven generator is
+// not a thrown error — it is a path string quietly containing "NaN", which
+// renders as nothing at all. These sweep for exactly that.
+
+const SLOTS = new Set(['skin', 'hair', 'eyes', 'shirt', 'bottoms', 'dress', 'socks', 'shoes']);
+
+/** Every meaningful combination of the customization axes. */
+function* everyAvatar() {
+  for (const race of VARIANTS.race) {
+    for (const gender of VARIANTS.gender) {
+      for (const shape of VARIANTS.faceShape) {
+        for (const hair of VARIANTS.hairStyle) {
+          for (const eyes of VARIANTS.eyesStyle) {
+            const c = defaultAvatarCustomize();
+            c.race = race;
+            c.gender = gender;
+            c.face.shape = shape;
+            c.hair.style = hair;
+            c.eyes.style = eyes;
+            yield [`${race}/${gender}/${shape}/${hair}/${eyes}`, c];
+          }
+        }
+      }
+    }
+  }
+}
+
+test('no avatar combination emits NaN, undefined or Infinity into a path', () => {
+  let count = 0;
+  for (const [label, c] of everyAvatar()) {
+    const svg = buildAvatarSVG(c);
+    assert.ok(!/NaN|undefined|Infinity/.test(svg), `${label} produced a poisoned path`);
+    count++;
+  }
+  assert.ok(count > 300, `sanity check: expected a real sweep, got ${count}`);
+});
+
+test('every wardrobe item renders cleanly on every race', () => {
+  for (const race of VARIANTS.race) {
+    for (const item of WARDROBE_ITEMS) {
+      const c = defaultAvatarCustomize();
+      c.race = race;
+      if (item.slot === 'dress') c.dress = { itemId: item.id, colour: '#c9799a' };
+      else c[item.slot] = { itemId: item.id, colour: '#808080' };
+      const svg = buildAvatarSVG(c);
+      assert.ok(!/NaN|undefined|Infinity/.test(svg), `${race} + ${item.id} produced a poisoned path`);
+    }
+  }
+});
+
+test('the slider extremes stay clean and in frame', () => {
+  for (const race of VARIANTS.race) {
+    for (const height of [0.85, 1, 1.2]) {
+      for (const weight of [0.8, 1, 1.3]) {
+        const c = defaultAvatarCustomize();
+        c.race = race;
+        c.height = height;
+        c.weight = weight;
+        const svg = buildAvatarSVG(c);
+        assert.ok(!/NaN|undefined|Infinity/.test(svg), `${race} h${height} w${weight} poisoned`);
+        // A runaway landmark shows up as a coordinate far outside the frame.
+        const nums = [...svg.matchAll(/(-?\d+\.\d+),(-?\d+\.\d+)/g)];
+        for (const m of nums) {
+          const x = Number(m[1]);
+          const y = Number(m[2]);
+          assert.ok(x > -20 && x < 140, `${race} h${height} w${weight}: x ${x} out of frame`);
+          assert.ok(y > -20 && y < 230, `${race} h${height} w${weight}: y ${y} out of frame`);
+        }
+      }
+    }
+  }
+});
+
+test('every emitted data-slot is one of the known eight, and groups balance', () => {
+  for (const [label, c] of everyAvatar()) {
+    const svg = buildAvatarSVG(c);
+    const slots = [...svg.matchAll(/<g data-slot="([a-z]+)"/g)].map((m) => m[1]);
+    for (const s of slots) assert.ok(SLOTS.has(s), `${label} emitted unknown slot "${s}"`);
+    assert.equal((svg.match(/<g /g) ?? []).length, (svg.match(/<\/g>/g) ?? []).length,
+      `${label} has unbalanced groups`);
+  }
+});
+
+test('a save predating the race field still renders, defaulting to human', () => {
+  const c = defaultAvatarCustomize();
+  delete c.race;
+  const svg = buildAvatarSVG(c);
+  assert.ok(!/NaN|undefined|Infinity/.test(svg));
+  const human = defaultAvatarCustomize();
+  assert.equal(svg, buildAvatarSVG(human), 'a missing race should render exactly as human');
+});
+
+test('buildAvatarSVG survives a completely empty customize object', () => {
+  const svg = buildAvatarSVG({});
+  assert.ok(!/NaN|undefined|Infinity/.test(svg));
+  assert.ok(svg.startsWith('<svg'));
+});
+
+test('setVariant accepts known races and ignores anything else', () => {
+  const c = defaultAvatarCustomize();
+  setVariant(c, 'race', 'orc');
+  assert.equal(c.race, 'orc');
+  setVariant(c, 'race', 'kobold');
+  assert.equal(c.race, 'orc', 'an unknown race must be ignored, not stored');
+});
+
+test('changing race leaves the chosen skin colour alone', () => {
+  const c = defaultAvatarCustomize();
+  c.skin.colour = '#123456';
+  setVariant(c, 'race', 'orc');
+  assert.equal(c.skin.colour, '#123456');
+});
+
+test('every race profile has a usable skin palette', () => {
+  for (const race of VARIANTS.race) {
+    assert.ok(RACE_PROFILE[race], `${race} is listed in VARIANTS but has no profile`);
+    const palette = raceSkinPalette(race);
+    assert.ok(palette.length >= 4, `${race} palette is too short`);
+    for (const hex of palette) assert.match(hex, /^#[0-9a-f]{6}$/i, `${race} has a malformed hex`);
+  }
+  assert.deepEqual(raceSkinPalette('kobold'), raceSkinPalette('human'),
+    'an unknown race should fall back rather than throw');
+});
+
+test('both DEFAULT_SAVE literals declare a race, and boot backfills it', () => {
+  for (const f of ['src/platform.js', 'electron/main.cjs']) {
+    const text = fs.readFileSync(path.join(ROOT, f), 'utf8');
+    assert.match(text, /race: 'human'/, `${f} is missing race in DEFAULT_SAVE`);
+  }
+  // The backfill is the only path that reaches an existing save, since
+  // neither backend deep-merges `avatar`.
+  const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  assert.match(game, /customize\.race \?\?= 'human'/,
+    'boot() must backfill customize.race or every returning player loses their avatar');
 });
