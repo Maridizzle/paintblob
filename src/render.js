@@ -232,6 +232,20 @@ export class Board {
     };
   }
 
+  /**
+   * Picture coordinates -> screen coordinates, the inverse of toPuzzle().
+   * Nothing in the renderer needs this yet — it exists for the smoke test
+   * (electron/main.cjs), which has to click an actual cell's anchor rather
+   * than guessing blindly at screen coordinates and hoping one lands.
+   */
+  toScreen(x, y) {
+    const rect = this.canvas.getBoundingClientRect();
+    return {
+      x: rect.left + this.offsetX + x * this.scale,
+      y: rect.top + this.offsetY + y * this.scale,
+    };
+  }
+
   applyTransform(ctx, shakeX = 0, shakeY = 0) {
     const k = this.scale * this.dpr;
     ctx.setTransform(k, 0, 0, k, (this.offsetX + shakeX) * this.dpr, (this.offsetY + shakeY) * this.dpr);
