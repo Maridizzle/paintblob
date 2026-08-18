@@ -582,9 +582,15 @@ check('cancelling the chooser resolves', chooser.cancelled === 'resolved', choos
   // own screen-shake nudges the *whole* base layer by a random offset every
   // frame until it stops at DURATION (1180ms), and the outline/number fade
   // (S.revealFrom, 850ms) keeps tinting boundary pixels as it eases out.
-  // Both start at essentially the same moment finish() does, so one wait
-  // past the longer of the two clears them both.
-  await page.waitForTimeout(1200);
+  // Both start at essentially the same moment finish() does. A fixed wait
+  // here assumes the animation loop runs at roughly real-time, which a
+  // cold/no-GPU-cache renderer (every CI run, by construction) does not
+  // guarantee — poll for the actual state game.js's own frame() loop clears
+  // when each animation finishes, instead.
+  await page.waitForFunction(() => {
+    const { state } = window.__paintblobTest;
+    return state.bursts.length === 0 && state.revealFrom === 0;
+  }, { timeout: 10000, polling: 100 });
 
   // The pill must actually swap what is on the canvas, not just its own
   // label. A single sampled pixel is not reliable — quantisation deliberately
