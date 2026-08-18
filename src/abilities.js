@@ -15,8 +15,8 @@ export const ABILITIES = [
   },
   {
     id: 'number-recolor', icon: '🔢', name: 'Number Recolor',
-    desc: 'Turns every unfilled number bright white for a while.',
-    tier: 1, maxCharges: 4, durationMs: 12000, unlockLevel: 1, levelsPerCharge: 1,
+    desc: 'Cycles unfilled numbers to the next ROYGBIV colour — stays that way until used again.',
+    tier: 1, maxCharges: 4, durationMs: 0, unlockLevel: 1, levelsPerCharge: 1,
   },
   {
     id: 'colour-flash', icon: '✨', name: 'Colour Flash',
@@ -51,6 +51,25 @@ export const ABILITIES = [
 ];
 
 const BY_ID = new Map(ABILITIES.map((a) => [a.id, a]));
+
+// Mid-to-high lightness rather than the traditional dark #4B0082/#8F00FF, so
+// the single dark outline render.js already draws behind every number stays
+// legible for every step of the cycle — no per-colour outline branch needed.
+export const NUMBER_RECOLOR_CYCLE = [
+  { name: 'Red', hex: '#ff4d4d' },
+  { name: 'Orange', hex: '#ff9f40' },
+  { name: 'Yellow', hex: '#ffe066' },
+  { name: 'Green', hex: '#46d17a' },
+  { name: 'Blue', hex: '#4da6ff' },
+  { name: 'Indigo', hex: '#7c6bff' },
+  { name: 'Violet', hex: '#d17bff' },
+];
+
+/** Advances the ROYGBIV cycle by one step, wrapping violet back to red.
+ *  `i` is the previously-used index, or absent if never activated. */
+export function nextNumberRecolorIndex(i) {
+  return ((i ?? -1) + 1) % NUMBER_RECOLOR_CYCLE.length;
+}
 
 export function getDef(id) {
   return BY_ID.get(id);

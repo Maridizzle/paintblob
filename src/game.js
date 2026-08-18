@@ -11,6 +11,7 @@ import { grantPoints, spendPoints, levelForPoints, pointsIntoLevel } from './poi
 import {
   ABILITIES, defaultAbilityState, getDef, isUnlocked, grantLevelUpCharges,
   activate as activateAbility, isActive as isAbilityActive, consumeActive,
+  NUMBER_RECOLOR_CYCLE, nextNumberRecolorIndex,
 } from './abilities.js';
 import { WARDROBE_ITEMS } from './wardrobe.js';
 
@@ -232,6 +233,14 @@ async function loadPuzzle(id) {
 
   streaks.reset();
   board.setPuzzle(puzzle, S.cells, S.filled);
+  // setPuzzle() just cleared numberOverride (correct — Colour Flash/Golden
+  // Cell reference the outgoing picture's own cells) but Number Recolor's
+  // colour choice is deliberately persistent across a puzzle switch, so it
+  // needs one explicit re-apply here.
+  const recolour = S.save.avatar.abilities['number-recolor'];
+  if (recolour?.colourIndex >= 0) {
+    board.setNumberOverride(NUMBER_RECOLOR_CYCLE[recolour.colourIndex].hex, 0, performance.now());
+  }
   board.reveal = S.finished ? 1 : 0;
   $('board').classList.toggle('done', S.finished);
   $('finish').classList.add('hidden');
@@ -477,6 +486,7 @@ function commitFill(burst) {
   }
   syncAvatarWidget();
   syncAbilityRow();
+  bumpPointsHud(award);
 
   for (const id of streaks.fill(Date.now())) achievements.award(id);
   achievements.sync(S.save.stats);
@@ -643,8 +653,14 @@ function frame(now) {
   }
 
   // Full rate while anything is moving, a lazy 30fps for the idle pulse.
+  // numberOverride is deliberately excluded: it's now an indefinite,
+  // static colour choice rather than a timed effect counting down, so
+  // pinning the loop to full framerate for it would never stop once the
+  // ability is used even once. drawBase() already redraws it correctly the
+  // instant it changes (setNumberOverride() sets dirty = true itself); the
+  // ordinary lazy 30fps idle cadence below covers the rest.
   const busy = S.bursts.length > 0 || S.revealFrom > 0 || board.hintTarget
-    || board.colourFlash || board.numberOverride || board.goldenCell;
+    || board.colourFlash || board.goldenCell;
   if (busy || now - lastDraw > 33) {
     lastDraw = now;
     board.draw(S.bursts, now);
@@ -669,6 +685,12 @@ async function openPanel(kind) {
     : kind === 'avatar' ? 'Avatar'
     : 'Settings';
   $('panel').classList.remove('hidden');
+  // The panel sits at a lower z-index than #stage's floating pills so a
+  // conditionally-shown one (zoom/compare) can still surface above it if
+  // ever needed — but the points HUD is unconditional, and top-center is
+  // exactly where the avatar panel's own preview sits, so it needs an
+  // explicit hide here rather than relying on z-index alone.
+  $('pointsHud').classList.add('hidden');
 
   if (kind === 'pictures') {
     // Re-read the manifest rather than trusting the copy from startup, so a
@@ -688,6 +710,7 @@ async function openPanel(kind) {
 function closePanel() {
   S.panel = null;
   $('panel').classList.add('hidden');
+  $('pointsHud').classList.remove('hidden');
 }
 
 function row(cls = '') {
@@ -1240,9 +1263,12 @@ function triggerAbility(id) {
       if (target) board.showHint(target.id, performance.now());
       break;
     }
-    case 'number-recolor':
-      board.setNumberOverride('#ffffff', def.durationMs, performance.now());
+    case 'number-recolor': {
+      const s = S.save.avatar.abilities['number-recolor'];
+      s.colourIndex = nextNumberRecolorIndex(s.colourIndex);
+      board.setNumberOverride(NUMBER_RECOLOR_CYCLE[s.colourIndex].hex, 0, performance.now());
       break;
+    }
     case 'colour-flash':
       if (S.selected >= 0) board.flashColour(S.selected, performance.now(), def.durationMs);
       break;
@@ -1272,10 +1298,34 @@ function triggerAbility(id) {
 }
 
 function syncAvatarWidget() {
+  if (!S.save) return;
   const pill = $('avatarPill');
-  if (!pill || !S.save) return;
-  const level = levelForPoints(S.save.stats.pointsEarned);
-  pill.innerHTML = `${buildAvatarSVG(S.save.avatar.customize)}<span class="level-badge">${level}</span>`;
+  if (pill) {
+    const level = levelForPoints(S.save.stats.pointsEarned);
+    pill.innerHTML = `${buildAvatarSVG(S.save.avatar.customize)}<span class="level-badge">${level}</span>`;
+  }
+  const value = $('pointsValue');
+  if (value) value.textContent = String(S.save.stats.points ?? 0);
+}
+
+/** Per-click feedback for the points HUD: a quick pulse on the pill itself,
+ *  plus a "+N" that floats up and fades — commitFill() is the only granting
+ *  site (Half Fill bypasses it on purpose), so this is the only call site. */
+function bumpPointsHud(award) {
+  const hud = $('pointsHud');
+  if (hud) {
+    hud.classList.remove('bump');
+    void hud.offsetWidth; // restart the animation even if one is still mid-flight
+    hud.classList.add('bump');
+  }
+  const layer = $('pointsFx');
+  if (!layer) return;
+  const el = document.createElement('span');
+  el.className = 'points-fx-bump';
+  el.textContent = `+${award}`;
+  layer.append(el);
+  el.addEventListener('animationend', () => el.remove(), { once: true });
+  while (layer.children.length > 6) layer.children[0].remove();
 }
 
 function syncAbilityRow() {

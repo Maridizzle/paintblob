@@ -222,9 +222,11 @@ export class Board {
     this.dirty = true;
   }
 
-  /** Number Recolor: swaps every unfilled number's colour until `end`. */
+  /** Number Recolor: swaps every unfilled number's colour until `end` — or
+   *  indefinitely, for `durationMs <= 0`, since the ability now cycles to a
+   *  colour that's meant to stick until the player changes it again. */
   setNumberOverride(colour, durationMs, now) {
-    this.numberOverride = { colour, end: now + durationMs };
+    this.numberOverride = { colour, end: durationMs > 0 ? now + durationMs : Infinity };
     this.dirty = true;
   }
 
