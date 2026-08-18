@@ -16,7 +16,7 @@ import {
 import { grantPoints, spendPoints, levelForPoints, cumulativeForLevel } from '../src/points.js';
 import {
   ABILITIES, getDef, isUnlocked, defaultAbilityState, grantLevelUpCharges,
-  activate, isActive, consumeActive,
+  activate, isActive, consumeActive, NUMBER_RECOLOR_CYCLE, nextNumberRecolorIndex,
 } from '../src/abilities.js';
 import { WARDROBE_ITEMS } from '../src/wardrobe.js';
 
@@ -347,6 +347,16 @@ test('half-fill only regains a charge every second level-up, per its slower leve
   assert.equal(state[def.id].charges, 0, 'one level-up since unlock is not enough yet');
   grantLevelUpCharges(state, 6);
   assert.equal(state[def.id].charges, 1, 'the second level-up since unlock grants the charge');
+});
+
+test('nextNumberRecolorIndex starts at red and wraps violet back to red', () => {
+  let i;
+  i = nextNumberRecolorIndex(i);
+  assert.equal(i, 0, 'first-ever activation lands on red');
+  for (let step = 1; step < NUMBER_RECOLOR_CYCLE.length; step++) i = nextNumberRecolorIndex(i);
+  assert.equal(i, NUMBER_RECOLOR_CYCLE.length - 1, 'cycled through every colour once');
+  i = nextNumberRecolorIndex(i);
+  assert.equal(i, 0, 'violet wraps back to red');
 });
 
 /* --------------------------------------------------------------- wardrobe */

@@ -167,6 +167,58 @@ button {
    photo — top-left so it never collides with the zoom pill. */
 .compare-pill { top: 10px; left: 10px; }
 
+/* Top-center is the one corner of #stage nothing else claims. Deliberately
+   more transparent than the zoom/compare pills (0.68 vs their 0.9) — this
+   one sits over the picture the whole time, not just conditionally. */
+.points-hud {
+  position: absolute;
+  z-index: 15;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  background: rgba(28, 25, 38, 0.68);
+  border: 1px solid var(--edge);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  /* Read-only HUD — never steals a tap from the board beneath it, same
+     posture as #toasts. */
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+}
+.points-hud-icon { font-size: 13px; }
+.points-hud.bump { animation: points-pulse 360ms ease; }
+@keyframes points-pulse { 30% { transform: translateX(-50%) scale(1.16); } }
+
+.points-fx {
+  position: absolute;
+  left: 50%;
+  bottom: -2px;
+  width: 0;
+  height: 0;
+}
+.points-fx-bump {
+  position: absolute;
+  left: 0;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--accent);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  animation: points-float 700ms ease-out both;
+}
+@keyframes points-float {
+  0% { opacity: 0; transform: translate(-50%, 0) scale(0.85); }
+  15% { opacity: 1; transform: translate(-50%, -4px) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -26px) scale(1); }
+}
+
 /* --------------------------------------------------------------- avatar */
 
 /* Bottom-right is the one corner of #stage the zoom/compare pills and the
@@ -669,6 +721,7 @@ button {
   #bar { padding: 7px 6px 7px 11px; }
   #bar .subtitle { display: none; }
   #toasts { left: 12px; right: 12px; bottom: 12px; }
+  .points-hud { top: 8px; font-size: 11.5px; padding: 4px 10px; }
 }
 
 /* Landscape on a phone is mostly bezel-to-bezel picture; shrink the chrome. */
