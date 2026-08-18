@@ -54,6 +54,9 @@ export class Board {
     this.reveal = 0;      // 1 = finished picture, outlines faded away
     this.dirty = true;
     this.hintTarget = null; // { id, start } while a hint flash is showing
+    this.colourFlash = null;    // { id, start, duration } — Colour Flash ability
+    this.numberOverride = null; // { colour, end } — Number Recolor ability
+    this.goldenCell = null;     // { id, end } — Golden Cell ability
 
     this.sourceBitmap = null; // the real photo, once decoded — see setPuzzle()
     this.showSource = false;  // true = showing it instead of the painted cells
@@ -94,6 +97,16 @@ export class Board {
     this.filled = filled;
     this.reveal = filled.size === cells.length ? 1 : 0;
     this.resetZoom();
+
+    // Colour Flash and Golden Cell both reference this picture's own cell
+    // array/palette — carrying either into a different picture would flash
+    // the wrong colour or, worse, hand a stray cell the 5x Golden Cell
+    // award in commitFill(). Number Recolor has no such reference, but an
+    // ability's effect outliving the puzzle it was cast in is surprising
+    // either way, so it goes too.
+    this.colourFlash = null;
+    this.numberOverride = null;
+    this.goldenCell = null;
 
     this.showSource = false;
     this.sourceBitmap?.close();
@@ -198,6 +211,26 @@ export class Board {
 
   showHint(cellId, now) {
     this.hintTarget = { id: cellId, start: now };
+  }
+
+  /** Colour Flash: a dramatic, time-boxed amplification of the ordinary
+   *  held-colour pulse below, over whichever colour is passed in — frozen at
+   *  activation rather than tracking `this.selected` live, so switching tubs
+   *  mid-flash does not retarget it. */
+  flashColour(colourIndex, now, duration = 4000) {
+    this.colourFlash = { id: colourIndex, start: now, duration };
+    this.dirty = true;
+  }
+
+  /** Number Recolor: swaps every unfilled number's colour until `end`. */
+  setNumberOverride(colour, durationMs, now) {
+    this.numberOverride = { colour, end: now + durationMs };
+    this.dirty = true;
+  }
+
+  /** Golden Cell: rings one cell distinctly until it's filled or time runs out. */
+  markGolden(cellId, durationMs, now) {
+    this.goldenCell = { id: cellId, end: now + durationMs };
   }
 
   /** Fits the picture into the element box, preserving aspect. */
@@ -362,7 +395,16 @@ export class Board {
         const size = Math.min(30, Math.max(7.5, px * 0.9)) / this.scale;
         const active = cell.colour === this.selected;
         ctx.font = `${active ? 700 : 500} ${size}px ui-sans-serif, system-ui, sans-serif`;
-        ctx.fillStyle = active ? 'rgba(30, 26, 40, 0.9)' : NUMBER;
+        if (this.numberOverride) {
+          // A thin dark outline keeps a bright number legible over a light
+          // cell too, not just a dark one.
+          ctx.lineWidth = Math.max(1, size * 0.12);
+          ctx.strokeStyle = 'rgba(20, 16, 28, 0.85)';
+          ctx.strokeText(String(cell.colour + 1), cell.anchor.x, cell.anchor.y);
+          ctx.fillStyle = this.numberOverride.colour;
+        } else {
+          ctx.fillStyle = active ? 'rgba(30, 26, 40, 0.9)' : NUMBER;
+        }
         ctx.fillText(String(cell.colour + 1), cell.anchor.x, cell.anchor.y);
       }
       ctx.restore();
@@ -375,6 +417,13 @@ export class Board {
 
   draw(bursts, timeMs) {
     if (!this.puzzle) return;
+    // Numbers live on the base layer (redrawn only on change), so a timed
+    // colour swap has to force that redraw itself when its window closes —
+    // nothing else would ever notice the number needs to revert.
+    if (this.numberOverride && timeMs >= this.numberOverride.end) {
+      this.numberOverride = null;
+      this.dirty = true;
+    }
     if (this.dirty) this.drawBase();
 
     const ctx = this.ctx;
@@ -404,6 +453,46 @@ export class Board {
         ctx.fill(cell.path);
       }
       ctx.restore();
+    }
+
+    if (this.colourFlash) {
+      const elapsed = timeMs - this.colourFlash.start;
+      if (elapsed > this.colourFlash.duration) {
+        this.colourFlash = null;
+      } else {
+        const pulse = 0.4 + 0.35 * (0.5 + 0.5 * Math.sin(timeMs / 160));
+        ctx.save();
+        ctx.globalAlpha = pulse;
+        ctx.fillStyle = this.hexOf(this.colourFlash.id);
+        for (const cell of this.cells) {
+          if (cell.colour !== this.colourFlash.id || this.filled.has(cell.id)) continue;
+          ctx.fill(cell.path);
+        }
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2.2 / this.scale;
+        ctx.lineJoin = 'round';
+        for (const cell of this.cells) {
+          if (cell.colour !== this.colourFlash.id || this.filled.has(cell.id)) continue;
+          ctx.stroke(cell.path);
+        }
+        ctx.restore();
+      }
+    }
+
+    if (this.goldenCell) {
+      const cell = this.cells[this.goldenCell.id];
+      if (!cell || this.filled.has(cell.id) || timeMs >= this.goldenCell.end) {
+        this.goldenCell = null;
+      } else {
+        const pulse = 0.5 + 0.5 * Math.sin(timeMs / 220);
+        ctx.save();
+        ctx.strokeStyle = `rgba(255, 214, 64, ${0.6 + 0.4 * pulse})`;
+        ctx.lineWidth = (2 + 1.5 * pulse) / this.scale;
+        ctx.lineJoin = 'round';
+        ctx.stroke(cell.path);
+        ctx.restore();
+      }
     }
 
     if (this.hover >= 0 && this.reveal < 1) {

@@ -52,6 +52,22 @@ const DEFAULT_SAVE = {
   unlocked: [],      // achievement ids
   settings: { sound: true, volume: 0.7, alwaysOnTop: true, scale: 1 },
   bounds: null,
+  avatar: {
+    customize: {
+      gender: 'nb', height: 1, weight: 1,
+      hair: { style: 'short', colour: '#3b2a1a' },
+      eyes: { style: 'round', colour: '#4a7a8c' },
+      face: { shape: 'oval' },
+      skin: { colour: '#e0b088' },
+      shirt: { itemId: 'shirt-basic', colour: '#c9c9c9' },
+      bottoms: { itemId: 'bottoms-basic', colour: '#3a3a3a' },
+      dress: { itemId: null, colour: '#c9c9c9' },
+      socks: { itemId: 'socks-basic', colour: '#ffffff' },
+      shoes: { itemId: 'shoes-basic', colour: '#2a2a2a' },
+    },
+    unlocked: ['shirt-basic', 'bottoms-basic', 'socks-basic', 'shoes-basic'],
+    abilities: {},
+  },
 };
 
 function readSave() {
@@ -201,8 +217,6 @@ function createWindow() {
 
 /* -------------------------------------------------------------------- smoke */
 
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 async function runSmokeTest(target) {
   const errors = [];
   // A file chooser may only open from a real user gesture, and this test
@@ -218,7 +232,28 @@ async function runSmokeTest(target) {
 
   try {
     await new Promise((resolve) => target.webContents.once('did-finish-load', resolve));
-    await wait(1200);
+    // A fixed sleep here used to race a slow boot on a loaded CI runner —
+    // worst on a 500-cell picture, whose prepareCells() has the most Path2D
+    // parsing to do. Poll for the game to actually be ready to paint instead
+    // of hoping a fixed delay was long enough; the deadline is only there so
+    // a genuinely broken boot fails fast rather than hanging.
+    const bootPoll = await target.webContents.executeJavaScript(`(async () => {
+      const start = Date.now();
+      const deadline = start + 8000;
+      for (;;) {
+        const t = window.__paintblobTest;
+        const ready = !!(t?.state?.puzzle && t.state.selected >= 0 && t.state.cells.length > 0);
+        if (ready || Date.now() >= deadline) {
+          return {
+            ready, elapsedMs: Date.now() - start, hasHook: !!t,
+            hasPuzzle: !!t?.state?.puzzle, selected: t?.state?.selected,
+            cellsLen: t?.state?.cells?.length ?? null,
+          };
+        }
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    })()`);
+    console.log(`smoke: boot poll ${JSON.stringify(bootPoll)}`);
 
     // Click an actual cell of the auto-selected first tub, found through the
     // same anchor point the renderer uses for its number — not a blind spray
@@ -242,7 +277,19 @@ async function runSmokeTest(target) {
           }));
         }
       }
-      await new Promise((r) => setTimeout(r, 1800));
+      // The paint lands once the burst's fill animation completes, not the
+      // instant the tap does — and how long that animation takes wall-clock
+      // is not fixed: a burst runs on requestAnimationFrame, which on a
+      // genuinely cold renderer (no GPU/shader cache — every CI run, by
+      // construction) has measured as slow as ~40% of real-time for the
+      // first second or so. A fixed sleep here has to either way overshoot
+      // that worst case or risk exactly the flake this replaced. Poll for
+      // the actual paint instead, capped so a truly broken paint still
+      // fails in reasonable time rather than hanging.
+      const deadline = Date.now() + 10000;
+      while (!state.filled.has(target?.id) && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
       return document.getElementById('barSubtitle').textContent;
     })()`);
 
