@@ -165,14 +165,18 @@ function sleevePaths(gender) {
 function shirtPath(gender, style) {
   const { shoulderL, shoulderR, hipL, hipR } = torsoPoints(gender);
   const hemY = 118;
-  const dip = style === 'vneck' ? 14 : 6;
+  // How far down the neckline dips at the centre — below the shoulder line
+  // (y=62), not above it, so the shirt's fill actually opens toward the
+  // chest (exposing the skin group underneath) rather than climbing up
+  // toward the chin.
+  const neckDipY = style === 'vneck' ? 84 : 66;
   const waistY = 92;
   // Control points pulled *inward* of the shoulder-hip midpoint (toward the
   // centreline, x=60) so the curve actually nips at the waist instead of
   // bulging outward past the shoulders.
   const waistL = (shoulderL + hipL) / 2 + 3;
   const waistR = (shoulderR + hipR) / 2 - 3;
-  const notch = `M${shoulderL},62 Q60,${58 - dip} ${shoulderR},62 ` +
+  const notch = `M${shoulderL},62 Q60,${neckDipY} ${shoulderR},62 ` +
     `Q${waistR},${waistY} ${hipR},${hemY} Q60,${hemY + 5} ${hipL},${hemY} Q${waistL},${waistY} ${shoulderL},62 Z`;
   return `<path d="${notch}"/>${sleevePaths(gender)}`;
 }
