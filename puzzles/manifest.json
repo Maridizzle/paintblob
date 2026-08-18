@@ -3,13 +3,13 @@
     "id": "aurora-over-ice",
     "title": "Aurora Over Ice",
     "cells": 110,
-    "colours": 22,
+    "colours": 26,
     "thumb": [
-      "#063258",
-      "#78a1cc",
-      "#2b538b",
-      "#0b1e43",
-      "#a0bad8"
+      "#2c4e87",
+      "#90b0d3",
+      "#053157",
+      "#0a1e43",
+      "#4881b9"
     ],
     "blind": true
   },
@@ -43,26 +43,26 @@
     "id": "harbour-row",
     "title": "Harbour Row",
     "cells": 69,
-    "colours": 19,
+    "colours": 21,
     "thumb": [
-      "#372e4f",
-      "#d2e9f0",
+      "#213957",
+      "#d0e8f0",
+      "#48223e",
       "#7bbdd9",
-      "#1f5172",
-      "#edcdab"
+      "#50285b"
     ]
   },
   {
     "id": "humpback-whale",
     "title": "Humpback Whale",
     "cells": 110,
-    "colours": 14,
+    "colours": 17,
     "thumb": [
-      "#093658",
-      "#0d5073",
-      "#248eaa",
-      "#bcdfcf",
-      "#116386"
+      "#0b4468",
+      "#082644",
+      "#146c8e",
+      "#093657",
+      "#aed9cc"
     ],
     "blind": true
   },
@@ -72,11 +72,11 @@
     "cells": 110,
     "colours": 22,
     "thumb": [
-      "#311713",
-      "#2a1b2c",
-      "#803178",
-      "#9a499f",
-      "#2d4c39"
+      "#2f1613",
+      "#7e3075",
+      "#281a2c",
+      "#3b273e",
+      "#2d4834"
     ],
     "blind": true
   },
@@ -97,13 +97,13 @@
     "id": "library-in-the-clouds",
     "title": "Library In The Clouds",
     "cells": 110,
-    "colours": 16,
+    "colours": 17,
     "thumb": [
-      "#30190c",
-      "#432210",
-      "#572810",
-      "#190e08",
-      "#633719"
+      "#2f1c11",
+      "#3f1d0d",
+      "#241309",
+      "#6b4925",
+      "#58371b"
     ],
     "blind": true
   },
@@ -113,11 +113,11 @@
     "cells": 110,
     "colours": 29,
     "thumb": [
-      "#25445b",
-      "#1b2f46",
-      "#122033",
-      "#76b2b5",
-      "#0e101d"
+      "#0f1d2f",
+      "#172a3f",
+      "#1d374e",
+      "#28485f",
+      "#502925"
     ],
     "blind": true
   }
