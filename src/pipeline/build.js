@@ -26,12 +26,10 @@ export const DEFAULTS = {
   maxCells: 110,    // clickable regions
   minAreaFrac: 0.0008,
   denoise: 1,
-  // Nudges every pixel away from its own luma before quantisation, so the
-  // palette lands on richer colour instead of whatever muted average the
-  // source happened to have. 1 leaves colours untouched; small cells being
-  // easier to see and paint since zoom/pan shipped is what buys room for
-  // this on top of the maxCells bump above.
-  saturate: 1.25,
+  // Vibrance push before quantisation — see boostSaturation() below for why
+  // this can run fairly hot without turning already-colourful areas neon.
+  // 1 leaves colours untouched.
+  saturate: 1.6,
 };
 
 /**
@@ -58,20 +56,67 @@ export const DETAIL_PRESETS = {
   },
 };
 
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h;
+  if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+  else if (max === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  return [h / 6, s, l];
+}
+
+function hueToChannel(p, q, t) {
+  if (t < 0) t += 1;
+  if (t > 1) t -= 1;
+  if (t < 1 / 6) return p + (q - p) * 6 * t;
+  if (t < 1 / 2) return q;
+  if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+  return p;
+}
+
+function hslToRgb(h, s, l) {
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  return [
+    hueToChannel(p, q, h + 1 / 3) * 255,
+    hueToChannel(p, q, h) * 255,
+    hueToChannel(p, q, h - 1 / 3) * 255,
+  ];
+}
+
 /**
- * Vibrance boost: pushes each channel away from the pixel's own luma by
- * `factor`, run right before quantisation so the palette picks up the
- * richer colour rather than a photo's washed-out average. 1 is a no-op;
- * Uint8ClampedArray clips the result so nothing wraps.
+ * Vibrance boost, run right before quantisation so the palette picks up
+ * richer colour rather than a photo's washed-out average.
+ *
+ * Works in HSL and only ever touches S, never H or L — an earlier version
+ * pushed each RGB channel away from luma directly, which clips channels
+ * unevenly once the push is strong enough to matter and quietly rotates the
+ * hue (a pastel green anemone drifted towards red). Lifting S with a gamma
+ * curve (S ** (1/factor)) can't rotate hue and self-limits: near-grey
+ * shadow/rock/wall pixels — the ones that actually read as "muddy" — have
+ * most of the curve's range to move through and jump several times over,
+ * while pixels already vivid (S near 1) barely move, so nothing that was
+ * already popping gets blown out to neon. A true zero-chroma pixel has no
+ * hue to work with and is correctly left alone (0 ** anything is 0).
+ * `factor` 1 is a no-op.
  */
 export function boostSaturation(rgba, factor) {
   if (factor === 1) return rgba;
+  const exponent = 1 / factor;
   const out = new Uint8ClampedArray(rgba);
   for (let i = 0; i < out.length; i += 4) {
-    const luma = 0.299 * out[i] + 0.587 * out[i + 1] + 0.114 * out[i + 2];
-    out[i] = luma + (out[i] - luma) * factor;
-    out[i + 1] = luma + (out[i + 1] - luma) * factor;
-    out[i + 2] = luma + (out[i + 2] - luma) * factor;
+    const [h, s, l] = rgbToHsl(out[i], out[i + 1], out[i + 2]);
+    if (s === 0) continue;
+    const [r, g, b] = hslToRgb(h, s ** exponent, l);
+    out[i] = r;
+    out[i + 1] = g;
+    out[i + 2] = b;
   }
   return out;
 }
