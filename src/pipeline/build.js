@@ -18,13 +18,13 @@ import { boundsOf, traceRegion, ringsToPath } from './contour.js';
 import { nameColour, toHex, uniquifyNames } from './colour-names.js';
 
 export const DEFAULTS = {
-  // 900 rather than 768: the working resolution sets the floor on how fine a
-  // shape can survive tracing, so raising it is what actually buys detail.
-  // Cost is linear-ish and still lands well under a second.
-  size: 900,
-  maxColours: 20,   // paint tubs
-  maxCells: 110,    // clickable regions
-  minAreaFrac: 0.0008,
+  // 1400 rather than 900: working resolution is the floor on how fine a
+  // shape can survive tracing, and 500 cells needs a lot more room to trace
+  // validly than 110 did. Cost is linear-ish and still lands under 2s.
+  size: 1400,
+  maxColours: 30,   // paint tubs
+  maxCells: 500,    // clickable regions
+  minAreaFrac: 0.0001,
   denoise: 1,
   // Vibrance push before quantisation — see boostSaturation() below for why
   // this can run fairly hot without turning already-colourful areas neon.
@@ -35,24 +35,23 @@ export const DEFAULTS = {
 /**
  * Named presets for the in-app importer, which has no room for flags.
  *
- * The ceiling on chunky/normal/detailed is legibility, not the pipeline:
- * much past 150 cells the numbers stop fitting and you are hunting for
- * slivers rather than painting. `normal` is deliberately only a step up
- * from where it was.
- *
- * `insane` deliberately blows past that ceiling. A picture this fine has
- * cells too small for their number, so the renderer paints those as a
- * diagonal stripe of their own colour instead (see stripePattern in
- * render.js) — that is what keeps it paintable rather than illegible. The
- * bump to `size` matters more than usual here: working resolution is the
- * floor on how fine a shape survives tracing at all.
+ * `normal` now matches DEFAULTS: 500 cells is already well past the point
+ * where every cell's number comfortably fits, so cells below the renderer's
+ * legibility floor paint as a diagonal stripe of their own colour instead of
+ * a number (see stripePattern in render.js) — the mechanism `insane` used to
+ * be the only tier that needed. `detailed` and `insane` scale further past
+ * that on the same ratio they always have over `normal`, for a picture busy
+ * enough to want it. `chunky` stays deliberately minimal — raising it would
+ * defeat its entire purpose as the "fewer, bigger cells" option.
  */
 export const DETAIL_PRESETS = {
   chunky: { maxColours: 11, maxCells: 38, minAreaFrac: 0.0035 },
-  normal: { maxColours: 20, maxCells: 110, minAreaFrac: 0.0008 },
-  detailed: { maxColours: 21, maxCells: 150, minAreaFrac: 0.00045 },
+  normal: { maxColours: 30, maxCells: 500, minAreaFrac: 0.0001 },
+  detailed: {
+    maxColours: 32, maxCells: 650, minAreaFrac: 0.00007, size: 1600,
+  },
   insane: {
-    maxColours: 23, maxCells: 280, minAreaFrac: 0.0002, size: 1200,
+    maxColours: 35, maxCells: 1200, minAreaFrac: 0.00004, size: 2000,
   },
 };
 
@@ -221,16 +220,23 @@ export function buildPuzzle(rgba, srcW, srcH, opts = {}) {
     });
   }
 
-  // Renumber the palette so tub 1 is the colour used by the most cells. Players
-  // work top-down through the tubs, and starting on the dominant colour makes
-  // the picture appear fastest — which is the whole hook.
+  // Renumber the palette so tub 1 is the most vibrant colour, not whichever
+  // happens to cover the most area — a huge flat wall of shadow or rock
+  // shouldn't win first pick just because it's big. Vibrancy is saturation
+  // discounted by distance from mid-lightness, so neither a near-black nor
+  // a near-white tub can out-rank one with real, visible hue.
   const usage = palette.map(() => 0);
   for (const cell of cells) usage[cell.c]++;
+
+  const vibrancy = palette.map(([r, g, b]) => {
+    const [, s, l] = rgbToHsl(r, g, b);
+    return s * (1 - Math.abs(l - 0.5) * 2);
+  });
 
   const order = palette
     .map((_, i) => i)
     .filter((i) => usage[i] > 0)
-    .sort((a, b) => usage[b] - usage[a]);
+    .sort((a, b) => vibrancy[b] - vibrancy[a]);
 
   const remap = new Map(order.map((from, to) => [from, to]));
   for (const cell of cells) cell.c = remap.get(cell.c);
