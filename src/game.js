@@ -35,6 +35,11 @@ const S = {
   pending: new Set(), // cells with a burst already in flight, claimed but not yet filled
 };
 
+// Read-only handle for the smoke test (electron/main.cjs) so it can click a
+// real cell instead of spraying screen coordinates and hoping one lands —
+// normal play never touches this.
+window.__paintblobTest = { board, state: S };
+
 /* ---------------------------------------------------------------- persistence */
 
 let saveTimer = null;

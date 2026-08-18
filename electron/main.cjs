@@ -220,19 +220,26 @@ async function runSmokeTest(target) {
     await new Promise((resolve) => target.webContents.once('did-finish-load', resolve));
     await wait(1200);
 
-    // Spray clicks across the picture. Whichever land on a cell matching the
-    // auto-selected first tub will fire a burst; the rest are harmless misses.
+    // Click an actual cell of the auto-selected first tub, found through the
+    // same anchor point the renderer uses for its number — not a blind spray
+    // of screen coordinates hoping one lands. A puzzle can legitimately be
+    // fine enough that no fixed grid of guesses is guaranteed to hit a real
+    // cell (that's the whole point of the detail presets), so this asks the
+    // game itself where a paintable cell is via window.__paintblobTest (see
+    // src/game.js), then fires a real tap — pointerdown then pointerup,
+    // since painting resolves on pointerup — at its exact screen position.
     const filled = await target.webContents.executeJavaScript(`(async () => {
       const canvas = document.getElementById('board');
-      const rect = canvas.getBoundingClientRect();
-      for (let i = 0; i < 5; i++) {
-        for (let j = 0; j < 5; j++) {
-          canvas.dispatchEvent(new PointerEvent('pointerdown', {
-            button: 0, bubbles: true,
-            clientX: rect.left + rect.width * (j + 0.5) / 5,
-            clientY: rect.top + rect.height * (i + 0.5) / 5,
+      const { board, state } = window.__paintblobTest;
+      const target = state.cells.find(
+        (c) => c.colour === state.selected && !state.filled.has(c.id),
+      );
+      if (target) {
+        const { x, y } = board.toScreen(target.anchor.x, target.anchor.y);
+        for (const type of ['pointerdown', 'pointerup']) {
+          canvas.dispatchEvent(new PointerEvent(type, {
+            pointerId: 1, button: 0, bubbles: true, clientX: x, clientY: y,
           }));
-          await new Promise((r) => setTimeout(r, 40));
         }
       }
       await new Promise((r) => setTimeout(r, 1800));
