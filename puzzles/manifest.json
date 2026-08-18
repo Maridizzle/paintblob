@@ -3,13 +3,13 @@
     "id": "aurora-over-ice",
     "title": "Aurora Over Ice",
     "cells": 110,
-    "colours": 16,
+    "colours": 17,
     "thumb": [
-      "#19568f",
-      "#82a3c5",
-      "#064671",
-      "#419b76",
-      "#107979"
+      "#2b538c",
+      "#78a1cd",
+      "#063258",
+      "#0b1f43",
+      "#084d6f"
     ],
     "blind": true
   },
@@ -19,11 +19,11 @@
     "cells": 17,
     "colours": 12,
     "thumb": [
-      "#ff9d57",
-      "#da653d",
-      "#1f5b3d",
-      "#25704d",
-      "#652a56"
+      "#f9a167",
+      "#d9633b",
+      "#1d613f",
+      "#227850",
+      "#6a2358"
     ]
   },
   {
@@ -32,37 +32,37 @@
     "cells": 23,
     "colours": 13,
     "thumb": [
-      "#ffc453",
-      "#9466ae",
-      "#284078",
-      "#452c67",
-      "#56377a"
+      "#fac668",
+      "#203b7a",
+      "#9556b8",
+      "#41236a",
+      "#522b7f"
     ]
   },
   {
     "id": "harbour-row",
     "title": "Harbour Row",
     "cells": 69,
-    "colours": 17,
+    "colours": 18,
     "thumb": [
-      "#283e50",
-      "#512e44",
-      "#cbe3eb",
-      "#81bad2",
-      "#e8f2f3"
+      "#372e4f",
+      "#d2e9f0",
+      "#7bbdd9",
+      "#1f5172",
+      "#edcdab"
     ]
   },
   {
     "id": "humpback-whale",
     "title": "Humpback Whale",
     "cells": 110,
-    "colours": 16,
+    "colours": 14,
     "thumb": [
-      "#074b73",
-      "#b3d2ca",
-      "#57a8b4",
-      "#06365b",
-      "#dce8d9"
+      "#0b4467",
+      "#0f587b",
+      "#248eaa",
+      "#bcdfd0",
+      "#08233f"
     ],
     "blind": true
   },
@@ -72,11 +72,11 @@
     "cells": 110,
     "colours": 17,
     "thumb": [
-      "#3c383a",
-      "#854883",
-      "#30282e",
-      "#385348",
-      "#4a6f68"
+      "#2e4d39",
+      "#3f766b",
+      "#2d1615",
+      "#2c1d2e",
+      "#9b49a0"
     ],
     "blind": true
   },
@@ -86,24 +86,24 @@
     "cells": 20,
     "colours": 10,
     "thumb": [
-      "#43a747",
-      "#1d8388",
-      "#ff835d",
-      "#ffa567",
-      "#d9cfbc"
+      "#3bb33f",
+      "#1e898e",
+      "#f58766",
+      "#f9a875",
+      "#e0d2b7"
     ]
   },
   {
     "id": "library-in-the-clouds",
     "title": "Library In The Clouds",
     "cells": 110,
-    "colours": 16,
+    "colours": 17,
     "thumb": [
-      "#2f1b10",
-      "#190f09",
-      "#3c2718",
-      "#55240d",
-      "#7e3813"
+      "#30190c",
+      "#1a0e09",
+      "#432210",
+      "#7f3b17",
+      "#572810"
     ],
     "blind": true
   },
@@ -113,11 +113,11 @@
     "cells": 110,
     "colours": 17,
     "thumb": [
-      "#132233",
-      "#274355",
-      "#213041",
-      "#483b35",
-      "#843e29"
+      "#24455d",
+      "#1b3046",
+      "#122033",
+      "#5f3125",
+      "#0e101d"
     ],
     "blind": true
   }
