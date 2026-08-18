@@ -10,6 +10,82 @@
 // tubs side by side look identical, which is confusing rather than expressive.
 const MERGE_DISTANCE = 1000;
 
+// A photographically-shaded subject — a bird's wing, a cluster of anemones —
+// never repeats the same exact colour twice, so its pixels scatter across
+// hundreds of histogram buckets, each too lightly populated to win a
+// median-cut split against a flat region's few, heavily-populated buckets.
+// The palette above can end up with nothing anywhere near it, however
+// visually distinct it is on screen. RESCUE_ERROR is how far (in the same
+// squared-redmean units as MERGE_DISTANCE) a pixel has to sit from its
+// assigned tub before it counts as flat-out wrong rather than ordinary
+// same-object shading noise. RESCUE_CEILING is the hard stop on how many
+// tubs rescuing is allowed to add on top of maxColours — maxColours is a
+// target once rescuing is in play, not a hard cap, because losing a real
+// colour outright is worse than a slightly bigger tub tray.
+const RESCUE_ERROR = 4000;
+const RESCUE_CEILING = 40;
+
+/**
+ * Connected 4-neighbour blobs of pixels the current palette is getting badly
+ * wrong, eroded by one pixel first so a thin anti-aliased halo around an
+ * ordinary edge (which sits `bad` too, being a blend of two well-represented
+ * colours) can't masquerade as a real subject — only a blob wide enough to
+ * survive losing its outer ring can. Returns candidates sorted biggest first,
+ * each the mean colour of its own (uneroded) pixels.
+ */
+function findSalientClusters(rgba, width, height, indices, palette, minArea) {
+  const pixelCount = width * height;
+  const bad = new Uint8Array(pixelCount);
+  for (let i = 0; i < pixelCount; i++) {
+    const idx = indices[i];
+    if (idx === 255) continue;
+    const o = i * 4;
+    const p = palette[idx];
+    if (colourDistance(rgba[o], rgba[o + 1], rgba[o + 2], p[0], p[1], p[2]) > RESCUE_ERROR) {
+      bad[i] = 1;
+    }
+  }
+
+  const core = new Uint8Array(pixelCount);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x;
+      if (!bad[i]) continue;
+      if (x === 0 || x === width - 1 || y === 0 || y === height - 1) continue;
+      if (bad[i - 1] && bad[i + 1] && bad[i - width] && bad[i + width]) core[i] = 1;
+    }
+  }
+
+  const seen = new Uint8Array(pixelCount);
+  const stack = new Int32Array(pixelCount);
+  const clusters = [];
+  for (let seed = 0; seed < pixelCount; seed++) {
+    if (!core[seed] || seen[seed]) continue;
+
+    let sp = 0;
+    stack[sp++] = seed;
+    seen[seed] = 1;
+    let sumR = 0, sumG = 0, sumB = 0, area = 0;
+
+    while (sp > 0) {
+      const p = stack[--sp];
+      const o = p * 4;
+      sumR += rgba[o]; sumG += rgba[o + 1]; sumB += rgba[o + 2]; area++;
+      const x = p % width;
+      const y = (p - x) / width;
+      if (x > 0 && core[p - 1] && !seen[p - 1]) { seen[p - 1] = 1; stack[sp++] = p - 1; }
+      if (x < width - 1 && core[p + 1] && !seen[p + 1]) { seen[p + 1] = 1; stack[sp++] = p + 1; }
+      if (y > 0 && core[p - width] && !seen[p - width]) { seen[p - width] = 1; stack[sp++] = p - width; }
+      if (y < height - 1 && core[p + width] && !seen[p + width]) { seen[p + width] = 1; stack[sp++] = p + width; }
+    }
+
+    if (area >= minArea) clusters.push({ area, rgb: [sumR / area, sumG / area, sumB / area] });
+  }
+
+  clusters.sort((a, b) => b.area - a.area);
+  return clusters;
+}
+
 const BITS = 5; // 32 levels per channel -> 32768 histogram buckets
 const SHIFT = 8 - BITS;
 const SIDE = 1 << BITS;
@@ -125,8 +201,10 @@ function averageOf(hist, ids) {
 }
 
 /**
- * @param {number} maxColours upper bound, not a quota — indistinguishable
- *   entries are collapsed afterwards, so a four-colour image yields four tubs.
+ * @param {number} maxColours target, not a quota — indistinguishable entries
+ *   are collapsed afterwards, so a four-colour image yields four tubs, and a
+ *   spatially-contiguous cluster the result would otherwise badly misrender
+ *   can still earn a tub past it (see RESCUE_CEILING above).
  * @returns {{ palette: number[][], indices: Uint8Array }}
  *   palette entries are [r,g,b] rounded to integers; indices holds one palette
  *   slot per pixel (255 marks a transparent pixel that belongs to no cell).
@@ -227,26 +305,58 @@ export function quantize(rgba, width, height, maxColours) {
     weights = weights.filter((_, i) => i !== mergeB);
   }
 
-  // Drop palette slots that ended up owning nothing.
-  const liveIds = new Set();
-  const lookup = new Uint8Array(BUCKETS).fill(255);
-  for (const k of hist.ids) {
-    const c = hist.count[k];
-    const r = hist.sumR[k] / c;
-    const g = hist.sumG[k] / c;
-    const b = hist.sumB[k] / c;
-    let best = 0;
-    let bestD = Infinity;
-    for (let p = 0; p < palette.length; p++) {
-      const d = colourDistance(r, g, b, palette[p][0], palette[p][1], palette[p][2]);
-      if (d < bestD) {
-        bestD = d;
-        best = p;
+  // Every pixel to its nearest current tub — bucket-level, then broadcast to
+  // pixels, since there are far fewer buckets than pixels. Reused below both
+  // to decide what rescuing needs to fix and to compute the final indices.
+  const assignPixels = (paletteArg) => {
+    const lookup = new Uint8Array(BUCKETS).fill(255);
+    for (const k of hist.ids) {
+      const c = hist.count[k];
+      const r = hist.sumR[k] / c;
+      const g = hist.sumG[k] / c;
+      const b = hist.sumB[k] / c;
+      let best = 0;
+      let bestD = Infinity;
+      for (let p = 0; p < paletteArg.length; p++) {
+        const d = colourDistance(r, g, b, paletteArg[p][0], paletteArg[p][1], paletteArg[p][2]);
+        if (d < bestD) {
+          bestD = d;
+          best = p;
+        }
       }
+      lookup[k] = best;
     }
-    lookup[k] = best;
-    liveIds.add(best);
+
+    const idx = new Uint8Array(pixelCount);
+    for (let i = 0; i < pixelCount; i++) {
+      const o = i * 4;
+      idx[i] = rgba[o + 3] < 128 ? 255 : lookup[bucketOf(rgba[o], rgba[o + 1], rgba[o + 2])];
+    }
+    return idx;
+  };
+
+  // --- rescue salient minority colours ---------------------------------------
+  if (palette.length < RESCUE_CEILING) {
+    const preRescue = assignPixels(palette);
+    const minArea = Math.max(24, Math.round(pixelCount * 0.00004));
+    const clusters = findSalientClusters(rgba, width, height, preRescue, palette, minArea);
+
+    for (const cluster of clusters) {
+      if (palette.length >= RESCUE_CEILING) break;
+      const [r, g, b] = cluster.rgb;
+      const tooClose = palette.some(
+        (p) => colourDistance(r, g, b, p[0], p[1], p[2]) < MERGE_DISTANCE,
+      );
+      if (tooClose) continue; // already covered by a tub added earlier this pass
+      palette.push(cluster.rgb);
+    }
   }
+
+  // Drop palette slots that ended up owning nothing — including a rescued
+  // one that, after every pixel got a fair shot at it, nothing preferred.
+  const finalIndices = assignPixels(palette);
+  const liveIds = new Set();
+  for (const idx of finalIndices) if (idx !== 255) liveIds.add(idx);
 
   const remap = new Uint8Array(palette.length).fill(255);
   const compact = [];
@@ -258,12 +368,8 @@ export function quantize(rgba, width, height, maxColours) {
 
   const indices = new Uint8Array(pixelCount);
   for (let i = 0; i < pixelCount; i++) {
-    const o = i * 4;
-    if (rgba[o + 3] < 128) {
-      indices[i] = 255;
-      continue;
-    }
-    indices[i] = remap[lookup[bucketOf(rgba[o], rgba[o + 1], rgba[o + 2])]];
+    const v = finalIndices[i];
+    indices[i] = v === 255 ? 255 : remap[v];
   }
 
   return { palette: compact, indices };

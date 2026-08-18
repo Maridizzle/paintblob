@@ -61,6 +61,34 @@ test('quantize marks transparent pixels as belonging to no cell', () => {
   assert.ok([...indices.slice(W)].every((i) => i !== 255));
 });
 
+test('quantize rescues a small but vivid cluster a tight budget would otherwise miss', () => {
+  const MAGENTA = [230, 40, 200]; // nothing like either background half
+  const data = image(W, H, (x, y) => {
+    if (x >= 20 && x < 32 && y >= 20 && y < 32) return MAGENTA; // 12x12, well past the floor
+    return x < W / 2 ? [30, 30, 30] : [220, 220, 220]; // wide range keeps the 2-tub budget busy
+  });
+
+  const { palette, indices } = quantize(data, W, H, 2);
+  assert.ok(palette.length > 2, `expected a rescued tub past the budget, got ${palette.length}`);
+
+  const hasMagenta = palette.some((p) => colourDistance(...p, ...MAGENTA) < 2000);
+  assert.ok(hasMagenta, `no tub near the rescued colour: ${JSON.stringify(palette)}`);
+
+  const at = palette[indices[26 * W + 26]];
+  assert.ok(colourDistance(...at, ...MAGENTA) < 2000, `cluster pixel landed on ${at} instead`);
+});
+
+test('quantize leaves a too-small fleck unrescued', () => {
+  const MAGENTA = [230, 40, 200];
+  const data = image(W, H, (x, y) => {
+    if (x === 26 && y === 26) return MAGENTA; // a single stray pixel
+    return x < W / 2 ? [30, 30, 30] : [220, 220, 220];
+  });
+
+  const { palette } = quantize(data, W, H, 2);
+  assert.equal(palette.length, 2, 'a lone pixel should not earn its own tub');
+});
+
 test('denoise erases isolated speckle but keeps real edges', () => {
   const indices = new Uint8Array(W * H).fill(0);
   for (let y = 0; y < H; y++) for (let x = 32; x < W; x++) indices[y * W + x] = 1;
