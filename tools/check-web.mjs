@@ -236,11 +236,19 @@ const zoomReset = await page.evaluate(() =>
   document.getElementById('zoomPill').classList.contains('hidden'));
 check('zoom pill resets to 100%', zoomReset);
 
-// Same tub as the first tap — held tub is still whatever the first tap
-// selected, and a second colour's cell would be a genuine wrong-tub miss.
-const target2 = puzzle.cells.filter((c) => c.c === target.c).sort((a, b) => b.a - a.a)[1];
-const post = await boardTransform();
-await page.touchscreen.tap(post.ox + target2.x * post.scale, post.oy + target2.y * post.scale);
+// Whichever tub the game is holding right now — not necessarily target.c's
+// tub by count of cells, since tub order is vibrancy-first, not usage-first,
+// so a tub can easily be down to one cell (or already fully painted, in
+// which case the game will have moved on to the next one). Read the live
+// state and its own screen transform via window.__paintblobTest (see
+// src/game.js) rather than assume a second cell of the first tub exists.
+const target2 = await page.evaluate(() => {
+  const { board, state } = window.__paintblobTest;
+  const cell = state.cells.find((c) => c.colour === state.selected && !state.filled.has(c.id));
+  return cell ? board.toScreen(cell.anchor.x, cell.anchor.y) : null;
+});
+check('a second unfilled cell of the held tub exists to tap', !!target2, JSON.stringify(target2));
+await page.touchscreen.tap(target2.x, target2.y);
 const secondTap = await page.waitForFunction(
   () => /· [2-9]\d*\//.test(document.getElementById('barSubtitle').textContent),
   null,
