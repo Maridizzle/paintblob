@@ -277,7 +277,19 @@ async function runSmokeTest(target) {
           }));
         }
       }
-      await new Promise((r) => setTimeout(r, 1800));
+      // The paint lands once the burst's fill animation completes, not the
+      // instant the tap does — and how long that animation takes wall-clock
+      // is not fixed: a burst runs on requestAnimationFrame, which on a
+      // genuinely cold renderer (no GPU/shader cache — every CI run, by
+      // construction) has measured as slow as ~40% of real-time for the
+      // first second or so. A fixed sleep here has to either way overshoot
+      // that worst case or risk exactly the flake this replaced. Poll for
+      // the actual paint instead, capped so a truly broken paint still
+      // fails in reasonable time rather than hanging.
+      const deadline = Date.now() + 10000;
+      while (!state.filled.has(target?.id) && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
       return document.getElementById('barSubtitle').textContent;
     })()`);
 
