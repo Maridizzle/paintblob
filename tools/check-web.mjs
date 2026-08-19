@@ -175,30 +175,35 @@ await page.screenshot({ path: path.join(OUT, 'portrait-after.png') });
 
 /* -------------------------------------------------------------- zoom & pan */
 
-// Two-finger pinch: Playwright's touchscreen API is single-touch only, so
-// this dispatches raw PointerEvents the way a real two-finger touch would —
-// the same technique already used below for paste/drop, which cannot go
-// through a high-level API either.
-const pinchResult = await page.evaluate(() => {
-  const board = document.getElementById('board');
-  const r = board.getBoundingClientRect();
-  const cx = r.left + r.width / 2;
-  const cy = r.top + r.height / 2;
-  const fire = (type, id, x, y) => board.dispatchEvent(new PointerEvent(type, {
-    pointerId: id, pointerType: 'touch', clientX: x, clientY: y,
-    bubbles: true, cancelable: true, isPrimary: id === 1,
-  }));
+// Two-finger pinch. Playwright's touchscreen API is single-touch only, so
+// this drives the browser's real input pipeline through CDP rather than
+// dispatching synthetic PointerEvents at the element.
+//
+// The synthetic version worked on the page but left the browser and the page
+// disagreeing about what had been touched: the page had seen a full gesture
+// the browser never knew about. The next *real* touch after that was silently
+// dropped — Chromium allocated a pointer id for it and delivered no event at
+// all — which made the following tap look like the app ignoring it. Driving
+// real touches keeps both sides in step, and incidentally means this check now
+// exercises the same input path a phone does.
+const cdp = await context.newCDPSession(page);
+const touch = (type, touchPoints) =>
+  cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
 
-  fire('pointerdown', 1, cx - 20, cy);
-  fire('pointerdown', 2, cx + 20, cy);
+const boardCentre = await page.evaluate(() => {
+  const r = document.getElementById('board').getBoundingClientRect();
+  return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+});
+{
+  const { cx, cy } = boardCentre;
+  await touch('touchStart', [{ x: cx - 20, y: cy }, { x: cx + 20, y: cy }]);
   for (let i = 1; i <= 5; i++) {
     const half = 20 + i * 24;
-    fire('pointermove', 1, cx - half, cy);
-    fire('pointermove', 2, cx + half, cy);
+    await touch('touchMove', [{ x: cx - half, y: cy }, { x: cx + half, y: cy }]);
   }
-  fire('pointerup', 1, cx - 140, cy);
-  fire('pointerup', 2, cx + 140, cy);
-
+  await touch('touchEnd', []);
+}
+const pinchResult = await page.evaluate(() => {
   const pill = document.getElementById('zoomPill');
   return { text: pill.textContent, hidden: pill.classList.contains('hidden') };
 });
@@ -210,21 +215,14 @@ await page.screenshot({ path: path.join(OUT, 'pinch-zoomed.png') });
 // bar a fingertip is held to everywhere else in the app (a fuzzy tap is
 // still a tap), so it is worth checking a real drag does not sneak past it.
 const beforeDrag = await page.evaluate(() => document.getElementById('barSubtitle').textContent);
-await page.evaluate(() => {
-  const board = document.getElementById('board');
-  const r = board.getBoundingClientRect();
-  const cx = r.left + r.width / 2;
-  const cy = r.top + r.height / 2;
-  const fire = (type, x, y) => board.dispatchEvent(new PointerEvent(type, {
-    pointerId: 9, pointerType: 'touch', clientX: x, clientY: y,
-    bubbles: true, cancelable: true, isPrimary: true,
-  }));
-  fire('pointerdown', cx, cy);
-  fire('pointermove', cx - 15, cy - 10);
-  fire('pointermove', cx - 40, cy - 30);
-  fire('pointermove', cx - 70, cy - 55);
-  fire('pointerup', cx - 70, cy - 55);
-});
+{
+  const { cx, cy } = boardCentre;
+  await touch('touchStart', [{ x: cx, y: cy }]);
+  await touch('touchMove', [{ x: cx - 15, y: cy - 10 }]);
+  await touch('touchMove', [{ x: cx - 40, y: cy - 30 }]);
+  await touch('touchMove', [{ x: cx - 70, y: cy - 55 }]);
+  await touch('touchEnd', []);
+}
 const afterDrag = await page.evaluate(() => document.getElementById('barSubtitle').textContent);
 check('one-finger drag pans instead of painting', afterDrag === beforeDrag,
   `"${beforeDrag}" -> "${afterDrag}"`);
