@@ -17,6 +17,10 @@ import {
   NUMBER_RECOLOR_CYCLE, nextNumberRecolorIndex,
 } from './abilities.js';
 import { WARDROBE_ITEMS } from './wardrobe.js';
+import {
+  ROOMS, HOUSE_ITEMS, LIGHTING, PETS, PROP_SLOTS, SLOT_LABEL,
+  defaultHouse, itemsFor, starterFor, buildRoomSVG,
+} from './house.js';
 
 let api;
 const $ = (id) => document.getElementById(id);
@@ -1028,7 +1032,7 @@ function renderAvatarPanel(body) {
   head.className = 'avatar-head';
   const stage = document.createElement('div');
   stage.className = 'avatar-stage';
-  stage.innerHTML = buildAvatarSVG(customize);
+  stage.innerHTML = buildRoomSVG(S.save.avatar.house, customize);
   wireAvatarPartClicks(stage);
 
   const levelbar = document.createElement('div');
@@ -1046,8 +1050,10 @@ function renderAvatarPanel(body) {
   body.append(head);
 
   const tabs = document.createElement('div');
-  tabs.className = 'segmented avatar-tabs';
-  for (const key of ['customize', 'outfits', 'abilities']) {
+  // Four tabs no longer fit on one line, and .segmented is overflow:hidden
+  // with no wrap — without `wrap` the last one is silently clipped off.
+  tabs.className = 'segmented avatar-tabs wrap';
+  for (const key of ['customize', 'outfits', 'abilities', 'room']) {
     const btn = document.createElement('button');
     btn.textContent = key[0].toUpperCase() + key.slice(1);
     btn.className = S.avatarTab === key ? 'on' : '';
@@ -1065,6 +1071,7 @@ function renderAvatarPanel(body) {
 
   if (S.avatarTab === 'outfits') renderAvatarOutfits(section, stage);
   else if (S.avatarTab === 'abilities') renderAvatarAbilities(section);
+  else if (S.avatarTab === 'room') renderAvatarRoom(section);
   else renderAvatarCustomize(section, stage);
   // One call covers all three tabs: they append synchronously into `section`.
   band(section);
@@ -1073,7 +1080,7 @@ function renderAvatarPanel(body) {
 function renderAvatarCustomize(section, stage) {
   const customize = S.save.avatar.customize;
   const redraw = () => {
-    stage.innerHTML = buildAvatarSVG(customize);
+    stage.innerHTML = buildRoomSVG(S.save.avatar.house, customize);
     wireAvatarPartClicks(stage);
     persist();
     syncAvatarWidget();
@@ -1189,7 +1196,7 @@ function renderAvatarOutfits(section, stage) {
   section.append(head);
 
   const redraw = () => {
-    stage.innerHTML = buildAvatarSVG(customize);
+    stage.innerHTML = buildRoomSVG(S.save.avatar.house, customize);
     wireAvatarPartClicks(stage);
     persist();
     syncAvatarWidget();
@@ -1247,6 +1254,97 @@ function renderAvatarOutfits(section, stage) {
     }
     section.append(el);
   }
+}
+
+/**
+ * Room, props, lighting and pet. Prop options are filtered by the selected
+ * room, so switching rooms swaps the whole set of choices; each room keeps its
+ * own arrangement, which is why the save nests props under the room id.
+ */
+function renderAvatarRoom(section) {
+  const house = S.save.avatar.house;
+  const level = levelForPoints(S.save.stats.pointsEarned);
+  const owned = new Set(house.unlocked);
+
+  const redraw = () => {
+    persist();
+    renderAvatarPanel($('panelBody'));
+  };
+
+  // One purchase path for every kind of thing in here, so a pet and a rug and
+  // a lamp all behave identically.
+  const buyable = (item, icon, onBuy) => {
+    const buy = document.createElement('button');
+    buy.className = 'primary';
+    buy.textContent = 'Buy';
+    buy.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!spendPoints(S.save.stats, item.price)) {
+        sfx.play('nope');
+        return;
+      }
+      house.unlocked.push(item.id);
+      onBuy?.();
+      toast({ icon, name: `Unlocked ${item.name}`, desc: 'Set it from the Room tab.' });
+      redraw();
+    });
+    return buy;
+  };
+
+  const pickerRow = (label, options, isOn, onPick, icon, describe) => {
+    for (const [i, opt] of options.entries()) {
+      const gated = opt.unlockLevel != null && level < opt.unlockLevel;
+      // Rooms are earned by levelling and never appear in `unlocked`; props,
+      // lighting and pets are bought and always do. Keyed off unlockLevel so
+      // the two kinds share one row builder.
+      const has = opt.unlockLevel != null ? !gated : owned.has(opt.id);
+      const on = isOn(opt);
+      const el = row(has && !gated ? 'clickable' : 'locked');
+
+      const text = document.createElement('div');
+      text.className = 'grow';
+      text.innerHTML = '<div class="label"></div><div class="sub"></div>';
+      // Only the first option of a group is labelled, so the rows read as one
+      // block per slot rather than as a flat list of unrelated things.
+      text.querySelector('.label').textContent = i === 0 ? `${label} — ${opt.name}` : opt.name;
+      text.querySelector('.sub').textContent = describe(opt, { has, gated, on });
+      el.append(text);
+
+      if (on) {
+        const tick = document.createElement('span');
+        tick.className = 'glyph';
+        tick.textContent = '✓';
+        el.append(tick);
+      } else if (gated) {
+        const lock = document.createElement('span');
+        lock.className = 'glyph';
+        lock.textContent = '🔒';
+        el.append(lock);
+      } else if (has) {
+        el.addEventListener('click', () => { onPick(opt); redraw(); });
+      } else if (opt.source === 'store') {
+        el.append(buyable(opt, icon));
+      }
+      section.append(el);
+    }
+  };
+
+  pickerRow('Room', ROOMS, (r) => r.id === house.room, (r) => { house.room = r.id; },
+    '🏠', (r, { gated }) => (gated ? `unlocks at level ${r.unlockLevel}` : 'tap to move in'));
+
+  for (const slot of PROP_SLOTS) {
+    pickerRow(SLOT_LABEL[slot], itemsFor(house.room, slot),
+      (it) => house.props[house.room]?.[slot] === it.id,
+      (it) => { house.props[house.room][slot] = it.id; },
+      '🪑', (it, { has }) => (has ? 'tap to place' : `${it.price}🪙`));
+  }
+
+  pickerRow('Lighting', LIGHTING, (l) => l.id === house.lighting,
+    (l) => { house.lighting = l.id; },
+    '💡', (l, { has }) => (has ? 'tap to light the room' : `${l.price}🪙`));
+
+  pickerRow('Pet', PETS, (pet) => pet.id === house.pet, (pet) => { house.pet = pet.id; },
+    '🐾', (pet, { has }) => (has ? 'tap to invite in' : `${pet.price}🪙`));
 }
 
 function renderAvatarAbilities(section) {
@@ -1639,6 +1737,30 @@ async function boot() {
   S.save.avatar.customize.race ??= 'human';
   S.save.avatar.unlocked ??= starterItems;
   S.save.avatar.abilities = { ...defaultAbilityState(), ...S.save.avatar.abilities };
+  // Same reason as `race` above: a save written before the house existed keeps
+  // its own avatar object, so DEFAULT_SAVE's house never reaches it.
+  S.save.avatar.house ??= defaultHouse();
+  const freshHouse = defaultHouse();
+  S.save.avatar.house.room ??= freshHouse.room;
+  S.save.avatar.house.lighting ??= freshHouse.lighting;
+  S.save.avatar.house.unlocked ??= freshHouse.unlocked;
+  if (!('pet' in S.save.avatar.house)) S.save.avatar.house.pet = freshHouse.pet;
+  S.save.avatar.house.props ??= {};
+  // Rooms added in a later version have no entry yet, and a slot whose prop id
+  // no longer exists falls back to that room's starter rather than rendering
+  // an empty corner.
+  for (const room of ROOMS) {
+    const chosen = (S.save.avatar.house.props[room.id] ??= {});
+    for (const slot of PROP_SLOTS) {
+      const item = HOUSE_ITEMS.find((i) => i.id === chosen[slot]);
+      if (!item || item.roomId !== room.id || item.slot !== slot) {
+        chosen[slot] = starterFor(room.id, slot)?.id ?? null;
+      }
+    }
+  }
+  for (const id of freshHouse.unlocked) {
+    if (!S.save.avatar.house.unlocked.includes(id)) S.save.avatar.house.unlocked.push(id);
+  }
   // Phones have far less GPU headroom than a laptop, and the burst is the most
   // expensive thing here. Start them lighter; the slider still goes to 1.6.
   S.save.settings.density ??= matchMedia('(pointer: coarse)').matches ? 0.7 : 1;
