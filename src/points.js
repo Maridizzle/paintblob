@@ -18,9 +18,15 @@ export function spendPoints(stats, cost) {
 }
 
 /** Total lifetime points required to *reach* level n (n >= 1). Quadratic, so
- *  each level costs a bit more than the last — level 1 is free (0 points). */
+ *  each level costs a bit more than the last — level 1 is free (0 points).
+ *
+ *  The coefficient sets the overall pace. It works alongside the ability
+ *  unlock spread in abilities.js: those unlock one per level (L1..L8), so
+ *  reaching a given ability is this curve's cost at that level. Kept light
+ *  (55) because the one-per-level spread already does most of the pacing —
+ *  bumping it hard would push the last ability out to a slog. */
 export function cumulativeForLevel(n) {
-  return 50 * n * (n - 1);
+  return 55 * n * (n - 1);
 }
 
 export function levelForPoints(pointsEarned) {

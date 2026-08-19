@@ -4,8 +4,12 @@
 // ability actually looks or feels like; this just owns whether you can fire
 // one right now and for how long it stays on.
 //
-// Tiered by power: max charges go DOWN and unlock level goes UP as the
-// effect gets stronger, so the biggest lever (Half Fill) is the rarest.
+// Tiered by power: max charges go DOWN as the effect gets stronger, so the
+// biggest lever (Half Fill) is the rarest. Unlock level steps one per level
+// down this list (L1..L8) — abilities arrive one at a time as you climb,
+// weakest first, rather than clumping in the first few levels. `tier` still
+// records the power grouping the charge counts follow; it no longer equals
+// the unlock level.
 
 export const ABILITIES = [
   {
@@ -16,37 +20,37 @@ export const ABILITIES = [
   {
     id: 'number-recolor', icon: '🔢', name: 'Number Recolor',
     desc: 'Cycles unfilled numbers to the next ROYGBIV colour — stays that way until used again.',
-    tier: 1, maxCharges: 4, durationMs: 0, unlockLevel: 1, levelsPerCharge: 1,
+    tier: 1, maxCharges: 4, durationMs: 0, unlockLevel: 2, levelsPerCharge: 1,
   },
   {
     id: 'colour-flash', icon: '✨', name: 'Colour Flash',
     desc: "Makes every unfilled cell of your held colour flash.",
-    tier: 2, maxCharges: 4, durationMs: 4000, unlockLevel: 2, levelsPerCharge: 1,
+    tier: 2, maxCharges: 4, durationMs: 4000, unlockLevel: 3, levelsPerCharge: 1,
   },
   {
     id: 'steady-hand', icon: '🤲', name: 'Steady Hand',
     desc: 'Widens your tap radius so near-misses still land.',
-    tier: 2, maxCharges: 3, durationMs: 10000, unlockLevel: 2, levelsPerCharge: 1,
+    tier: 2, maxCharges: 3, durationMs: 10000, unlockLevel: 4, levelsPerCharge: 1,
   },
   {
     id: 'golden-cell', icon: '🌟', name: 'Golden Cell',
     desc: "Marks one cell of your held colour worth 5x points.",
-    tier: 3, maxCharges: 3, durationMs: 15000, unlockLevel: 3, levelsPerCharge: 1,
+    tier: 3, maxCharges: 3, durationMs: 15000, unlockLevel: 5, levelsPerCharge: 1,
   },
   {
     id: 'colour-surge', icon: '⚡', name: 'Colour Surge',
     desc: 'Doubles points from every fill while active.',
-    tier: 3, maxCharges: 3, durationMs: 8000, unlockLevel: 3, levelsPerCharge: 1,
+    tier: 3, maxCharges: 3, durationMs: 8000, unlockLevel: 6, levelsPerCharge: 1,
   },
   {
     id: 'streak-shield', icon: '🛡️', name: 'Streak Shield',
     desc: 'Forgives your next wrong-tub click.',
-    tier: 4, maxCharges: 2, durationMs: 15000, unlockLevel: 4, levelsPerCharge: 1,
+    tier: 4, maxCharges: 2, durationMs: 15000, unlockLevel: 7, levelsPerCharge: 1,
   },
   {
     id: 'half-fill', icon: '🪄', name: 'Half Fill',
     desc: "Paints half of your held colour's remaining cells outright.",
-    tier: 5, maxCharges: 1, durationMs: 0, unlockLevel: 5, levelsPerCharge: 2,
+    tier: 5, maxCharges: 1, durationMs: 0, unlockLevel: 8, levelsPerCharge: 2,
   },
 ];
 

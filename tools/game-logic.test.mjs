@@ -326,30 +326,40 @@ test('isUnlocked gates purely on level vs unlockLevel', () => {
   assert.equal(isUnlocked(def, def.unlockLevel), true);
 });
 
+test('abilities unlock one per level across 1..8, not clumped in the first few', () => {
+  // Guards the reported "level 3 with almost every ability" problem: the
+  // eight abilities must arrive one at a time, not six of them by level 3.
+  const levels = ABILITIES.map((a) => a.unlockLevel).sort((x, y) => x - y);
+  assert.deepEqual(levels, [1, 2, 3, 4, 5, 6, 7, 8]);
+  const atLevel3 = ABILITIES.filter((a) => isUnlocked(a, 3)).length;
+  assert.equal(atLevel3, 3, 'level 3 should grant 3 abilities, not most of them');
+});
+
 test('grantLevelUpCharges refills one charge per level-up, capped at max, only once unlocked', () => {
   const state = defaultAbilityState();
-  const def = getDef('colour-flash'); // unlocks at level 2, maxCharges 4
+  const def = getDef('colour-flash'); // levelsPerCharge 1
+  const L = def.unlockLevel; // read live so this survives re-tiering
   activate(state, def.id, 0);
   activate(state, def.id, 0);
-  assert.equal(state[def.id].charges, 2);
-  grantLevelUpCharges(state, 1); // below unlockLevel: no-op
-  assert.equal(state[def.id].charges, 2);
-  grantLevelUpCharges(state, 2);
-  assert.equal(state[def.id].charges, 3);
-  grantLevelUpCharges(state, 3);
-  grantLevelUpCharges(state, 4);
-  grantLevelUpCharges(state, 5); // would overshoot max without the cap
+  assert.equal(state[def.id].charges, def.maxCharges - 2);
+  grantLevelUpCharges(state, L - 1); // below unlockLevel: no-op
+  assert.equal(state[def.id].charges, def.maxCharges - 2);
+  grantLevelUpCharges(state, L);
+  assert.equal(state[def.id].charges, def.maxCharges - 1);
+  // Enough further level-ups to overshoot max, proving the cap holds.
+  for (let lv = L + 1; lv <= L + def.maxCharges; lv++) grantLevelUpCharges(state, lv);
   assert.equal(state[def.id].charges, def.maxCharges);
 });
 
 test('half-fill only regains a charge every second level-up, per its slower levelsPerCharge', () => {
   const state = defaultAbilityState();
-  const def = getDef('half-fill'); // unlocks at level 5, maxCharges 1, levelsPerCharge 2
+  const def = getDef('half-fill'); // maxCharges 1, levelsPerCharge 2
+  const L = def.unlockLevel; // read live so this survives re-tiering
   activate(state, def.id, 0);
   assert.equal(state[def.id].charges, 0);
-  grantLevelUpCharges(state, 5);
+  grantLevelUpCharges(state, L);
   assert.equal(state[def.id].charges, 0, 'one level-up since unlock is not enough yet');
-  grantLevelUpCharges(state, 6);
+  grantLevelUpCharges(state, L + 1);
   assert.equal(state[def.id].charges, 1, 'the second level-up since unlock grants the charge');
 });
 
@@ -461,6 +471,31 @@ test('every wardrobe item renders cleanly on every race', () => {
       else c[item.slot] = { itemId: item.id, colour: '#808080' };
       const svg = buildAvatarSVG(c);
       assert.ok(!/NaN|undefined|Infinity/.test(svg), `${race} + ${item.id} produced a poisoned path`);
+    }
+  }
+});
+
+test('every wardrobe item stays in frame at the body-slider extremes', () => {
+  // The new cuts (skirt, sundress, joggers) introduce their own flare/taper
+  // math, so combine each garment with the tiniest and largest bodies — a
+  // gap or blow-out shows up as a coordinate off the 120x210 frame.
+  for (const item of WARDROBE_ITEMS) {
+    for (const height of [0.85, 1.2]) {
+      for (const weight of [0.8, 1.3]) {
+        const c = defaultAvatarCustomize();
+        c.height = height;
+        c.weight = weight;
+        if (item.slot === 'dress') c.dress = { itemId: item.id, colour: '#c9799a' };
+        else c[item.slot] = { itemId: item.id, colour: '#808080' };
+        const svg = buildAvatarSVG(c);
+        assert.ok(!/NaN|undefined|Infinity/.test(svg), `${item.id} h${height} w${weight} poisoned`);
+        for (const m of svg.matchAll(/(-?\d+\.\d+),(-?\d+\.\d+)/g)) {
+          const x = Number(m[1]);
+          const y = Number(m[2]);
+          assert.ok(x > -22 && x < 142, `${item.id} h${height} w${weight}: x ${x} out of frame`);
+          assert.ok(y > -22 && y < 232, `${item.id} h${height} w${weight}: y ${y} out of frame`);
+        }
+      }
     }
   }
 });
