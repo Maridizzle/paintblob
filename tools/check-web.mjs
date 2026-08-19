@@ -231,10 +231,27 @@ check('one-finger drag pans instead of painting', afterDrag === beforeDrag,
 
 // Reset, then a plain tap must still paint — confirming the gesture rework
 // left the common case, a finger just tapping a cell, exactly as it was.
-await page.click('#zoomPill');
+// Tap the pill with a finger, not a mouse. This is a phone harness, and a
+// real phone has no mouse — and mixing the two input paths cost us a whole
+// tap: Chromium dropped the first touch dispatched right after a mouse click
+// that hid the element under the cursor, delivering no pointer or touch event
+// to the page at all. An identical retry went through, which is what made it
+// look like the app was ignoring the tap rather than never seeing it.
+const pillBox = await page.evaluate(() => {
+  const r = document.getElementById('zoomPill').getBoundingClientRect();
+  return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+});
+await page.touchscreen.tap(pillBox.x, pillBox.y);
 const zoomReset = await page.evaluate(() =>
   document.getElementById('zoomPill').classList.contains('hidden'));
 check('zoom pill resets to 100%', zoomReset);
+
+// Let the reset reach the screen before aiming at it: two frames guarantees
+// one was actually presented, so the tap is hit-tested against the layout it
+// was measured against.
+await page.evaluate(() => new Promise((resolve) => {
+  requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+}));
 
 // Whichever tub the game is holding right now — not necessarily target.c's
 // tub by count of cells, since tub order is vibrancy-first, not usage-first,
