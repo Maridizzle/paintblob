@@ -48,17 +48,13 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 /* ------------------------------------------------------- overlay helpers */
 
-// Exported because house.js draws with the same technique: a child carrying
-// its own fill overrides the parent group's, so a wash works over any colour
-// underneath with no colour maths.
-
-export const shade = (d, a = 0.12) => `<path d="${d}" fill="rgba(0,0,0,${a})"/>`;
-export const light = (d, a = 0.12) => `<path d="${d}" fill="rgba(255,255,255,${a})"/>`;
+const shade = (d, a = 0.12) => `<path d="${d}" fill="rgba(0,0,0,${a})"/>`;
+const light = (d, a = 0.12) => `<path d="${d}" fill="rgba(255,255,255,${a})"/>`;
 /** A thin seam/fold/lace, drawn as a stroke — `fill:none` is an explicit
  *  override too, and far cheaper than authoring a sliver polygon. */
-export const seam = (d, w = 1.2, a = 0.16) =>
+const seam = (d, w = 1.2, a = 0.16) =>
   `<path d="${d}" fill="none" stroke="rgba(0,0,0,${a})" stroke-width="${w}" stroke-linecap="round"/>`;
-export const seamLight = (d, w = 1.2, a = 0.2) =>
+const seamLight = (d, w = 1.2, a = 0.2) =>
   `<path d="${d}" fill="none" stroke="rgba(255,255,255,${a})" stroke-width="${w}" stroke-linecap="round"/>`;
 /** Emits a shape and its mirror — for parts that come in pairs (ears, arms,
  *  legs, shoes) rather than crossing the centreline. */
@@ -889,19 +885,11 @@ function shoesMarkup(M, style) {
 
 /* ----------------------------------------------------------------- build */
 
-/** The frame every avatar path is authored against. Exported so house.js can
- *  stand her on its floor without re-deriving the numbers — if the figure
- *  ever grows, the room follows rather than letting her sink or float. */
-export const AVATAR_FRAME = { width: 120, height: VIEW_H, footY: FOOT_Y, centreX: CX };
-
 /**
- * The avatar's groups without the wrapping <svg>, so a scene can place her
- * inside a larger frame. buildAvatarSVG() is this plus the wrapper.
- *
  * @param {object} customize  S.save.avatar.customize
- * @returns {string}  a run of <g data-slot=...> elements
+ * @returns {string}  a full <svg>...</svg> string, viewBox 0 0 120 210
  */
-export function avatarInner(customize) {
+export function buildAvatarSVG(customize) {
   const c = customize ?? {};
   const M = metrics(c);
   const hairStyle = c.hair?.style ?? 'short';
@@ -928,15 +916,7 @@ export function avatarInner(customize) {
   parts.push(part('socks', c.socks?.colour, socksMarkup(M, styleOf(c.socks?.itemId))));
   parts.push(part('shoes', c.shoes?.colour, shoesMarkup(M, styleOf(c.shoes?.itemId))));
 
-  return parts.join('');
-}
-
-/**
- * @param {object} customize  S.save.avatar.customize
- * @returns {string}  a full <svg>...</svg> string, viewBox 0 0 120 210
- */
-export function buildAvatarSVG(customize) {
-  return `<svg viewBox="0 0 120 ${VIEW_H}" xmlns="http://www.w3.org/2000/svg">${avatarInner(customize)}</svg>`;
+  return `<svg viewBox="0 0 120 ${VIEW_H}" xmlns="http://www.w3.org/2000/svg">${parts.join('')}</svg>`;
 }
 
 function part(slot, colour, inner) {
