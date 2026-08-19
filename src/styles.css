@@ -235,6 +235,15 @@ button {
   -webkit-app-region: no-drag;
 }
 
+/* Reuses the .bar/.bar > i progress primitive; only the width and placement
+   differ. Matches the pill's width so the two read as one control. */
+.xp-bar {
+  width: 46px;
+  margin-top: 0;
+  pointer-events: none;
+}
+.xp-bar > i { transition: width 240ms ease; }
+
 .avatar-pill {
   position: relative;
   width: 46px;
@@ -344,6 +353,7 @@ button {
 
 @media (pointer: coarse) {
   .avatar-pill { width: 54px; height: 54px; }
+  .xp-bar { width: 54px; }
   .ability-btn { width: 36px; height: 36px; font-size: 15px; }
   .swatch { width: 32px; height: 32px; }
 }

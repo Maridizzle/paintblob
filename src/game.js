@@ -1341,6 +1341,14 @@ function syncAvatarWidget() {
   }
   const value = $('pointsValue');
   if (value) value.textContent = String(S.save.stats.points ?? 0);
+
+  // Progress through the current level, on the main screen. This function
+  // already re-runs on every grant, so the bar cannot go stale.
+  const xp = $('xpFill');
+  if (xp) {
+    const { into, span } = pointsIntoLevel(S.save.stats.pointsEarned);
+    xp.style.width = `${span ? (into / span) * 100 : 100}%`;
+  }
 }
 
 /** Per-click feedback for the points HUD: a quick pulse on the pill itself,
