@@ -236,6 +236,20 @@ const zoomReset = await page.evaluate(() =>
   document.getElementById('zoomPill').classList.contains('hidden'));
 check('zoom pill resets to 100%', zoomReset);
 
+// Achievement toasts wait for a click, and they are the one part of #toasts
+// that takes pointer events. Which ones exist right now depends on the wall
+// clock — "Night Shift" fires on any fill between 2am and 5am and "Early
+// Bird" between 5am and 7am, and CI runs on UTC — and the third toast makes
+// the stack tall enough to cover this check's tap point. The tap then lands
+// on the toast and dismisses it (exactly as designed) instead of reaching
+// the board, which is how this check failed only during those hours.
+// Dismiss them the way a player would, so the tap being judged is the one
+// this check is actually about.
+await page.evaluate(async () => {
+  for (const t of document.querySelectorAll('.toast.sticky')) t.click();
+  await new Promise((r) => setTimeout(r, 400)); // out-animation is 300ms
+});
+
 // Whichever tub the game is holding right now — not necessarily target.c's
 // tub by count of cells, since tub order is vibrancy-first, not usage-first,
 // so a tub can easily be down to one cell (or already fully painted, in
