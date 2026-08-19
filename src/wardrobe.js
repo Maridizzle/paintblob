@@ -26,6 +26,18 @@ export const WARDROBE_ITEMS = [
   { id: 'shoes-sandals', slot: 'shoes', style: 'sandals', name: 'Sandals', price: 300, source: 'store' },
   { id: 'shoes-heels', slot: 'shoes', style: 'heels', name: 'Heels', price: 450, source: 'store' },
 
+  // New cuts — a bigger, more distinct catalogue. Coin prices sit against the
+  // level curve like the rest, unchanged by the progression rebalance (coins
+  // are a separate axis from levelling).
+  { id: 'shirt-buttonup', slot: 'shirt', style: 'buttonup', name: 'Button-Up Shirt', price: 300, source: 'store' },
+  { id: 'shirt-polo', slot: 'shirt', style: 'polo', name: 'Polo Shirt', price: 240, source: 'store' },
+  { id: 'shirt-sweater', slot: 'shirt', style: 'sweater', name: 'Knit Sweater', price: 320, source: 'store' },
+  { id: 'bottoms-skirt', slot: 'bottoms', style: 'skirt', name: 'A-Line Skirt', price: 260, source: 'store' },
+  { id: 'bottoms-joggers', slot: 'bottoms', style: 'joggers', name: 'Joggers', price: 220, source: 'store' },
+  { id: 'dress-sundress', slot: 'dress', style: 'sundress', name: 'Sundress', price: 420, source: 'store' },
+  { id: 'shoes-flats', slot: 'shoes', style: 'flats', name: 'Ballet Flats', price: 200, source: 'store' },
+  { id: 'shoes-maryjane', slot: 'shoes', style: 'maryjane', name: 'Mary Janes', price: 260, source: 'store' },
+
   { id: 'dress-flowy', slot: 'dress', style: 'flowy', name: 'Flowy Dress', price: 500, source: 'achievement' },
   { id: 'shoes-boots', slot: 'shoes', style: 'boots', name: 'Sturdy Boots', price: 500, source: 'achievement' },
   { id: 'dress-gown', slot: 'dress', style: 'gown', name: 'Evening Gown', price: 1500, source: 'achievement' },

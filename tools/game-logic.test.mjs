@@ -475,6 +475,31 @@ test('every wardrobe item renders cleanly on every race', () => {
   }
 });
 
+test('every wardrobe item stays in frame at the body-slider extremes', () => {
+  // The new cuts (skirt, sundress, joggers) introduce their own flare/taper
+  // math, so combine each garment with the tiniest and largest bodies — a
+  // gap or blow-out shows up as a coordinate off the 120x210 frame.
+  for (const item of WARDROBE_ITEMS) {
+    for (const height of [0.85, 1.2]) {
+      for (const weight of [0.8, 1.3]) {
+        const c = defaultAvatarCustomize();
+        c.height = height;
+        c.weight = weight;
+        if (item.slot === 'dress') c.dress = { itemId: item.id, colour: '#c9799a' };
+        else c[item.slot] = { itemId: item.id, colour: '#808080' };
+        const svg = buildAvatarSVG(c);
+        assert.ok(!/NaN|undefined|Infinity/.test(svg), `${item.id} h${height} w${weight} poisoned`);
+        for (const m of svg.matchAll(/(-?\d+\.\d+),(-?\d+\.\d+)/g)) {
+          const x = Number(m[1]);
+          const y = Number(m[2]);
+          assert.ok(x > -22 && x < 142, `${item.id} h${height} w${weight}: x ${x} out of frame`);
+          assert.ok(y > -22 && y < 232, `${item.id} h${height} w${weight}: y ${y} out of frame`);
+        }
+      }
+    }
+  }
+});
+
 test('the slider extremes stay clean and in frame', () => {
   for (const race of VARIANTS.race) {
     for (const height of [0.85, 1, 1.2]) {
