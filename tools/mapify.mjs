@@ -77,11 +77,30 @@ export function manifestEntry(puzzle, { id, title, blind }) {
   };
 }
 
+/**
+ * The living-element tag for a picture, if it has one.
+ *
+ * These live in a hand-edited sidecar rather than in the puzzle JSON because
+ * this file rewrites that JSON from scratch on every bake — a field added to
+ * it by hand would not survive the next `npm run seed`, which CI runs on
+ * every push. Reading the sidecar here means the tag is re-injected each
+ * time, and the client still only makes the one fetch it always did.
+ */
+export function animationFor(id, dir = PUZZLE_DIR) {
+  const file = path.join(dir, 'animations.json');
+  if (!fs.existsSync(file)) return null;
+  const tag = JSON.parse(fs.readFileSync(file, 'utf8'))[id];
+  if (!tag || id.startsWith('_')) return null;
+  return tag;
+}
+
 export function writePuzzle(puzzle, { id, title, blind }) {
   fs.mkdirSync(PUZZLE_DIR, { recursive: true });
   const { preview, ...rest } = puzzle;
   const sourceImage = encodeSourceImage(preview);
   if (blind) rest.blind = true;
+  const animation = animationFor(id);
+  if (animation) rest.animation = animation;
   const out = path.join(PUZZLE_DIR, `${id}.json`);
   fs.writeFileSync(out, JSON.stringify({ id, title, ...rest, sourceImage }));
   updateManifest(manifestEntry(puzzle, { id, title, blind }));

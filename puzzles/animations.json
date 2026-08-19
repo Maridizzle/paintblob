@@ -1,0 +1,30 @@
+{
+  "_readme": [
+    "One element of a picture brought to life while the PHOTO view is showing.",
+    "Keyed by puzzle id. Untagged pictures animate not at all.",
+    "",
+    "  effect     ripple | glow | shimmer | breathe | twinkle",
+    "  cells      the cell ids the effect is clipped to (its silhouette)",
+    "  speed      time multiplier, default 1",
+    "  amplitude  how strongly it moves, default 1",
+    "",
+    "This file is the source of truth, not the puzzle JSON: tools/mapify.mjs",
+    "rewrites puzzles/<id>.json from scratch on every bake, so a tag written",
+    "there by hand would be wiped by the next `npm run seed`. writePuzzle()",
+    "reads this file and injects the `animation` field instead.",
+    "",
+    "Use `node tools/tag-animation.mjs <id>` to pick the cells by eye.",
+    "",
+    "Underscore-prefixed keys (like this one) are ignored."
+  ],
+  "koi-pond": {
+    "effect": "ripple",
+    "cells": [
+      6,
+      12,
+      15
+    ],
+    "speed": 0.8,
+    "amplitude": 1.4
+  }
+}

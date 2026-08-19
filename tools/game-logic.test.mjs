@@ -19,6 +19,7 @@ import {
   activate, isActive, consumeActive, NUMBER_RECOLOR_CYCLE, nextNumberRecolorIndex,
 } from '../src/abilities.js';
 import { WARDROBE_ITEMS } from '../src/wardrobe.js';
+import { LIVING_EFFECTS } from '../src/render.js';
 import { Burst } from '../src/paint-fx.js';
 import {
   buildAvatarSVG, defaultAvatarCustomize, setVariant, VARIANTS, RACE_PROFILE, raceSkinPalette,
@@ -733,4 +734,68 @@ test('every data-slot in a room scene comes from the avatar herself', async () =
       }
     }
   }
+});
+
+/* ------------------------------------------------- the living element tags */
+
+const SIDECAR = JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles/animations.json'), 'utf8'));
+const TAGS = Object.entries(SIDECAR).filter(([id]) => !id.startsWith('_'));
+const puzzleFile = (id) => path.join(ROOT, 'puzzles', `${id}.json`);
+
+test('every animation tag names a real picture, real cells and a real effect', () => {
+  for (const [id, tag] of TAGS) {
+    assert.ok(fs.existsSync(puzzleFile(id)), `animations.json tags "${id}", which is not a puzzle`);
+    assert.ok(LIVING_EFFECTS.includes(tag.effect), `${id}: unknown effect "${tag.effect}"`);
+    assert.ok(Array.isArray(tag.cells) && tag.cells.length, `${id}: nothing tagged to move`);
+    const { cells } = JSON.parse(fs.readFileSync(puzzleFile(id), 'utf8'));
+    for (const i of tag.cells) {
+      assert.ok(Number.isInteger(i) && i >= 0 && i < cells.length,
+        `${id}: cell ${i} is out of range (0..${cells.length - 1})`);
+    }
+    for (const k of ['speed', 'amplitude']) {
+      if (tag[k] !== undefined) assert.ok(tag[k] > 0, `${id}: ${k} must be positive`);
+    }
+  }
+});
+
+test('the tags survive a re-bake, which is the whole point of the sidecar', () => {
+  // writePuzzle() rewrites the puzzle JSON from scratch on every `npm run
+  // seed` — which CI runs on every push — so a tag added to that file by hand
+  // would silently disappear. It has to be re-injected from here instead.
+  const mapify = fs.readFileSync(path.join(ROOT, 'tools/mapify.mjs'), 'utf8');
+  assert.match(mapify, /rest\.animation = animation/,
+    'writePuzzle() must inject the animation field from the sidecar');
+  for (const [id, tag] of TAGS) {
+    const baked = JSON.parse(fs.readFileSync(puzzleFile(id), 'utf8')).animation;
+    assert.deepEqual(baked, tag, `${id}: puzzle JSON is out of date — run \`npm run seed\``);
+  }
+});
+
+test('an untagged picture carries no animation at all', () => {
+  const tagged = new Set(TAGS.map(([id]) => id));
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles/manifest.json'), 'utf8'));
+  for (const { id } of manifest) {
+    if (tagged.has(id)) continue;
+    const puzzle = JSON.parse(fs.readFileSync(puzzleFile(id), 'utf8'));
+    assert.equal(puzzle.animation, undefined, `${id} has an animation but is not tagged`);
+  }
+});
+
+test('the animation window plays for the 5-10 seconds it was asked to', () => {
+  const render = fs.readFileSync(path.join(ROOT, 'src/render.js'), 'utf8');
+  const ms = Number(render.match(/const LIVING_DURATION = (\d+)/)[1]);
+  assert.ok(ms >= 5000 && ms <= 10000, `LIVING_DURATION is ${ms}ms`);
+});
+
+test('the frame loop treats the animation as busy, and it can end itself', () => {
+  const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  assert.match(game, /const busy = [^;]*board\.living/s,
+    'frame() must run at full rate while the element is alive');
+  const render = fs.readFileSync(path.join(ROOT, 'src/render.js'), 'utf8');
+  // The numberOverride mistake: an indefinite flag in `busy` pins the loop to
+  // 60fps forever. This one has to clear itself when its window closes.
+  assert.match(render, /timeMs >= live\.end\)\s*\{\s*(\/\/[^\n]*\n\s*)*this\.living = null/,
+    'drawLiving() must clear this.living once the window has closed');
+  assert.match(render, /if \(!next\) this\.living = null/,
+    'leaving photo view must end the animation immediately');
 });

@@ -28,6 +28,19 @@ const HINT_FADE = 400;
 // smallest Insane-detail sliver can be pushed back over the number threshold.
 const MAX_ZOOM = 6;
 
+// One element of a finished picture brought to life while the photo is on
+// screen. The window is deliberately short and self-closing: it plays, it
+// settles, the picture goes back to being a still photograph.
+export const LIVING_EFFECTS = ['ripple', 'glow', 'shimmer', 'breathe', 'twinkle'];
+const LIVING_DURATION = 7000; // inside the 5-10s the effect should play for
+const LIVING_IN = 500;        // fade the motion in rather than snapping to it
+const LIVING_OUT = 1200;      // ...and ease it back out so it settles
+
+/** Fractional part — a cheap deterministic scatter for the twinkle sparks.
+ *  Deterministic matters: the same picture should twinkle the same way every
+ *  time you look at it, not re-roll its stars on each visit. */
+const frac = (n) => n - Math.floor(n);
+
 /** data:mime;base64,xxx -> Blob, without a network-facing fetch() — see the
  *  comment where this is called for why that distinction matters. */
 function dataUriToBlob(uri) {
@@ -60,6 +73,9 @@ export class Board {
 
     this.sourceBitmap = null; // the real photo, once decoded — see setPuzzle()
     this.showSource = false;  // true = showing it instead of the painted cells
+    // One element of the picture brought to life while the photo is on
+    // screen. { effect, cells:[id], start, end } — see drawLiving().
+    this.living = null;
 
     this.dpr = 1;
     this.fitScale = 1;  // fit-to-container scale, before zoom
@@ -109,6 +125,7 @@ export class Board {
     this.goldenCell = null;
 
     this.showSource = false;
+    this.living = null;
     this.sourceBitmap?.close();
     this.sourceBitmap = null;
     if (puzzle.sourceImage) {
@@ -138,8 +155,39 @@ export class Board {
     if (this.showSource !== next) {
       this.showSource = next;
       this.dirty = true;
+      // The effect only ever plays over the photo. Leaving photo view ends
+      // it immediately rather than letting it run down invisibly and hold
+      // the frame loop at full rate for nothing.
+      if (!next) this.living = null;
     }
     return next;
+  }
+
+  /**
+   * Starts (or restarts) the living-element window for this picture.
+   *
+   * @param {object|null} spec  the puzzle's `animation` field:
+   *   { effect, cells: number[], speed?, amplitude? }. Anything missing,
+   *   unknown or empty is simply no animation — an untagged picture is the
+   *   overwhelmingly common case and must cost nothing.
+   * @param {number} timeMs  the same clock draw() is given.
+   */
+  startLiving(spec, timeMs) {
+    this.living = null;
+    if (!spec || !this.showSource) return;
+    if (!LIVING_EFFECTS.includes(spec.effect)) return;
+    const cells = (spec.cells ?? []).filter((id) => this.cells[id]?.path);
+    if (!cells.length) return;
+    this.living = {
+      effect: spec.effect,
+      cells,
+      speed: spec.speed > 0 ? spec.speed : 1,
+      amplitude: spec.amplitude > 0 ? spec.amplitude : 1,
+      start: timeMs,
+      end: timeMs + LIVING_DURATION,
+      clip: null,  // built lazily on the first frame, then reused
+      box: null,
+    };
   }
 
   /** Keeps panX/panY from letting the picture drift entirely off-screen. */
@@ -439,8 +487,12 @@ export class Board {
     ctx.drawImage(this.base, sx * this.dpr, sy * this.dpr);
 
     // Just the photo — no pulses, hover outline, hints or bursts to paint
-    // over it with.
-    if (this.showSource) return;
+    // over it with. The one exception is the living element, which is the
+    // photo's own content moving rather than an overlay about the puzzle.
+    if (this.showSource) {
+      if (this.living) this.drawLiving(timeMs, sx, sy);
+      return;
+    }
 
     this.applyTransform(ctx, sx, sy);
 
@@ -558,6 +610,208 @@ export class Board {
         burst.drawBlobs(ctx);
       }
       ctx.restore();
+    }
+  }
+
+  /* --------------------------------------------------- the living element */
+
+  /**
+   * The clip path — the union of the tagged cells, so the effect follows the
+   * thing's real silhouette rather than a rectangle around it — plus its
+   * bounding box in picture units. Built once per window, reused every frame.
+   */
+  livingShape() {
+    const live = this.living;
+    if (live.clip) return live;
+    const clip = new Path2D();
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const id of live.cells) {
+      const cell = this.cells[id];
+      clip.addPath(cell.path);
+      x0 = Math.min(x0, cell.bounds.x0);
+      y0 = Math.min(y0, cell.bounds.y0);
+      x1 = Math.max(x1, cell.bounds.x1);
+      y1 = Math.max(y1, cell.bounds.y1);
+    }
+    live.clip = clip;
+    live.box = { x0, y0, x1, y1 };
+    return live;
+  }
+
+  /**
+   * Draws the tagged element's motion over the photo.
+   *
+   * The base layer already holds the photograph and is never erased, so
+   * every effect here composites on top of an intact picture. That is what
+   * makes the re-sampling effects safe: cells tile the canvas with no gaps,
+   * so *moving* a region would tear a hole in the image with nothing behind
+   * it to show.
+   */
+  drawLiving(timeMs, shakeX = 0, shakeY = 0) {
+    const live = this.living;
+    if (timeMs >= live.end) {
+      // Self-closing: game.js's busy flag watches board.living, so clearing
+      // it here is what lets the frame loop drop back to its idle cadence.
+      this.living = null;
+      return;
+    }
+    // Wake into the motion and settle back out of it, rather than snapping
+    // on and stopping dead mid-cycle.
+    const strength = Math.min(1, (timeMs - live.start) / LIVING_IN)
+      * Math.min(1, (live.end - timeMs) / LIVING_OUT);
+    if (strength <= 0) return;
+
+    const { box } = this.livingShape();
+    const t = ((timeMs - live.start) / 1000) * live.speed;
+    const ctx = this.ctx;
+
+    ctx.save();
+    // Clip in picture units. A clip is stored in device space, so it keeps
+    // holding after the transform is reset for the device-space effects.
+    this.applyTransform(ctx, shakeX, shakeY);
+    ctx.clip(live.clip);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+    // The region in device pixels, for the effects that re-sample the base.
+    // Padded by a pixel or two so a band never falls short of its own
+    // clipped edge and leaves a hairline of untouched photo.
+    const k = this.scale * this.dpr;
+    const ox = (this.offsetX + shakeX) * this.dpr;
+    const oy = (this.offsetY + shakeY) * this.dpr;
+    const x0 = Math.max(0, Math.floor(ox + box.x0 * k) - 2);
+    const y0 = Math.max(0, Math.floor(oy + box.y0 * k) - 2);
+    const x1 = Math.min(this.canvas.width, Math.ceil(ox + box.x1 * k) + 2);
+    const y1 = Math.min(this.canvas.height, Math.ceil(oy + box.y1 * k) + 2);
+    const rect = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    // The base was blitted at the shake offset; sampling it back has to undo
+    // that to land on the same pixels again.
+    const back = { x: shakeX * this.dpr, y: shakeY * this.dpr };
+
+    if (rect.w > 0 && rect.h > 0) {
+      switch (live.effect) {
+        case 'ripple': this.livingRipple(ctx, rect, back, live, t, strength); break;
+        case 'breathe': this.livingBreathe(ctx, rect, back, live, t, strength); break;
+        case 'glow': this.livingGlow(ctx, rect, live, t, strength); break;
+        case 'shimmer': this.livingShimmer(ctx, rect, live, t, strength); break;
+        case 'twinkle': this.livingTwinkle(ctx, live, t, strength, shakeX, shakeY); break;
+      }
+    }
+    ctx.restore();
+  }
+
+  /** Water, a flag, a reflection: a travelling sideways wave. */
+  livingRipple(ctx, rect, back, live, t, strength) {
+    const amp = 3 * this.dpr * live.amplitude * strength;
+    // One blit per band, so the band height is capped from below by the
+    // region's own size: a full-picture region on a 3x phone would otherwise
+    // cost several hundred blits a frame for motion no one can see.
+    const band = Math.max(2 * this.dpr, Math.ceil(rect.h / 120));
+    const wavelength = 46 * this.dpr;
+    // Sample-shifted, not draw-shifted. Every destination band is drawn at
+    // its own place from a source band nudged sideways, so the destination
+    // is always fully covered — draw-shifting would leave gaps between
+    // bands that disagree about how far to move.
+    const hi = rect.x + back.x;
+    const lo = hi - (this.canvas.width - rect.w);
+    for (let y = rect.y; y < rect.y + rect.h; y += band) {
+      const h = Math.min(band, rect.y + rect.h - y);
+      // Clamped so a band near the canvas edge never samples off it, which
+      // would punch a transparent hole straight through the photo.
+      const dx = Math.max(lo, Math.min(hi, amp * Math.sin(y / wavelength - t * 2.4)));
+      const sy = Math.max(0, Math.min(this.canvas.height - h, y + back.y));
+      ctx.drawImage(this.base, rect.x - dx + back.x, sy, rect.w, h, rect.x, y, rect.w, h);
+    }
+  }
+
+  /** A slow swell — something alive and at rest. Outward only, so the region
+   *  always covers at least its own footprint and never pulls back off the
+   *  photo behind it. */
+  livingBreathe(ctx, rect, back, live, t, strength) {
+    const grow = 1 + 0.045 * live.amplitude * strength * (0.5 - 0.5 * Math.cos(t * 1.6));
+    const w = rect.w / grow;
+    const h = rect.h / grow;
+    ctx.drawImage(
+      this.base,
+      rect.x + (rect.w - w) / 2 + back.x, rect.y + (rect.h - h) / 2 + back.y, w, h,
+      rect.x, rect.y, rect.w, rect.h,
+    );
+  }
+
+  /** A lantern, a window, embers: the whole silhouette breathing light. */
+  livingGlow(ctx, rect, live, t, strength) {
+    const pulse = 0.5 - 0.5 * Math.cos(t * 1.9);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = Math.min(0.45, strength * live.amplitude * (0.05 + 0.2 * pulse));
+    ctx.fillStyle = '#ffe6a8';
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+  }
+
+  /** Glass, metal, silk: a highlight band sweeping across the surface. */
+  livingShimmer(ctx, rect, live, t, strength) {
+    const band = Math.max(8 * this.dpr, rect.w * 0.18);
+    const travel = rect.w + band * 4;
+    const cx = rect.x - band * 2 + travel * ((t * 0.45) % 1);
+    const grad = ctx.createLinearGradient(cx - band, rect.y, cx + band, rect.y + rect.h);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+    grad.addColorStop(0.5, 'rgba(255, 255, 255, 1)');
+    grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = Math.min(0.5, 0.3 * live.amplitude * strength);
+    ctx.fillStyle = grad;
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+  }
+
+  /** Stars, fairy lights, frost: a scatter of sparks fading in and out.
+   *  Drawn in picture units — a spark should grow with the picture when you
+   *  zoom in, the way the thing it sits on does. */
+  livingTwinkle(ctx, live, t, strength, shakeX, shakeY) {
+    this.applyTransform(ctx, shakeX, shakeY);
+    ctx.globalCompositeOperation = 'lighter';
+    const { box } = live;
+    const unit = Math.min(box.x1 - box.x0, box.y1 - box.y0) * 0.035;
+    let seed = 0;
+    for (const id of live.cells) {
+      const cell = this.cells[id];
+      // Anchors sit inside their own cell, so jittering within the inscribed
+      // radius keeps a spark on the thing rather than on the clip's edge.
+      const spread = cell.inradius * 0.8;
+      for (let i = 0; i < 3; i++) {
+        seed++;
+        const jx = frac(seed * 0.7548776662) * 2 - 1;
+        const jy = frac(seed * 0.5698402909) * 2 - 1;
+        const phase = frac(seed * 0.3819660113) * Math.PI * 2;
+        const a = Math.sin(t * 2.2 + phase);
+        if (a <= 0.02) continue;
+        const x = cell.anchor.x + jx * spread;
+        const y = cell.anchor.y + jy * spread;
+        const size = unit * (0.6 + 0.4 * a) * live.amplitude;
+        ctx.globalAlpha = Math.min(1, a * strength * 0.9);
+
+        const halo = ctx.createRadialGradient(x, y, 0, x, y, size * 1.6);
+        halo.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+        halo.addColorStop(0.35, 'rgba(255, 246, 214, 0.45)');
+        halo.addColorStop(1, 'rgba(255, 246, 214, 0)');
+        ctx.fillStyle = halo;
+        ctx.beginPath();
+        ctx.arc(x, y, size * 1.6, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Two crossed tapered spikes — what makes it read as a spark rather
+        // than a smudge of light.
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+        ctx.beginPath();
+        ctx.moveTo(x - size * 2.4, y);
+        ctx.lineTo(x, y - size * 0.32);
+        ctx.lineTo(x + size * 2.4, y);
+        ctx.lineTo(x, y + size * 0.32);
+        ctx.closePath();
+        ctx.moveTo(x, y - size * 2.4);
+        ctx.lineTo(x + size * 0.32, y);
+        ctx.lineTo(x, y + size * 2.4);
+        ctx.lineTo(x - size * 0.32, y);
+        ctx.closePath();
+        ctx.fill();
+      }
     }
   }
 }

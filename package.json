@@ -13,6 +13,7 @@
     "icon": "node tools/make-icon.mjs",
     "verify": "node tools/verify-puzzle.mjs",
     "preview": "node tools/preview.mjs",
+    "tag": "node tools/tag-animation.mjs",
     "smoke": "electron . --smoke",
     "build:web": "node tools/build-web.mjs",
     "check:web": "node tools/build-web.mjs && node tools/check-web.mjs",
