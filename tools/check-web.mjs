@@ -283,6 +283,26 @@ if (!secondTap) {
       ev: window.__ev, paintLog: window.__paintLog,
     };
   }, target2)));
+
+  // Is touch delivery wedged from here on, or was this one tap swallowed?
+  await page.evaluate(() => { window.__ev = []; window.__paintLog = []; });
+  await page.touchscreen.tap(target2.x, target2.y);
+  await new Promise((r) => setTimeout(r, 900));
+  console.log('CIDEBUG retry', JSON.stringify(await page.evaluate(() => ({
+    ev: window.__ev, paintLog: window.__paintLog,
+    bursts: window.__paintblobTest.state.bursts.length,
+    filled: window.__paintblobTest.state.filled.size,
+  }))));
+
+  // And does a mouse click at the same point get through?
+  await page.evaluate(() => { window.__ev = []; window.__paintLog = []; });
+  await page.mouse.click(target2.x, target2.y);
+  await new Promise((r) => setTimeout(r, 900));
+  console.log('CIDEBUG mouse', JSON.stringify(await page.evaluate(() => ({
+    ev: window.__ev, paintLog: window.__paintLog,
+    bursts: window.__paintblobTest.state.bursts.length,
+    filled: window.__paintblobTest.state.filled.size,
+  }))));
 }
 check('a tap still paints after zoom and pan', secondTap,
   await page.evaluate(() => document.getElementById('barSubtitle').textContent));
