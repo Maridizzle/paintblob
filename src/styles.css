@@ -232,8 +232,14 @@ button {
   flex-direction: column-reverse;
   align-items: center;
   gap: 6px;
+  /* The container is transparent but still hit-tests, so its padding and the
+     gaps between its children would swallow taps meant for the cells beneath
+     it. Only the controls themselves take pointer events. */
+  pointer-events: none;
   -webkit-app-region: no-drag;
 }
+.avatar-widget .avatar-pill,
+.avatar-widget .ability-btn { pointer-events: auto; }
 
 /* Reuses the .bar/.bar > i progress primitive; only the width and placement
    differ. Matches the pill's width so the two read as one control. */
