@@ -254,6 +254,27 @@ const secondTap = await page.waitForFunction(
   null,
   { timeout: 10000, polling: 100 },
 ).then(() => true).catch(() => false);
+if (!secondTap) {
+  console.log('CIDEBUG', JSON.stringify(await page.evaluate((t) => {
+    const { board, state } = window.__paintblobTest;
+    const w = document.getElementById('avatarWidget').getBoundingClientRect();
+    const b = document.getElementById('board').getBoundingClientRect();
+    const el = document.elementFromPoint(t.x, t.y);
+    const path = document.elementsFromPoint(t.x, t.y).map((n) => `${n.tagName}#${n.id}`);
+    return {
+      tap: t,
+      widget: { l: Math.round(w.left), t: Math.round(w.top), r: Math.round(w.right), b: Math.round(w.bottom) },
+      board: { l: Math.round(b.left), t: Math.round(b.top), r: Math.round(b.right), b: Math.round(b.bottom) },
+      tapInsideWidget: t.x >= w.left && t.x <= w.right && t.y >= w.top && t.y <= w.bottom,
+      hit: el ? `${el.tagName}#${el.id}` : null, path,
+      dbg: window.__dbg(),
+      zoom: board.zoom, panX: board.panX, panY: board.panY,
+      selected: state.selected, filled: state.filled.size,
+      bursts: state.bursts.length, pending: state.pending.size,
+      elapsedMs: Math.round(state.elapsedMs),
+    };
+  }, target2)));
+}
 check('a tap still paints after zoom and pan', secondTap,
   await page.evaluate(() => document.getElementById('barSubtitle').textContent));
 

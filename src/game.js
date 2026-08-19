@@ -52,6 +52,8 @@ const S = {
 // real cell instead of spraying screen coordinates and hoping one lands —
 // normal play never touches this.
 window.__paintblobTest = { board, state: S };
+// TEMPORARY (bisect): CI-only failure diagnostics, removed once understood.
+window.__dbg = () => ({ pointers: [...pointers.keys()], tap, pinch, panning });
 
 /* ---------------------------------------------------------------- persistence */
 
