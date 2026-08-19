@@ -3,19 +3,29 @@
 //
 // The tagging itself is a judgement call — which element should move, and
 // which of the five effects suits it — so this tool's job is to put the
-// picture in front of you with its cell ids legible, let you name a region,
-// and then show you the result moving before you commit it.
+// picture in front of you, let you name a region, and then show you the
+// result moving before you commit it. Every run renders the map; a run on an
+// already-tagged picture also renders frames across the whole window.
 //
-//   node tools/tag-animation.mjs koi-pond                     # map the cells
-//   node tools/tag-animation.mjs koi-pond --colour 3          # which cells are that tub?
-//   node tools/tag-animation.mjs koi-pond --box 200,600,700,880
-//   node tools/tag-animation.mjs koi-pond --set ripple --cells 11,13 --speed 0.8
-//   node tools/tag-animation.mjs koi-pond --play              # frames across the window
+//   node tools/tag-animation.mjs koi-pond            # map it, and see any existing tag move
+//   node tools/tag-animation.mjs koi-pond --palette  # list the tubs, for --colour
+//   node tools/tag-animation.mjs koi-pond --box 200,600,700,880 --colour 3,7
+//   node tools/tag-animation.mjs koi-pond --set ripple --cells 6,12,15 --speed 0.8
 //   node tools/tag-animation.mjs koi-pond --clear
 //
-// Writes into puzzles/animations.json, which tools/mapify.mjs injects back
-// into the puzzle JSON on every bake — see animationFor() there for why the
-// tags cannot simply live in the puzzle file.
+//   --box x0,y0,x1,y1   cells whose anchor is inside this picture-unit box
+//   --colour n[,n...]   cells of these palette indices (tub number minus one)
+//   --cells a,b,c       exact ids; overrides --box/--colour entirely
+//   --set <effect>      commit the selection (ripple|glow|shimmer|breathe|twinkle)
+//   --speed, --amplitude   default 1 each; >1 is faster / stronger
+//   --ids               label every cell id even on a dense picture
+//   --out <dir>, --head    where the renders go; run the browser visibly
+//
+// --box and --colour intersect, which is what isolates one thing in a busy
+// picture. Writing a tag also writes it straight into puzzles/<id>.json — see
+// tools/apply-animations.mjs for why that second step is not optional.
+//
+// Full instructions, including how to choose an effect: docs/animating-pictures.md
 
 import fs from 'node:fs';
 import http from 'node:http';
@@ -24,6 +34,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 
 import { findChromium } from './lib/chromium.mjs';
+import { applyAnimations } from './apply-animations.mjs';
 import { LIVING_EFFECTS } from '../src/render.js';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -65,20 +76,39 @@ function writeSidecar(tags) {
   const ordered = Object.fromEntries(Object.entries(tags)
     .sort(([a], [b]) => (a.startsWith('_') === b.startsWith('_') ? a.localeCompare(b) : a.startsWith('_') ? -1 : 1)));
   fs.writeFileSync(SIDECAR, `${JSON.stringify(ordered, null, 2)}\n`);
+  // Straight into the puzzle files too. A weekly mystery picture is baked
+  // once and its source photo is then deleted, so there is no later bake to
+  // inject the tag — writing the sidecar alone would leave it inert.
+  const { changed } = applyAnimations();
+  if (changed.length) console.log(`updated puzzles/: ${changed.join(', ')}`);
 }
 
 /* ------------------------------------------- picking cells without a browser */
 
-/** Cells whose anchor falls inside a picture-unit box. */
-function cellsInBox(box) {
-  const [x0, y0, x1, y1] = box;
-  return puzzle.cells
-    .map((c, i) => ({ ...c, i }))
-    .filter((c) => c.x >= x0 && c.x <= x1 && c.y >= y0 && c.y <= y1)
-    .map((c) => c.i);
-}
+/**
+ * The chosen cells, by any combination of the three selectors.
+ *
+ * --cells wins outright when given. Otherwise --box and --colour *intersect*:
+ * on a 500-cell picture a box alone sweeps up the whole sky along with the
+ * aurora, and a colour alone grabs every green in the picture including the
+ * ones on the far side of it. "Green, in this rectangle" is the selector that
+ * actually isolates a thing.
+ */
+function select() {
+  if (has('cells')) return flag('cells').split(',').map((s) => Number(s.trim()));
+  if (!has('box') && !has('colour') && !has('color')) return null;
 
-const cellsOfColour = (n) => puzzle.cells.map((c, i) => (c.c === n ? i : -1)).filter((i) => i >= 0);
+  const box = has('box') ? flag('box').split(',').map(Number) : null;
+  const colours = has('colour') || has('color')
+    ? new Set(String(flag('colour', flag('color'))).split(',').map((s) => Number(s.trim())))
+    : null;
+
+  return puzzle.cells
+    .map((c, i) => ({ c, i }))
+    .filter(({ c }) => !box || (c.x >= box[0] && c.x <= box[2] && c.y >= box[1] && c.y <= box[3]))
+    .filter(({ c }) => !colours || colours.has(c.c))
+    .map(({ i }) => i);
+}
 
 function describe(ids) {
   for (const i of ids) {
@@ -89,19 +119,24 @@ function describe(ids) {
   }
 }
 
-if (has('colour') || has('color')) {
-  const n = Number(flag('colour', flag('color')));
-  console.log(`tub ${n + 1} — ${puzzle.palette[n]?.name ?? '?'}`);
-  describe(cellsOfColour(n));
+// The palette, so a colour can be chosen without guessing its index. Tub
+// numbers are what the game shows; --colour takes the zero-based index.
+if (has('palette')) {
+  puzzle.palette.forEach((p, i) => {
+    const n = puzzle.cells.filter((c) => c.c === i).length;
+    console.log(`  --colour ${String(i).padStart(2)}  (tub ${String(i + 1).padStart(2)})  `
+      + `${p.hex}  ${p.name.padEnd(24)} ${n} cell(s)`);
+  });
 }
 
-let selected = null;
-if (has('cells')) selected = flag('cells').split(',').map((s) => Number(s.trim()));
-else if (has('box')) selected = cellsInBox(flag('box').split(',').map(Number));
+const selected = select();
 
-if (has('box') && !has('set')) {
-  console.log(`cells with an anchor inside ${flag('box')}:`);
+if (selected && !has('set')) {
+  console.log(`${selected.length} cell(s) selected:`);
   describe(selected);
+  console.log('\nlook at map-photo.png — the selection is highlighted cyan.'
+    + ' Narrow it with --box/--colour until it is only the thing you want,'
+    + ' then re-run with --set <effect> to commit it.');
 }
 
 if (has('clear')) {
@@ -215,43 +250,83 @@ await page.waitForFunction(() => window.__paintblobTest.board.sourceBitmap, null
 
 const step = (ms) => page.evaluate((m) => window.__clock.step(m), ms);
 
-/** Redraw at the current virtual time, then label every cell over the top. */
-async function shoot(file, { photo, labels = true, ids = [] }) {
-  await page.evaluate(({ photo: p, labels: l, ids: on }) => {
+// Above this many cells, printing every id turns the map into an unreadable
+// wall of digits — and every weekly mystery picture is 500 cells. Dense
+// pictures get the coordinate grid instead, and are selected with --box or
+// --colour; only the chosen cells are ever labelled. `--ids` forces the full
+// set back on.
+const ID_LIMIT = 60;
+const labelAll = has('ids') || puzzle.cells.length <= ID_LIMIT;
+
+/** Redraw at the current virtual time, then overlay the grid and the labels. */
+async function shoot(file, { photo, ids = [] }) {
+  await page.evaluate(({ photo: p, ids: on, all }) => {
     const { board } = window.__paintblobTest;
+    const picked = new Set(on);
     board.setShowSource(p);
     board.draw([], performance.now());
-    if (!l) return;
+
     const ctx = board.canvas.getContext('2d');
     ctx.save();
     board.applyTransform(ctx);
     ctx.lineJoin = 'round';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    const px = (n) => n / board.scale; // constant on-screen size at any zoom
+    const label = (text, x, y, colour) => {
+      ctx.font = `700 ${px(17)}px system-ui, sans-serif`;
+      ctx.lineWidth = px(4);
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+      ctx.strokeText(text, x, y);
+      ctx.fillStyle = colour;
+      ctx.fillText(text, x, y);
+    };
+
+    // Outlines first: every cell faint, the chosen ones bright and filled.
     for (const cell of board.cells) {
-      const picked = on.includes(cell.id);
-      ctx.lineWidth = (picked ? 3 : 1) / board.scale;
-      ctx.strokeStyle = picked ? 'rgba(0, 224, 255, 0.95)' : 'rgba(255, 255, 255, 0.45)';
+      const on2 = picked.has(cell.id);
+      ctx.lineWidth = px(on2 ? 3 : 1);
+      ctx.strokeStyle = on2 ? 'rgba(0, 224, 255, 0.95)' : 'rgba(255, 255, 255, 0.4)';
       ctx.stroke(cell.path);
-      if (picked) {
-        ctx.fillStyle = 'rgba(0, 224, 255, 0.18)';
+      if (on2) {
+        ctx.fillStyle = 'rgba(0, 224, 255, 0.22)';
         ctx.fill(cell.path);
       }
-      ctx.font = `700 ${17 / board.scale}px system-ui, sans-serif`;
-      ctx.lineWidth = 4 / board.scale;
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
-      ctx.strokeText(String(cell.id), cell.anchor.x, cell.anchor.y);
-      ctx.fillStyle = picked ? '#00e0ff' : '#ffffff';
-      ctx.fillText(String(cell.id), cell.anchor.x, cell.anchor.y);
+    }
+
+    // The coordinate grid, in picture units — what --box is written in.
+    const { width, height } = board.puzzle;
+    const raw = Math.max(width, height) / 8;
+    const step = Math.max(50, Math.round(raw / 50) * 50);
+    ctx.lineWidth = px(1);
+    ctx.strokeStyle = 'rgba(255, 80, 200, 0.55)';
+    ctx.beginPath();
+    for (let x = step; x < width; x += step) { ctx.moveTo(x, 0); ctx.lineTo(x, height); }
+    for (let y = step; y < height; y += step) { ctx.moveTo(0, y); ctx.lineTo(width, y); }
+    ctx.stroke();
+    for (let x = step; x < width; x += step) label(String(x), x, px(14), '#ff7ad0');
+    for (let y = step; y < height; y += step) label(String(y), px(24), y, '#ff7ad0');
+
+    // Ids last, so they sit over everything.
+    for (const cell of board.cells) {
+      const on2 = picked.has(cell.id);
+      if (!all && !on2) continue;
+      label(String(cell.id), cell.anchor.x, cell.anchor.y, on2 ? '#00e0ff' : '#ffffff');
     }
     ctx.restore();
-  }, { photo, labels, ids });
+  }, { photo, ids, all: labelAll });
   await page.locator('#board').screenshot({ path: path.join(outDir, file) });
 }
 
 await shoot('map-painting.png', { photo: false, ids: highlight });
 await shoot('map-photo.png', { photo: true, ids: highlight });
 console.log(`\nmap: ${path.relative(ROOT, outDir)}/map-painting.png, map-photo.png`);
+console.log(labelAll
+  ? `  every cell id is labelled (${puzzle.cells.length} cells)`
+  : `  ${puzzle.cells.length} cells — too many to label, so only the grid is`
+    + ' shown. Read a region off the pink coordinate grid and select it with'
+    + ' --box x0,y0,x1,y1 (or --colour n); the cells you pick come back'
+    + ' highlighted and numbered on the next run.');
 
 // --- the effect actually moving -------------------------------------------
 // Nothing else in the loop tells you whether the motion reads as the thing
