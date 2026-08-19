@@ -242,18 +242,6 @@ check('zoom pill resets to 100%', zoomReset);
 // which case the game will have moved on to the next one). Read the live
 // state and its own screen transform via window.__paintblobTest (see
 // src/game.js) rather than assume a second cell of the first tub exists.
-// The pinch and drag above are synthetic PointerEvents: the page saw a full
-// gesture the browser's input pipeline never did. Chromium drops the first
-// *real* touch after that mismatch — it allocates a pointer id and delivers no
-// pointer or touch event to the page at all, so the app never learns a finger
-// landed. A harmless tap on the title bar absorbs the dropped one, leaving the
-// tap that matters to be delivered and judged on its merits.
-const primer = await page.evaluate(() => {
-  const r = document.querySelector('#bar .title').getBoundingClientRect();
-  return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-});
-await page.touchscreen.tap(primer.x, primer.y);
-
 const target2 = await page.evaluate(() => {
   const { board, state } = window.__paintblobTest;
   const cell = state.cells.find((c) => c.colour === state.selected && !state.filled.has(c.id));
