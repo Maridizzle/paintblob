@@ -59,21 +59,38 @@ Everything below runs from the repo root.
 
 ---
 
+## 1a. When this happens, and why the window is what it is
+
+Three scheduled workflows, every Monday:
+
+| UTC | workflow | what it does |
+|---|---|---|
+| 13:00 | `weekly-mystery.yml` | bakes 5 queued photos into puzzles, **commits, stops** |
+| 14:00 | `weekly-animate.yml` | renders a map per untagged picture, files the handoff issue |
+| 20:00 | `weekly-release.yml` | bumps the version and pushes the tag, which publishes |
+
+**You cannot do this before the Monday bake.** A picture's cell ids do not
+exist until it has been built, and the tag is a list of cell ids. There is
+nothing to point at until 13:00.
+
+**You should not do it after 20:00**, either — not because anything breaks,
+but because that week's release is already out. A tag written on Tuesday
+ships the following Monday, and the picture spends its first week lifeless.
+The six-hour window between the bake and the release exists exactly for this.
+
+If you miss the window, tag anyway. It ships a week later, which is fine.
+Do **not** try to cut a release yourself to catch up.
+
+Always **`git pull` first.** The bake commits directly to the branch, so a
+stale checkout will not have the pictures you were asked to tag.
+
 ## 2. Find the pictures that need tagging
 
 ```bash
-node -e "
-const fs=require('fs');
-const tags=JSON.parse(fs.readFileSync('puzzles/animations.json','utf8'));
-for (const p of JSON.parse(fs.readFileSync('puzzles/manifest.json','utf8')))
-  console.log((tags[p.id] ? '[tagged] ' : '[  --   ] ') + p.id);
-"
+node tools/untagged-pictures.mjs
 ```
 
-Anything showing `[  --   ]` is a candidate. Weekly mystery pictures arrive
-already baked, via `.github/workflows/weekly-mystery.yml`, so **`git pull`
-first** — you can only tag a picture that already exists as
-`puzzles/<id>.json`.
+Anything showing `[ untagged ]` is a candidate.
 
 ---
 

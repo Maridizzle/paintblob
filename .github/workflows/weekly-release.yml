@@ -1,0 +1,48 @@
+name: weekly-release
+
+# Cuts the week's version, seven hours after weekly-mystery.yml bakes the new
+# pictures. The gap is deliberate: a picture's cell ids do not exist until it
+# has been baked, so its animation tag can only be chosen afterwards (see
+# docs/animating-pictures.md). Bundling the version bump into the bake would
+# ship every picture lifeless and animate it a week late.
+#
+# Pushing the vX.Y.Z tag is what triggers release.yml to build and publish.
+# Run by hand from the Actions tab to cut a release at any other time.
+on:
+  schedule: [{ cron: '0 20 * * MON' }]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # npm version needs the full tag history to know what the last
+          # release was, and the guard below counts commits since it.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Cut the version, if there is anything to release
+        run: |
+          set -euo pipefail
+          last=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+          if [ -n "$last" ] && [ "$(git rev-list --count "$last"..HEAD)" -eq 0 ]; then
+            # A week whose queue came up short leaves nothing new on the
+            # branch. Releasing anyway would republish identical installers
+            # under a new version number.
+            echo "nothing new since $last — no release cut"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          npm version patch
+          # --follow-tags pushes the version-bump commit and its vX.Y.Z tag
+          # together; the tag is what release.yml listens for.
+          git push --follow-tags origin HEAD:${{ github.ref_name }}

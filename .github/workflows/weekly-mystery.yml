@@ -3,8 +3,15 @@ name: weekly-mystery
 # Bakes five new mystery pictures straight into the app's bundled puzzle
 # library (puzzles/*.json + puzzles/manifest.json, blind: true — the same
 # way the 4 demo puzzles ship) from whatever source photos are queued in
-# puzzles/queue/, then cuts a new app version so they're just *there* the
-# next time someone is on that version — no download, no drag-and-drop.
+# puzzles/queue/, so they're just *there* the next time someone is on a
+# version that includes them — no download, no drag-and-drop.
+#
+# This job commits, and stops. Cutting the version is weekly-release.yml's
+# job, seven hours later. The gap exists because a picture's cell ids do not
+# exist until it has been baked, so its animation tag (see
+# docs/animating-pictures.md) can only be chosen afterwards — and if the
+# release went out with this commit, every picture would arrive lifeless and
+# only come alive a week later.
 #
 # Run by hand from the Actions tab to ship early, or to retry a week whose
 # queue came up short.
@@ -37,17 +44,16 @@ jobs:
       # same check ci.yml runs after `npm run seed`.
       - run: npm run verify
 
-      - name: Commit the new pictures and cut a release
+      - name: Commit the new pictures
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           git add puzzles
           git commit -m "Weekly mystery pictures: $(date -u +%F)"
-          npm version patch
+          # No version bump and no tag here — weekly-release.yml cuts those
+          # once there has been time to animate the new pictures.
           # github.event.repository.default_branch is unset on `schedule`
-          # triggers — github.ref_name is the branch actually checked out,
-          # on every trigger this workflow uses. --follow-tags pushes the
-          # version-bump commit and its vX.Y.Z tag together; the pushed tag
-          # is what triggers release.yml to actually build and publish.
-          git push --follow-tags origin HEAD:${{ github.ref_name }}
+          # triggers; github.ref_name is the branch actually checked out, on
+          # every trigger this workflow uses.
+          git push origin HEAD:${{ github.ref_name }}
