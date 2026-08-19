@@ -248,6 +248,14 @@ const target2 = await page.evaluate(() => {
   return cell ? board.toScreen(cell.anchor.x, cell.anchor.y) : null;
 });
 check('a second unfilled cell of the held tub exists to tap', !!target2, JSON.stringify(target2));
+await page.evaluate(() => {
+  window.__paintLog.length = 0;
+  window.__ev = [];
+  const bd = document.getElementById('board');
+  for (const t of ['pointerdown', 'pointerup', 'pointercancel', 'touchstart', 'touchend']) {
+    bd.addEventListener(t, (e) => window.__ev.push(`${t}:${e.pointerId ?? 't'}`), true);
+  }
+});
 await page.touchscreen.tap(target2.x, target2.y);
 const secondTap = await page.waitForFunction(
   () => /· [2-9]\d*\//.test(document.getElementById('barSubtitle').textContent),
@@ -272,6 +280,7 @@ if (!secondTap) {
       selected: state.selected, filled: state.filled.size,
       bursts: state.bursts.length, pending: state.pending.size,
       elapsedMs: Math.round(state.elapsedMs),
+      ev: window.__ev, paintLog: window.__paintLog,
     };
   }, target2)));
 }

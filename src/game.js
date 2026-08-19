@@ -54,6 +54,7 @@ const S = {
 window.__paintblobTest = { board, state: S };
 // TEMPORARY (bisect): CI-only failure diagnostics, removed once understood.
 window.__dbg = () => ({ pointers: [...pointers.keys()], tap, pinch, panning });
+window.__paintLog = [];
 
 /* ---------------------------------------------------------------- persistence */
 
@@ -388,8 +389,10 @@ $('board').addEventListener('wheel', (e) => {
 
 /** Resolves a settled tap: paint the cell underneath it, if there is one. */
 function tryPaint(clientX, clientY, pointerType) {
-  if (S.finished) return;
+  window.__paintLog?.push(`enter ${Math.round(clientX)},${Math.round(clientY)} ${pointerType}`);
+  if (S.finished) { window.__paintLog?.push('exit finished'); return; }
   const { point, cell } = pointerToCell(clientX, clientY);
+  window.__paintLog?.push(`cell ${cell ? `${cell.id}/c${cell.colour}` : 'none'} sel=${S.selected}`);
 
   // Aimed squarely at an unpainted cell of another colour: that is a genuine
   // mistake and deserves the buzz, not a silent correction — unless Streak
@@ -400,6 +403,7 @@ function tryPaint(clientX, clientY, pointerType) {
       syncAbilityRow();
       return;
     }
+    window.__paintLog?.push('exit wrong-colour');
     sfx.play('nope');
     streaks.wrong();
     const tub = $('tubs').children[cell.colour];
@@ -424,8 +428,9 @@ function tryPaint(clientX, clientY, pointerType) {
       radius: slack,
     });
   }
-  if (!target) return;
+  if (!target) { window.__paintLog?.push('exit no-target'); return; }
 
+  window.__paintLog?.push(`launch ${target.id}`);
   launch(target, point);
 }
 
