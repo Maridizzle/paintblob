@@ -67,6 +67,10 @@ const DEFAULT_SAVE = {
     },
     unlocked: ['shirt-basic', 'bottoms-basic', 'socks-basic', 'shoes-basic'],
     abilities: {},
+    // Shape only — boot() fills this from house.js's defaultHouse(), which is
+    // the single source of truth for which room, props, lighting and pet a new
+    // player starts with.
+    house: null,
   },
 };
 

@@ -586,3 +586,116 @@ test('both DEFAULT_SAVE literals ship the blob opacity, and boot backfills it', 
   const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
   assert.match(game, /settings\.opacity \?\?=/, 'boot() should backfill settings.opacity');
 });
+
+test('every panel renderer bands its list', () => {
+  const text = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  // Each renderer's body, from its signature to the next top-level function.
+  for (const name of ['renderPictures', 'renderTrophies', 'renderAvatarPanel', 'renderSettings']) {
+    const start = text.indexOf(`function ${name}(`);
+    assert.ok(start > 0, `${name} is missing from game.js`);
+    const end = text.indexOf('\nfunction ', start + 1);
+    const body = text.slice(start, end === -1 ? text.length : end);
+    assert.match(body, /\bband\(/, `${name} does not band its rows`);
+  }
+});
+
+test('the band tint is distinct from both the base row and the hover tint', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'src/styles.css'), 'utf8');
+  const tint = (selector) => {
+    const m = css.match(new RegExp(`${selector}\\s*\\{[^}]*background: (rgba\\([^)]*\\))`));
+    assert.ok(m, `no background found for ${selector}`);
+    return m[1];
+  };
+  // `\\s*{` keeps the bare `.row` pattern off `.row.alt`.
+  const base = tint('\\.row');
+  const alt = tint('\\.row\\.alt');
+  const hover = tint('\\.row\\.clickable:hover');
+  assert.notEqual(alt, base, 'a banded row must not match the base row');
+  // Without this, hovering an alt row would give no feedback at all.
+  assert.notEqual(hover, alt, 'hover must not match the band tint');
+  assert.notEqual(hover, base, 'hover must not match the base tint');
+});
+
+/* ------------------------------------------------------------------- house */
+
+const { ROOMS, HOUSE_ITEMS, LIGHTING, PETS, PROP_SLOTS, defaultHouse, itemsFor, starterFor } =
+  await import('../src/house.js');
+
+test('house catalogue ids are unique across every kind of thing', () => {
+  const ids = [...ROOMS, ...HOUSE_ITEMS, ...LIGHTING, ...PETS].map((x) => x.id);
+  assert.equal(new Set(ids).size, ids.length, 'two house entries share an id');
+});
+
+test('every prop belongs to a real room and a real slot', () => {
+  const rooms = new Set(ROOMS.map((r) => r.id));
+  for (const item of HOUSE_ITEMS) {
+    assert.ok(rooms.has(item.roomId), `${item.id} names unknown room "${item.roomId}"`);
+    assert.ok(PROP_SLOTS.includes(item.slot), `${item.id} names unknown slot "${item.slot}"`);
+    assert.equal(typeof item.draw, 'function', `${item.id} has no draw()`);
+  }
+});
+
+test('every room has exactly one free starter in each slot', () => {
+  for (const room of ROOMS) {
+    for (const slot of PROP_SLOTS) {
+      const starters = itemsFor(room.id, slot).filter((i) => i.source === 'starter');
+      assert.equal(starters.length, 1,
+        `${room.id}/${slot} has ${starters.length} starters, expected exactly 1`);
+      assert.equal(starters[0].price, 0, `${starters[0].id} is a starter but is not free`);
+    }
+  }
+});
+
+test('a new house is fully furnished and owns everything it has selected', () => {
+  const house = defaultHouse();
+  const owned = new Set(house.unlocked);
+  assert.ok(owned.has(house.lighting), 'default lighting is not unlocked');
+  assert.ok(owned.has(house.pet), 'default pet is not unlocked');
+  for (const room of ROOMS) {
+    for (const slot of PROP_SLOTS) {
+      const id = house.props[room.id][slot];
+      assert.equal(id, starterFor(room.id, slot).id, `${room.id}/${slot} is not the starter`);
+      assert.ok(owned.has(id), `${id} is selected but not unlocked`);
+    }
+  }
+});
+
+test('everything sold has a price, everything free is a starter', () => {
+  for (const item of [...HOUSE_ITEMS, ...LIGHTING, ...PETS]) {
+    if (item.source === 'store') assert.ok(item.price > 0, `${item.id} is sold for nothing`);
+    else assert.equal(item.price, 0, `${item.id} is a ${item.source} but costs points`);
+  }
+});
+
+test('boot backfills the house, which neither backend deep-merges', () => {
+  const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  assert.match(game, /avatar\.house \?\?= defaultHouse\(\)/,
+    'boot() must backfill avatar.house — an existing save replaces it wholesale');
+  for (const f of ['src/platform.js', 'electron/main.cjs']) {
+    const text = fs.readFileSync(path.join(ROOT, f), 'utf8');
+    assert.match(text, /house: null/, `${f} is missing house in DEFAULT_SAVE.avatar`);
+  }
+});
+
+test('no prop draws data-slot, which would hijack avatar recolouring', () => {
+  for (const item of HOUSE_ITEMS) {
+    assert.ok(!/data-slot/.test(item.draw()), `${item.id} emits data-slot`);
+  }
+});
+
+test('every data-slot in a room scene comes from the avatar herself', async () => {
+  const { buildRoomSVG } = await import('../src/house.js');
+  const { defaultAvatarCustomize } = await import('../src/avatar.js');
+  const c = defaultAvatarCustomize();
+  // The one attribute game.js delegates part-recolouring clicks on, so a scene
+  // must never introduce a value the avatar does not own.
+  const KNOWN = new Set(['hair', 'skin', 'eyes', 'shirt', 'bottoms', 'dress', 'socks', 'shoes']);
+  for (const room of ROOMS) {
+    for (const pet of PETS) {
+      const house = { ...defaultHouse(), room: room.id, pet: pet.id };
+      for (const [, slot] of buildRoomSVG(house, c).matchAll(/data-slot="([^"]+)"/g)) {
+        assert.ok(KNOWN.has(slot), `${room.id}/${pet.id} emitted unknown data-slot "${slot}"`);
+      }
+    }
+  }
+});

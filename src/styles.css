@@ -232,8 +232,23 @@ button {
   flex-direction: column-reverse;
   align-items: center;
   gap: 6px;
+  /* The container is transparent but still hit-tests, so its padding and the
+     gaps between its children would swallow taps meant for the cells beneath
+     it. Only the controls themselves take pointer events. */
+  pointer-events: none;
   -webkit-app-region: no-drag;
 }
+.avatar-widget .avatar-pill,
+.avatar-widget .ability-btn { pointer-events: auto; }
+
+/* Reuses the .bar/.bar > i progress primitive; only the width and placement
+   differ. Matches the pill's width so the two read as one control. */
+.xp-bar {
+  width: 46px;
+  margin-top: 0;
+  pointer-events: none;
+}
+.xp-bar > i { transition: width 240ms ease; }
 
 .avatar-pill {
   position: relative;
@@ -322,7 +337,9 @@ button {
   margin-bottom: 4px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
 }
-.avatar-stage { width: 116px; }
+/* Wide enough for the room around her. The figure is drawn at 0.8 inside the
+   scene, so she ends up close to her old on-screen size. */
+.avatar-stage { width: 208px; }
 .avatar-stage svg { width: 100%; display: block; }
 .avatar-stage svg [data-slot] { cursor: pointer; }
 .avatar-stage svg [data-slot]:hover { filter: brightness(1.18); }
@@ -344,6 +361,7 @@ button {
 
 @media (pointer: coarse) {
   .avatar-pill { width: 54px; height: 54px; }
+  .xp-bar { width: 54px; }
   .ability-btn { width: 36px; height: 36px; font-size: 15px; }
   .swatch { width: 32px; height: 32px; }
 }
@@ -542,8 +560,14 @@ button {
   background: rgba(255, 255, 255, 0.035);
   border: 1px solid transparent;
 }
+/* Banding is assigned in JS (see band() in game.js) rather than :nth-child,
+   because panel bodies interleave rows with headings and controls that are
+   all plain divs. Declared here — above .row.earned, which shares its
+   specificity — so an earned trophy keeps its own tint. */
+.row.alt { background: rgba(255, 255, 255, 0.075); }
 .row.clickable { cursor: pointer; transition: background 120ms, border-color 120ms; }
-.row.clickable:hover { background: rgba(255, 255, 255, 0.075); border-color: var(--edge); }
+/* Clears the band tint above it, so hover reads on either stripe. */
+.row.clickable:hover { background: rgba(255, 255, 255, 0.11); border-color: var(--edge); }
 .row.current { border-color: var(--accent); }
 .row .grow { flex: 1; min-width: 0; }
 .row .label { font-size: 12.5px; font-weight: 600; }
