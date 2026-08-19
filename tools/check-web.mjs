@@ -175,35 +175,30 @@ await page.screenshot({ path: path.join(OUT, 'portrait-after.png') });
 
 /* -------------------------------------------------------------- zoom & pan */
 
-// Two-finger pinch. Playwright's touchscreen API is single-touch only, so
-// this drives the browser's real input pipeline through CDP rather than
-// dispatching synthetic PointerEvents at the element.
-//
-// The synthetic version worked on the page but left the browser and the page
-// disagreeing about what had been touched: the page had seen a full gesture
-// the browser never knew about. The next *real* touch after that was silently
-// dropped — Chromium allocated a pointer id for it and delivered no event at
-// all — which made the following tap look like the app ignoring it. Driving
-// real touches keeps both sides in step, and incidentally means this check now
-// exercises the same input path a phone does.
-const cdp = await context.newCDPSession(page);
-const touch = (type, touchPoints) =>
-  cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
+// Two-finger pinch: Playwright's touchscreen API is single-touch only, so
+// this dispatches raw PointerEvents the way a real two-finger touch would —
+// the same technique already used below for paste/drop, which cannot go
+// through a high-level API either.
+const pinchResult = await page.evaluate(() => {
+  const board = document.getElementById('board');
+  const r = board.getBoundingClientRect();
+  const cx = r.left + r.width / 2;
+  const cy = r.top + r.height / 2;
+  const fire = (type, id, x, y) => board.dispatchEvent(new PointerEvent(type, {
+    pointerId: id, pointerType: 'touch', clientX: x, clientY: y,
+    bubbles: true, cancelable: true, isPrimary: id === 1,
+  }));
 
-const boardCentre = await page.evaluate(() => {
-  const r = document.getElementById('board').getBoundingClientRect();
-  return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
-});
-{
-  const { cx, cy } = boardCentre;
-  await touch('touchStart', [{ x: cx - 20, y: cy }, { x: cx + 20, y: cy }]);
+  fire('pointerdown', 1, cx - 20, cy);
+  fire('pointerdown', 2, cx + 20, cy);
   for (let i = 1; i <= 5; i++) {
     const half = 20 + i * 24;
-    await touch('touchMove', [{ x: cx - half, y: cy }, { x: cx + half, y: cy }]);
+    fire('pointermove', 1, cx - half, cy);
+    fire('pointermove', 2, cx + half, cy);
   }
-  await touch('touchEnd', []);
-}
-const pinchResult = await page.evaluate(() => {
+  fire('pointerup', 1, cx - 140, cy);
+  fire('pointerup', 2, cx + 140, cy);
+
   const pill = document.getElementById('zoomPill');
   return { text: pill.textContent, hidden: pill.classList.contains('hidden') };
 });
@@ -215,41 +210,31 @@ await page.screenshot({ path: path.join(OUT, 'pinch-zoomed.png') });
 // bar a fingertip is held to everywhere else in the app (a fuzzy tap is
 // still a tap), so it is worth checking a real drag does not sneak past it.
 const beforeDrag = await page.evaluate(() => document.getElementById('barSubtitle').textContent);
-{
-  const { cx, cy } = boardCentre;
-  await touch('touchStart', [{ x: cx, y: cy }]);
-  await touch('touchMove', [{ x: cx - 15, y: cy - 10 }]);
-  await touch('touchMove', [{ x: cx - 40, y: cy - 30 }]);
-  await touch('touchMove', [{ x: cx - 70, y: cy - 55 }]);
-  await touch('touchEnd', []);
-}
+await page.evaluate(() => {
+  const board = document.getElementById('board');
+  const r = board.getBoundingClientRect();
+  const cx = r.left + r.width / 2;
+  const cy = r.top + r.height / 2;
+  const fire = (type, x, y) => board.dispatchEvent(new PointerEvent(type, {
+    pointerId: 9, pointerType: 'touch', clientX: x, clientY: y,
+    bubbles: true, cancelable: true, isPrimary: true,
+  }));
+  fire('pointerdown', cx, cy);
+  fire('pointermove', cx - 15, cy - 10);
+  fire('pointermove', cx - 40, cy - 30);
+  fire('pointermove', cx - 70, cy - 55);
+  fire('pointerup', cx - 70, cy - 55);
+});
 const afterDrag = await page.evaluate(() => document.getElementById('barSubtitle').textContent);
 check('one-finger drag pans instead of painting', afterDrag === beforeDrag,
   `"${beforeDrag}" -> "${afterDrag}"`);
 
 // Reset, then a plain tap must still paint — confirming the gesture rework
 // left the common case, a finger just tapping a cell, exactly as it was.
-// Tap the pill with a finger, not a mouse. This is a phone harness, and a
-// real phone has no mouse — and mixing the two input paths cost us a whole
-// tap: Chromium dropped the first touch dispatched right after a mouse click
-// that hid the element under the cursor, delivering no pointer or touch event
-// to the page at all. An identical retry went through, which is what made it
-// look like the app was ignoring the tap rather than never seeing it.
-const pillBox = await page.evaluate(() => {
-  const r = document.getElementById('zoomPill').getBoundingClientRect();
-  return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-});
-await page.touchscreen.tap(pillBox.x, pillBox.y);
+await page.click('#zoomPill');
 const zoomReset = await page.evaluate(() =>
   document.getElementById('zoomPill').classList.contains('hidden'));
 check('zoom pill resets to 100%', zoomReset);
-
-// Let the reset reach the screen before aiming at it: two frames guarantees
-// one was actually presented, so the tap is hit-tested against the layout it
-// was measured against.
-await page.evaluate(() => new Promise((resolve) => {
-  requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-}));
 
 // Whichever tub the game is holding right now — not necessarily target.c's
 // tub by count of cells, since tub order is vibrancy-first, not usage-first,
@@ -257,68 +242,30 @@ await page.evaluate(() => new Promise((resolve) => {
 // which case the game will have moved on to the next one). Read the live
 // state and its own screen transform via window.__paintblobTest (see
 // src/game.js) rather than assume a second cell of the first tub exists.
+// The pinch and drag above are synthetic PointerEvents: the page saw a full
+// gesture the browser's input pipeline never did. Chromium drops the first
+// *real* touch after that mismatch — it allocates a pointer id and delivers no
+// pointer or touch event to the page at all, so the app never learns a finger
+// landed. A harmless tap on the title bar absorbs the dropped one, leaving the
+// tap that matters to be delivered and judged on its merits.
+const primer = await page.evaluate(() => {
+  const r = document.querySelector('#bar .title').getBoundingClientRect();
+  return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+});
+await page.touchscreen.tap(primer.x, primer.y);
+
 const target2 = await page.evaluate(() => {
   const { board, state } = window.__paintblobTest;
   const cell = state.cells.find((c) => c.colour === state.selected && !state.filled.has(c.id));
   return cell ? board.toScreen(cell.anchor.x, cell.anchor.y) : null;
 });
 check('a second unfilled cell of the held tub exists to tap', !!target2, JSON.stringify(target2));
-await page.evaluate(() => {
-  window.__paintLog.length = 0;
-  window.__ev = [];
-  const bd = document.getElementById('board');
-  for (const t of ['pointerdown', 'pointerup', 'pointercancel', 'touchstart', 'touchend']) {
-    bd.addEventListener(t, (e) => window.__ev.push(`${t}:${e.pointerId ?? 't'}`), true);
-  }
-});
 await page.touchscreen.tap(target2.x, target2.y);
 const secondTap = await page.waitForFunction(
   () => /· [2-9]\d*\//.test(document.getElementById('barSubtitle').textContent),
   null,
   { timeout: 10000, polling: 100 },
 ).then(() => true).catch(() => false);
-if (!secondTap) {
-  console.log('CIDEBUG', JSON.stringify(await page.evaluate((t) => {
-    const { board, state } = window.__paintblobTest;
-    const w = document.getElementById('avatarWidget').getBoundingClientRect();
-    const b = document.getElementById('board').getBoundingClientRect();
-    const el = document.elementFromPoint(t.x, t.y);
-    const path = document.elementsFromPoint(t.x, t.y).map((n) => `${n.tagName}#${n.id}`);
-    return {
-      tap: t,
-      widget: { l: Math.round(w.left), t: Math.round(w.top), r: Math.round(w.right), b: Math.round(w.bottom) },
-      board: { l: Math.round(b.left), t: Math.round(b.top), r: Math.round(b.right), b: Math.round(b.bottom) },
-      tapInsideWidget: t.x >= w.left && t.x <= w.right && t.y >= w.top && t.y <= w.bottom,
-      hit: el ? `${el.tagName}#${el.id}` : null, path,
-      dbg: window.__dbg(),
-      zoom: board.zoom, panX: board.panX, panY: board.panY,
-      selected: state.selected, filled: state.filled.size,
-      bursts: state.bursts.length, pending: state.pending.size,
-      elapsedMs: Math.round(state.elapsedMs),
-      ev: window.__ev, paintLog: window.__paintLog,
-    };
-  }, target2)));
-
-  // Is touch delivery wedged from here on, or was this one tap swallowed?
-  await page.evaluate(() => { window.__ev = []; window.__paintLog = []; });
-  await page.touchscreen.tap(target2.x, target2.y);
-  await new Promise((r) => setTimeout(r, 900));
-  console.log('CIDEBUG retry', JSON.stringify(await page.evaluate(() => ({
-    ev: window.__ev, paintLog: window.__paintLog,
-    bursts: window.__paintblobTest.state.bursts.length,
-    filled: window.__paintblobTest.state.filled.size,
-  }))));
-
-  // And does a mouse click at the same point get through?
-  await page.evaluate(() => { window.__ev = []; window.__paintLog = []; });
-  await page.mouse.click(target2.x, target2.y);
-  await new Promise((r) => setTimeout(r, 900));
-  console.log('CIDEBUG mouse', JSON.stringify(await page.evaluate(() => ({
-    ev: window.__ev, paintLog: window.__paintLog,
-    bursts: window.__paintblobTest.state.bursts.length,
-    filled: window.__paintblobTest.state.filled.size,
-  }))));
-}
 check('a tap still paints after zoom and pan', secondTap,
   await page.evaluate(() => document.getElementById('barSubtitle').textContent));
 

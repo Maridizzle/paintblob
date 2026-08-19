@@ -232,8 +232,14 @@ button {
   flex-direction: column-reverse;
   align-items: center;
   gap: 6px;
+  /* The container is transparent but still hit-tests, so its padding and the
+     gaps between its children would swallow taps meant for the cells beneath
+     it. Only the controls themselves take pointer events. */
+  pointer-events: none;
   -webkit-app-region: no-drag;
 }
+.avatar-widget .avatar-pill,
+.avatar-widget .ability-btn { pointer-events: auto; }
 
 /* Reuses the .bar/.bar > i progress primitive; only the width and placement
    differ. Matches the pill's width so the two read as one control. */
@@ -331,7 +337,9 @@ button {
   margin-bottom: 4px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
 }
-.avatar-stage { width: 116px; }
+/* Wide enough for the room around her. The figure is drawn at 0.8 inside the
+   scene, so she ends up close to her old on-screen size. */
+.avatar-stage { width: 208px; }
 .avatar-stage svg { width: 100%; display: block; }
 .avatar-stage svg [data-slot] { cursor: pointer; }
 .avatar-stage svg [data-slot]:hover { filter: brightness(1.18); }
