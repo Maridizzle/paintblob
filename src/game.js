@@ -667,8 +667,11 @@ function frame(now) {
   // ability is used even once. drawBase() already redraws it correctly the
   // instant it changes (setNumberOverride() sets dirty = true itself); the
   // ordinary lazy 30fps idle cadence below covers the rest.
+  // board.living is safe to include where numberOverride was not: it counts
+  // down and drawLiving() clears it the moment its window closes, so the
+  // loop drops back to the idle cadence by itself.
   const busy = S.bursts.length > 0 || S.revealFrom > 0 || board.hintTarget
-    || board.colourFlash || board.goldenCell;
+    || board.colourFlash || board.goldenCell || board.living;
   if (busy || now - lastDraw > 33) {
     lastDraw = now;
     board.draw(S.bursts, now);
@@ -1590,7 +1593,17 @@ document.addEventListener('click', async (e) => {
     }
     case 'hint': useHint(); break;
     case 'zoom-reset': board.resetZoom(); syncZoom(); ensureFrame(); break;
-    case 'toggle-source': board.setShowSource(!board.showSource); syncCompare(); ensureFrame(); break;
+    case 'toggle-source': {
+      // Every trip into photo view plays the picture's living element again,
+      // if it has one — it is the reward for looking, not a one-off at the
+      // moment of solving.
+      if (board.setShowSource(!board.showSource)) {
+        board.startLiving(S.puzzle.animation, performance.now());
+      }
+      syncCompare();
+      ensureFrame();
+      break;
+    }
     case 'pictures': case 'trophies': case 'settings': case 'avatar':
       if (S.panel === act) closePanel();
       else await openPanel(act);

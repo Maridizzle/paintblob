@@ -110,8 +110,11 @@ function verify(file, writePng) {
 }
 
 const writePng = process.argv.includes('--write-png');
+// manifest.json is the index, animations.json the living-element sidecar —
+// neither is a puzzle, and both sit in the same directory.
+const NOT_A_PUZZLE = new Set(['manifest.json', 'animations.json']);
 const files = fs.readdirSync(PUZZLE_DIR)
-  .filter((f) => f.endsWith('.json') && f !== 'manifest.json')
+  .filter((f) => f.endsWith('.json') && !NOT_A_PUZZLE.has(f))
   .map((f) => path.join(PUZZLE_DIR, f));
 
 let allOk = true;

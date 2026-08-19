@@ -699,6 +699,65 @@ check('cancelling the chooser resolves', chooser.cancelled === 'resolved', choos
   check('toggling back returns to the painted picture',
     totalDiff(painting1, painting2) < 10, `first ${painting1}, after round-trip ${painting2}`);
 
+  // --- the living element ------------------------------------------------
+  // Harbour Row is untagged, so drive the effect by hand rather than tagging
+  // a picture just for the harness. What matters is the property everything
+  // above depends on: the effect draws on the live layer only, so once its
+  // window closes the photo must be pixel-identical to before it started —
+  // and the window must actually close itself, or frame() stays pinned at
+  // 60fps forever the way numberOverride once did.
+  await page.click('#comparePill');
+  await page.waitForTimeout(150);
+  // Every pixel, not the 16-point grid the toggle uses: those points sit in
+  // flat sky and water on purpose, and a few pixels of sideways ripple
+  // through a flat region is invisible to them by construction.
+  const living = await page.evaluate(() => {
+    const { board } = window.__paintblobTest;
+    const ctx = board.canvas.getContext('2d');
+    const grab = () => ctx.getImageData(0, 0, board.canvas.width, board.canvas.height).data;
+    const diff = (a, b) => {
+      let n = 0;
+      for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) n++;
+      return n;
+    };
+    // The four biggest cells, so the effect covers a decent share of the
+    // canvas and the numbers below mean something.
+    const ids = [...board.cells].sort((a, b) => b.area - a.area).slice(0, 4).map((c) => c.id);
+    const now = performance.now();
+
+    board.living = null;
+    board.draw([], now);
+    const before = grab();
+
+    board.startLiving({ effect: 'ripple', cells: ids, amplitude: 3 }, now);
+    board.draw([], now + 1500);
+    const mid = grab();
+
+    // Ripple is the expensive one — a blit per band, over the four biggest
+    // cells in the picture, which is about as bad as a real tag ever gets.
+    const t0 = performance.now();
+    for (let i = 0; i < 30; i++) board.draw([], now + 500 + i * 16);
+    const perFrame = (performance.now() - t0) / 30;
+
+    board.draw([], board.living.end + 1);
+    const after = grab();
+
+    return {
+      moved: diff(before, mid), residue: diff(before, after), closed: !board.living, perFrame,
+    };
+  });
+
+  check('the living element moves the photo while its window is open',
+    living.moved > 0, `${living.moved} channels changed`);
+  check('the animation window closes itself', living.closed);
+  check('the living element fits a 60fps budget',
+    living.perFrame < 16, `${living.perFrame.toFixed(1)}ms per frame`);
+  check('the photo is untouched once the animation has finished',
+    living.residue === 0, `${living.residue} channels left changed`);
+
+  await page.click('#comparePill');
+  await page.waitForTimeout(150);
+
   const modalAppeared = await page.waitForFunction(
     () => !document.getElementById('finish').classList.contains('hidden'),
     null, { timeout: 4000, polling: 100 },

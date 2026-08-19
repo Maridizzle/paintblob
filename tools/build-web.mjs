@@ -45,7 +45,10 @@ function copyDir(from, to, filter = () => true) {
 }
 
 copyDir(path.join(ROOT, 'src'), outDir);
-copyDir(path.join(ROOT, 'puzzles'), path.join(outDir, 'puzzles'), (n) => n.endsWith('.json'));
+// animations.json is a build-time sidecar: mapify bakes its tags into the
+// puzzle files, so the client never fetches it and it does not ship.
+copyDir(path.join(ROOT, 'puzzles'), path.join(outDir, 'puzzles'),
+  (n) => n.endsWith('.json') && n !== 'animations.json');
 
 /* ---------------------------------------------------------------------- icons */
 
