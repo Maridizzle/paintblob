@@ -1,0 +1,146 @@
+name: weekly-animate
+
+# Between the Monday bake and the Monday release, this renders a map of every
+# picture that has no living element yet and opens (or updates) a tracking
+# issue with the exact commands to tag them. See docs/animating-pictures.md.
+#
+#   13:00 UTC  weekly-mystery.yml   bakes the week's pictures, commits
+#   14:00 UTC  this                 renders maps, files the issue
+#   20:00 UTC  weekly-release.yml   cuts the version and publishes
+#
+# The maps are the point. Choosing which element of a picture should move is
+# a judgement made by looking at it, so this job's job is to put the pictures
+# in front of whoever (or whatever) is deciding, with everything else already
+# done. Set the TAG_AGENT_COMMAND repository variable to hand that decision
+# to an agent instead — see the step at the bottom.
+on:
+  schedule: [{ cron: '0 14 * * MON' }]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  maps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+      - run: npx playwright-core install chromium
+
+      - name: List what still needs a living element
+        id: untagged
+        run: |
+          set -euo pipefail
+          node tools/untagged-pictures.mjs
+          {
+            echo 'ids<<EOF'
+            node tools/untagged-pictures.mjs --ids
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Render a map for each
+        if: steps.untagged.outputs.ids != ''
+        # Through the environment rather than ${{ }} interpolation: ids are
+        # slugs today ([a-z0-9-] only, see slugify) but a value spliced
+        # straight into a shell script is a hazard waiting for the day that
+        # stops being true.
+        env:
+          IDS: ${{ steps.untagged.outputs.ids }}
+        run: |
+          set -euo pipefail
+          while read -r id; do
+            [ -z "$id" ] && continue
+            echo "::group::$id"
+            node tools/tag-animation.mjs "$id"
+            echo "::endgroup::"
+          done <<< "$IDS"
+
+      - name: Upload the maps
+        if: steps.untagged.outputs.ids != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: animation-maps
+          path: puzzles/_raw/tag/
+          if-no-files-found: error
+
+      # Hand the judgement call to an agent, if one is configured. The command
+      # runs at the repo root with the maps already rendered under
+      # puzzles/_raw/tag/<id>/, and is expected to read
+      # docs/animating-pictures.md, look at the maps, run tag-animation.mjs,
+      # and commit. Anything that can view images and run a shell will do;
+      # set the TAG_AGENT_COMMAND repository variable to its invocation.
+      # Left unset, the issue below is the handoff instead.
+      - name: Tag them
+        if: vars.TAG_AGENT_COMMAND != '' && steps.untagged.outputs.ids != ''
+        run: ${{ vars.TAG_AGENT_COMMAND }}
+        env:
+          UNTAGGED_IDS: ${{ steps.untagged.outputs.ids }}
+
+      - name: Commit anything the agent tagged
+        if: vars.TAG_AGENT_COMMAND != '' && steps.untagged.outputs.ids != ''
+        run: |
+          set -euo pipefail
+          # puzzles/_raw/ is gitignored, so the renders cannot be committed by
+          # accident — only real tags show up here.
+          if [ -z "$(git status --porcelain -- puzzles/)" ]; then
+            echo 'nothing tagged'
+            exit 0
+          fi
+          npm test
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add puzzles/
+          git commit -m "Animate this week's pictures: $(date -u +%F)"
+          git push origin HEAD:${{ github.ref_name }}
+
+      - name: File the handoff issue
+        if: steps.untagged.outputs.ids != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IDS: ${{ steps.untagged.outputs.ids }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # Re-listed after the agent step, so anything it tagged drops off.
+          remaining=$(node tools/untagged-pictures.mjs --ids)
+          if [ -z "$remaining" ]; then
+            echo 'everything is tagged — no issue needed'
+            exit 0
+          fi
+
+          body=$(mktemp)
+          {
+            echo 'These pictures have no living element yet. Full instructions:'
+            echo '`docs/animating-pictures.md` — read it before running anything.'
+            echo
+            echo "Maps are rendered and attached to [this run]($RUN) as the"
+            echo '`animation-maps` artifact. Download it, **look at each'
+            echo '`map-photo.png`**, and pick the one element that should move.'
+            echo
+            while read -r id; do
+              [ -z "$id" ] && continue
+              echo "- [ ] \`$id\` — \`node tools/tag-animation.mjs $id --palette\`"
+            done <<< "$remaining"
+            echo
+            echo 'Untagged is a fine outcome. If nothing in a picture wants to'
+            echo 'move, leave it and tick it off.'
+          } > "$body"
+
+          existing=$(gh issue list --state open --label animations --limit 1 --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --body-file "$body"
+            echo "updated issue #$existing"
+          else
+            gh label create animations --description 'Living elements in the photo view' --color 0e8a16 2>/dev/null || true
+            gh issue create --title "Animate this week's pictures: $(date -u +%F)" \
+              --label animations --body-file "$body"
+          fi
