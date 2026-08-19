@@ -1268,6 +1268,10 @@ function renderAvatarRoom(section) {
 
   const redraw = () => {
     persist();
+    // Buying a prop/lighting/pet spends points same as the wardrobe does, so
+    // the main-screen coin count needs the same refresh or it goes stale
+    // until some unrelated grant happens to touch it.
+    syncAvatarWidget();
     renderAvatarPanel($('panelBody'));
   };
 
