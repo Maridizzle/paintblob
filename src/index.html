@@ -42,15 +42,6 @@
       <button id="comparePill" class="compare-pill hidden" data-act="toggle-source"
         title="Compare against the original picture"></button>
 
-      <div id="avatarWidget" class="avatar-widget">
-        <div id="abilityRow" class="ability-row"></div>
-        <!-- The widget is column-reverse, so this sits between the ability row
-             and the pill on screen: directly under the level badge, which names
-             the level this bar is measuring progress through. -->
-        <div class="bar xp-bar"><i id="xpFill"></i></div>
-        <button id="avatarPill" class="avatar-pill" data-act="avatar" title="Your avatar"></button>
-      </div>
-
       <div id="pointsHud" class="points-hud" title="Points">
         <span class="points-hud-icon">🪙</span>
         <span id="pointsValue" class="points-hud-value">0</span>
@@ -74,7 +65,25 @@
 
     <footer id="tray">
       <div class="progress"><div class="progress-fill" id="progressFill"></div></div>
-      <div id="tubs" class="tubs"></div>
+      <!-- The avatar lives down here with the tubs rather than over the picture.
+           Its abilities used to be a column of up to eight buttons standing on
+           the canvas, worst for the player who had unlocked the most; they are
+           a pop-up now, and only while it is open does anything cover the art.
+           Inside #tubs and not a rail beside it: a sibling takes its width off
+           every line and costs a wrap row on every picture, where riding in the
+           flow only costs one when the last line is already full. -->
+      <div id="tubs" class="tubs">
+        <div id="avatarWidget" class="avatar-widget">
+          <div id="abilityRow" class="ability-row hidden"></div>
+          <!-- The ring is the XP bar: a lap of the circle rather than a stick
+               under it, so the resting state is one clean shape. -->
+          <div class="avatar-ring" id="avatarRing">
+            <button id="avatarPill" class="avatar-pill" data-act="avatar-toggle"
+              title="Your avatar and abilities" aria-expanded="false"
+              aria-haspopup="true" aria-controls="abilityRow"></button>
+          </div>
+        </div>
+      </div>
     </footer>
 
     <div id="grip" class="desktop-only" title="Resize"></div>

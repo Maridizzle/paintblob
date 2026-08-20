@@ -54,6 +54,7 @@ const S = {
   // and reopening a picture is a fresh start on it anyway.
   history: [],
   avatarTab: 'customize', // UI-only, not persisted — resets to Customize each time the panel opens
+  abilityFan: false,      // is the ability pop-up up? Also UI-only: always starts down
   avatarSlot: null,       // which avatar part is currently being recoloured
   previewId: null,        // picture whose large preview is open or pending
   previewTimer: 0,
@@ -127,7 +128,10 @@ function toast(def, reward = '', { sticky = false } = {}) {
 
 function buildTubs() {
   const wrap = $('tubs');
-  wrap.textContent = '';
+  // Only the tubs. The avatar widget shares this row so that it wraps with
+  // them rather than taking width off every line, and clearing the container
+  // wholesale would delete it on every puzzle load.
+  wrap.querySelectorAll('.tub').forEach((el) => el.remove());
 
   S.puzzle.palette.forEach((paint, i) => {
     const tub = document.createElement('button');
@@ -143,7 +147,7 @@ function buildTubs() {
     tub.append(count);
 
     tub.addEventListener('click', () => selectTub(i, true));
-    wrap.append(tub);
+    wrap.insertBefore(tub, $('avatarWidget'));
   });
   // Detailed pictures can carry eighteen colours. At full size that eats three
   // rows of a phone screen, so the tubs shrink rather than the picture.
@@ -160,7 +164,9 @@ function readableOn(hex) {
 }
 
 function syncTubs() {
-  [...$('tubs').children].forEach((tub, i) => {
+  // `.tub`, not every child: the avatar widget rides in this row too and has
+  // no .count to write into.
+  [...$('tubs').querySelectorAll('.tub')].forEach((tub, i) => {
     const left = S.remaining[i];
     tub.classList.toggle('spent', left === 0);
     tub.classList.toggle('selected', i === S.selected);
@@ -684,7 +690,11 @@ function finish() {
   // that one.
   const finishing = S.puzzle.id;
   setTimeout(() => {
-    if (S.puzzle?.id === finishing && S.finished) $('finish').classList.remove('hidden');
+    if (S.puzzle?.id === finishing && S.finished) {
+      // The pop-up outranks the finish card, so it would hang over the reveal.
+      closeAbilityFan();
+      $('finish').classList.remove('hidden');
+    }
   }, 2800);
   sfx.play('complete');
   syncTubs();
@@ -1862,18 +1872,44 @@ function syncAvatarWidget() {
   const pill = $('avatarPill');
   if (pill) {
     const level = levelForPoints(S.save.stats.pointsEarned);
-    pill.innerHTML = `${buildAvatarSVG(S.save.avatar.customize)}<span class="level-badge">${level}</span>`;
+    pill.innerHTML = buildAvatarSVG(S.save.avatar.customize);
+    // Outside the pill, which crops its portrait with overflow:hidden and was
+    // slicing the badge into a wedge. It rides on the ring instead, sitting
+    // proud of the circle the way a tub's count does.
+    const ring = $('avatarRing');
+    let badge = ring?.querySelector('.level-badge');
+    if (ring && !badge) {
+      badge = document.createElement('span');
+      badge.className = 'level-badge';
+      ring.append(badge);
+    }
+    if (badge) badge.textContent = String(level);
   }
   const value = $('pointsValue');
   if (value) value.textContent = String(S.save.stats.points ?? 0);
 
-  // Progress through the current level, on the main screen. This function
-  // already re-runs on every grant, so the bar cannot go stale.
-  const xp = $('xpFill');
-  if (xp) {
+  // Progress through the current level, drawn as a lap of the ring around the
+  // portrait. This function already re-runs on every grant, so it cannot go
+  // stale. A custom property rather than a style attribute: `style-src 'self'`
+  // refuses inline styles in markup, but the CSSOM is fine.
+  const ring = $('avatarRing');
+  if (ring) {
     const { into, span } = pointsIntoLevel(S.save.stats.pointsEarned);
-    xp.style.width = `${span ? (into / span) * 100 : 100}%`;
+    ring.style.setProperty('--xp', String(span ? (into / span) * 100 : 100));
   }
+}
+
+/** The abilities are a pop-up now, so something has to say whether it is up.
+ *  Session state, not saved: it always opens collapsed, on every screen. */
+function syncAbilityFan() {
+  $('abilityRow')?.classList.toggle('hidden', !S.abilityFan);
+  $('avatarPill')?.setAttribute('aria-expanded', String(!!S.abilityFan));
+}
+
+function closeAbilityFan() {
+  if (!S.abilityFan) return;
+  S.abilityFan = false;
+  syncAbilityFan();
 }
 
 /** Per-click feedback for the points HUD: a quick pulse on the pill itself,
@@ -1909,6 +1945,10 @@ function syncAbilityRow() {
     btn.classList.toggle('empty', s.charges <= 0);
     btn.dataset.ability = def.id;
     btn.title = `${def.name} — ${s.charges}/${def.maxCharges}`;
+    // The icon is the only text content, so without this a screen reader
+    // announces the button as "🎯". `title` is not a substitute: it is only
+    // consulted when there is no accessible name at all.
+    btn.setAttribute('aria-label', `${def.name} — ${s.charges} of ${def.maxCharges}`);
     btn.textContent = def.icon;
     const badge = document.createElement('span');
     badge.className = 'badge';
@@ -2025,6 +2065,18 @@ document.addEventListener('click', async (e) => {
       ensureFrame();
       break;
     }
+    // One control, two depths: the collapsed circle opens the abilities, and
+    // clicking the face again — now that you can see it is the avatar — goes
+    // on into the avatar panel.
+    case 'avatar-toggle':
+      if (S.abilityFan) {
+        closeAbilityFan();
+        await openPanel('avatar');
+      } else {
+        S.abilityFan = true;
+        syncAbilityFan();
+      }
+      break;
     case 'pictures': case 'trophies': case 'settings': case 'avatar':
       if (S.panel === act) closePanel();
       else await openPanel(act);
@@ -2047,12 +2099,26 @@ $('finish').addEventListener('click', (e) => {
 // chrome switch above with a dynamic case.
 $('abilityRow').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-ability]');
-  if (btn) triggerAbility(btn.dataset.ability);
+  if (!btn) return;
+  // You opened it for this. Get it off the picture again.
+  closeAbilityFan();
+  triggerAbility(btn.dataset.ability);
 });
+
+// Anywhere else dismisses it. The tap is swallowed rather than passed through:
+// the pop-up sits over the bottom-right of the picture, which is exactly where
+// a thumb rests, and dismissing a menu should not also paint a cell.
+document.addEventListener('pointerdown', (e) => {
+  if (!S.abilityFan || e.target?.closest?.('#avatarWidget')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  closeAbilityFan();
+}, true);
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (dismissAddGuide) return dismissAddGuide();
+    if (S.abilityFan) return closeAbilityFan();
     return closePanel();
   }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
@@ -2253,6 +2319,9 @@ async function boot() {
   syncHints();
   syncAvatarWidget();
   syncAbilityRow();
+  // The markup ships collapsed, but say so from the one place that owns it
+  // rather than relying on two files agreeing.
+  syncAbilityFan();
 
   S.manifest = await api.listPuzzles();
   ro.observe($('stage'));

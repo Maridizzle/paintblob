@@ -881,15 +881,24 @@ export class Board {
     // its own place from a source band nudged sideways, so the destination
     // is always fully covered — draw-shifting would leave gaps between
     // bands that disagree about how far to move.
-    const hi = rect.x + back.x;
-    const lo = hi - (this.canvas.width - rect.w);
     for (let y = rect.y; y < rect.y + rect.h; y += band) {
       const h = Math.min(band, rect.y + rect.h - y);
-      // Clamped so a band near the canvas edge never samples off it, which
-      // would punch a transparent hole straight through the photo.
-      const dx = Math.max(lo, Math.min(hi, amp * Math.sin(y / wavelength - t * 2.4)));
+      const dx = amp * Math.sin(y / wavelength - t * 2.4);
       const sy = Math.max(0, Math.min(this.canvas.height - h, y + back.y));
-      ctx.drawImage(this.base, rect.x - dx + back.x, sy, rect.w, h, rect.x, y, rect.w, h);
+
+      // Sampling outside the base returns transparent, which would punch a
+      // hole straight through the photo — so trim the band to what the base
+      // actually holds. Trimming, not clamping the shift itself: a region
+      // that reaches both canvas edges has no slack at all, and clamping
+      // pinned every band to zero and killed the effect outright rather than
+      // narrowing it. The trimmed columns keep the un-rippled photo already
+      // drawn underneath, which is invisible at these amplitudes.
+      let sx = rect.x - dx + back.x;
+      let dstX = rect.x;
+      let w = rect.w;
+      if (sx < 0) { dstX -= sx; w += sx; sx = 0; }
+      if (sx + w > this.canvas.width) w = this.canvas.width - sx;
+      if (w > 0) ctx.drawImage(this.base, sx, sy, w, h, dstX, y, w, h);
     }
   }
 
