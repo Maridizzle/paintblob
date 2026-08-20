@@ -19,10 +19,10 @@
     "build:web": "node tools/build-web.mjs",
     "check:web": "node tools/build-web.mjs && node tools/check-web.mjs",
     "test": "node --test tools/pipeline.test.mjs tools/game-logic.test.mjs tools/zip.test.mjs && node tools/verify-puzzle.mjs",
-    "dist": "npm run icon && electron-builder",
-    "dist:linux": "npm run icon && electron-builder --linux",
-    "dist:mac": "npm run icon && electron-builder --mac",
-    "dist:win": "npm run icon && electron-builder --win"
+    "dist": "npm run icon && electron-builder --publish never",
+    "dist:linux": "npm run icon && electron-builder --linux --publish never",
+    "dist:mac": "npm run icon && electron-builder --mac --publish never",
+    "dist:win": "npm run icon && electron-builder --win --publish never"
   },
   "keywords": [
     "paint-by-number",
