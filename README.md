@@ -118,6 +118,7 @@ PNG ─► downscale ─► quantise (median cut + k-means, merge lookalike tubs
     ─► connected components
     ─► absorb undersized regions into their longest-shared-border neighbour
     ─► trace boundaries along pixel cracks
+    ─► smooth each shared boundary once, welded to both its cells
     ─► distance transform for number placement
     ─► puzzle JSON
 ```
@@ -131,6 +132,26 @@ centres, so two neighbouring cells trace the identical boundary from opposite
 sides and the finished picture has no hairline seams. `npm run verify` proves
 it: every pixel must belong to exactly one cell, and every number must land
 inside the cell it labels.
+
+That also makes every outline axis-aligned, which is why the stair steps cannot
+be rounded off a cell at a time — smooth two neighbours independently and their
+shared border stops matching, which opens a gap down the middle of the picture.
+So a boundary is smoothed **once** and both sides are handed the same polyline.
+Corners where three or more regions meet are found from the region map and the
+rings are cut there into arcs; each arc belongs to exactly two cells, one
+walking it forwards and the other backwards, so it is smoothed once and cached.
+Sharing the arc *is* the weld — nothing is matched within a tolerance, the two
+sides are the same numbers.
+
+Two kinds of point then stay exactly where they are: anything on the image
+frame, since moving it opens a gap at the edge of the picture, and any corner
+where two long straight runs meet. That last one is what keeps a window square
+while a one-pixel staircase rounds away. Corner cutting quadruples the vertex
+count, so the smoothed arc is thinned again to a fifth of a pixel — invisible
+under the outline stroke, and the difference between puzzle files growing by
+two thirds and by nearly threefold. Smoothing costs about 10ms of a 400ms
+build; `--no-soften` on the CLI leaves the raw lattice geometry, for when a
+boundary looks wrong and the question is whether smoothing put it there.
 
 ## Adding pictures
 
@@ -330,10 +351,6 @@ There is no bundler and no framework. `src/` is loaded directly as ES modules.
 
 ## Known gaps
 
-- Boundary simplification is lossless only (collinear points). Proper
-  topology-preserving smoothing would need a shared-edge graph so neighbouring
-  cells stay welded; until then diagonals are stair-stepped, which the outline
-  stroke hides at display scale.
 - The demo art is deliberately simple, so it yields 16–18 cells. Generated
   artwork gives considerably more.
 - Window transparency on Linux needs a running compositor.
