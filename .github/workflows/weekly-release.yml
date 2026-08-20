@@ -6,7 +6,12 @@ name: weekly-release
 # docs/animating-pictures.md). Bundling the version bump into the bake would
 # ship every picture lifeless and animate it a week late.
 #
-# Pushing the vX.Y.Z tag is what triggers release.yml to build and publish.
+# Cutting the version is only half the job: this then asks release.yml to
+# build and publish that tag. It has to ask. A push made with GITHUB_TOKEN
+# does not trigger another workflow — GitHub blocks that so workflows cannot
+# recurse — so release.yml's `on: push: tags` never once fired from here, and
+# every release to date was started by hand from the Actions tab instead.
+#
 # Run by hand from the Actions tab to cut a release at any other time.
 on:
   schedule: [{ cron: '0 20 * * MON' }]
@@ -14,6 +19,7 @@ on:
 
 permissions:
   contents: write
+  actions: write   # to dispatch release.yml at the end
 
 jobs:
   release:
@@ -30,19 +36,35 @@ jobs:
           node-version: 22
 
       - name: Cut the version, if there is anything to release
+        id: cut
         run: |
           set -euo pipefail
           last=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
           if [ -n "$last" ] && [ "$(git rev-list --count "$last"..HEAD)" -eq 0 ]; then
             # A week whose queue came up short leaves nothing new on the
             # branch. Releasing anyway would republish identical installers
-            # under a new version number.
+            # under a new version number. An empty `tag` output is what tells
+            # the step below there is nothing to build.
             echo "nothing new since $last — no release cut"
+            echo 'tag=' >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           npm version patch
           # --follow-tags pushes the version-bump commit and its vX.Y.Z tag
-          # together; the tag is what release.yml listens for.
+          # together.
           git push --follow-tags origin HEAD:${{ github.ref_name }}
+          # Read the version back rather than parsing `npm version`'s stdout,
+          # where a stray npm notice would become the tag name.
+          echo "tag=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # The tag alone builds nothing — see the note at the top — so ask for it.
+      # Against the tag rather than the branch: that pins the build to the
+      # commit that was tagged, so a push landing on main in the meantime
+      # cannot end up inside a release claiming to be this version.
+      - name: Build and publish that tag
+        if: steps.cut.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run release.yml --ref "${{ steps.cut.outputs.tag }}"
