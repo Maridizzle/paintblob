@@ -199,6 +199,15 @@ const advance = async (ms) => {
   const rapidTarget = tub0[1] ?? puzzle.cells.find((c) => c.c !== 0);
   if (!rapidTarget) throw new Error('no safe second cell found for the rapid-click test');
 
+  // Hold the tub this cell actually takes. Tub 1 is selected at load, so when
+  // it has two cells to spare nothing changes here — but the fallback above
+  // reaches into a different tub, and a click carrying the wrong colour is a
+  // nudge rather than a fill. That painted nothing at all, which read as the
+  // duplicate-burst bug this check exists to catch.
+  await page.evaluate((idx) => document.querySelectorAll('#tubs .tub')[idx].click(),
+    rapidTarget.c);
+  await advance(16);
+
   const tubCount = (i) => page.evaluate(
     (idx) => Number(document.querySelectorAll('#tubs .tub')[idx].querySelector('.count').textContent),
     i,
