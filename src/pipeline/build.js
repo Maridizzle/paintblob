@@ -15,6 +15,7 @@ import {
 import { quantize, denoiseIndices } from './quantize.js';
 import { labelRegions, mergeSmallRegions, labelAnchor } from './regions.js';
 import { boundsOf, traceRegion, ringsToPath } from './contour.js';
+import { smoothRings } from './smooth.js';
 import { nameColour, toHex, uniquifyNames } from './colour-names.js';
 
 export const DEFAULTS = {
@@ -30,6 +31,11 @@ export const DEFAULTS = {
   // this can run fairly hot without turning already-colourful areas neon.
   // 1 leaves colours untouched.
   saturate: 1.6,
+  // Round the traced outlines. On by default because the lattice's stair steps
+  // are an artefact of how tracing works rather than anything in the artwork;
+  // off is for comparing against the hard-edged geometry when a boundary looks
+  // wrong and the question is whether smoothing put it there.
+  soften: true,
 };
 
 /**
@@ -203,13 +209,27 @@ export function buildPuzzle(rgba, srcW, srcH, opts = {}) {
     { minArea, maxCells: o.maxCells, palette },
   );
 
-  const cells = [];
+  // Trace everything first, then smooth in one pass over the whole map. It
+  // cannot be done a region at a time: a boundary belongs to two cells, and
+  // rounding it twice independently is what tears a seam open between them.
+  const soften = o.soften !== false;
+  const traced = new Map();
+  const anchors = new Map();
   for (let id = 0; id < merged.count; id++) {
     const bbox = boundsOf(merged.labels, width, height, id);
     if (!bbox) continue;
-    const rings = traceRegion(merged.labels, width, height, id, bbox);
+    const rings = traceRegion(merged.labels, width, height, id, bbox, !soften);
     if (!rings.length) continue;
-    const anchor = labelAnchor(merged.labels, width, height, id, bbox);
+    traced.set(id, rings);
+    anchors.set(id, labelAnchor(merged.labels, width, height, id, bbox));
+  }
+
+  const outlines = soften ? smoothRings(merged.labels, width, height, traced) : traced;
+
+  const cells = [];
+  for (const [id, rings] of outlines) {
+    if (!rings.length) continue;
+    const anchor = anchors.get(id);
     cells.push({
       c: merged.colours[id],
       x: Math.round(anchor.x * 10) / 10,

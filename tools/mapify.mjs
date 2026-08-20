@@ -43,6 +43,9 @@ function parseArgs(argv) {
       // Boolean flag — undo the lookahead above unless `--blind=...` was
       // written inline, in which case nothing was consumed to undo.
       case 'blind': opts.blind = true; if (inline === undefined) i--; break;
+      // Boolean, same lookahead dance as --blind. Leaves the outlines on the
+      // raw pixel lattice, stair steps and all.
+      case 'no-soften': opts.soften = false; if (inline === undefined) i--; break;
       case 'detail': {
         const preset = DETAIL_PRESETS[value];
         if (!preset) throw new Error(`--detail must be one of ${Object.keys(DETAIL_PRESETS).join(', ')}`);
@@ -131,6 +134,7 @@ async function main() {
   const src = opts._[0];
   if (!src) {
     console.error('usage: node tools/mapify.mjs <image> [--id slug] [--title "Name"] [--blind]');
+    console.error('       [--no-soften]');
     console.error('       [--detail chunky|normal|detailed|insane]');
     console.error('       [--size 768] [--colours 14] [--cells 64] [--min-area 0.0016]');
     console.error('accepts PNG or JPEG');

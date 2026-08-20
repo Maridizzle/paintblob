@@ -40,6 +40,20 @@
     ]
   },
   {
+    "id": "firefly-meadow",
+    "title": "Firefly Meadow",
+    "cells": 500,
+    "colours": 29,
+    "thumb": [
+      "#9a5c2e",
+      "#f9da94",
+      "#d8a675",
+      "#6491ba",
+      "#6d3a17"
+    ],
+    "blind": true
+  },
+  {
     "id": "harbour-row",
     "title": "Harbour Row",
     "cells": 88,
@@ -108,6 +122,48 @@
     "blind": true
   },
   {
+    "id": "lighthouse-eclipse",
+    "title": "Lighthouse Eclipse",
+    "cells": 500,
+    "colours": 35,
+    "thumb": [
+      "#e4ae6c",
+      "#d0905c",
+      "#bf6553",
+      "#f5cc8c",
+      "#c25bc0"
+    ],
+    "blind": true
+  },
+  {
+    "id": "nebula-peaks",
+    "title": "Nebula Peaks",
+    "cells": 500,
+    "colours": 32,
+    "thumb": [
+      "#ac4981",
+      "#c0639b",
+      "#8c3c71",
+      "#d186b7",
+      "#4d6795"
+    ],
+    "blind": true
+  },
+  {
+    "id": "orchid-conservatory",
+    "title": "Orchid Conservatory",
+    "cells": 500,
+    "colours": 36,
+    "thumb": [
+      "#ca463f",
+      "#ba6b36",
+      "#cf8b4e",
+      "#a8af2f",
+      "#cf5b51"
+    ],
+    "blind": true
+  },
+  {
     "id": "sunset-tidepool",
     "title": "Sunset Tidepool",
     "cells": 500,
@@ -118,6 +174,20 @@
       "#da4d4a",
       "#d59346",
       "#f9cf70"
+    ],
+    "blind": true
+  },
+  {
+    "id": "tidepool-mosaic",
+    "title": "Tidepool Mosaic",
+    "cells": 500,
+    "colours": 30,
+    "thumb": [
+      "#f1560c",
+      "#bd2f09",
+      "#c95734",
+      "#d0486a",
+      "#a5ab26"
     ],
     "blind": true
   }

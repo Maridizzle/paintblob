@@ -173,6 +173,54 @@ check('tapping a cell paints it', true,
 await page.waitForTimeout(900);
 await page.screenshot({ path: path.join(OUT, 'portrait-after.png') });
 
+/* --------------------------------------------------------------------- undo */
+
+// Everything a fill granted has to come back off together. Reading it from
+// the DOM rather than from internals is the point — these four are what the
+// player actually sees change.
+const snapshot = () => page.evaluate(() => ({
+  progress: document.getElementById('barSubtitle').textContent,
+  points: document.getElementById('pointsValue').textContent,
+  tubs: [...document.querySelectorAll('#tubs .count')].map((n) => n.textContent).join(','),
+  undoOffered: !document.getElementById('undoPill').classList.contains('hidden'),
+}));
+
+const painted = await snapshot();
+check('undo is offered once something has been painted', painted.undoOffered);
+
+await page.click('#undoPill');
+await page.waitForTimeout(200);
+const undone = await snapshot();
+check('undo puts the cell back', /· 0\//.test(undone.progress), undone.progress);
+check('undo hands back the point it granted',
+  Number(undone.points) === Number(painted.points) - 1,
+  `${painted.points} -> ${undone.points}`);
+check('undo refills the tub it emptied', undone.tubs !== painted.tubs,
+  `${painted.tubs} -> ${undone.tubs}`);
+check('undo stops being offered with nothing left to take back', !undone.undoOffered);
+
+// Ctrl+Z is the same path, and has to survive there being no history left.
+await page.keyboard.press('Control+z');
+await page.waitForTimeout(150);
+check('undo with an empty history is a no-op, not a crash',
+  (await snapshot()).progress === undone.progress);
+
+// Put the cell back so everything downstream sees the state it expects.
+{
+  const t = await boardTransform();
+  await page.touchscreen.tap(t.ox + target.x * t.scale, t.oy + target.y * t.scale);
+  await page.waitForFunction(
+    () => /· [1-9]\d*\//.test(document.getElementById('barSubtitle').textContent),
+    null, { timeout: 10000, polling: 100 },
+  );
+  await page.waitForTimeout(700);
+  const again = await snapshot();
+  check('repainting after an undo restores exactly what was there',
+    again.progress === painted.progress && again.tubs === painted.tubs
+      && again.points === painted.points,
+    `${again.progress} · ${again.points}🪙`);
+}
+
 /* -------------------------------------------------------------- zoom & pan */
 
 // Two-finger pinch: Playwright's touchscreen API is single-touch only, so
@@ -499,6 +547,56 @@ check('both mystery pictures are listed with hidden titles and no colour swatche
   mysteryRows.count >= 2 && mysteryRows.swatchCounts.every((n) => n === 0),
   JSON.stringify(mysteryRows));
 
+/* ------------------------------------------------- unpainted thumbnails */
+
+const thumbs = await page.evaluate(async () => {
+  document.querySelector('[data-act="pictures"]').click();
+  // Thumbnails load lazily as rows come into view, so give the observer and
+  // the puzzle fetches a moment.
+  await new Promise((r) => setTimeout(r, 1500));
+  const rows = [...document.querySelectorAll('#panelBody .row')];
+  return rows.map((r) => {
+    const t = r.querySelector('.pic-thumb');
+    return {
+      mystery: r.querySelector('.label')?.textContent === 'Mystery picture',
+      blind: !!t?.classList.contains('blind'),
+      drawn: !!t?.querySelector('svg path[d]'),
+    };
+  }).filter((r) => r.blind || r.drawn || r.mystery);
+});
+check('every ordinary picture shows its unpainted outline',
+  thumbs.some((t) => t.drawn) && thumbs.every((t) => (t.mystery ? !t.drawn : t.drawn)),
+  JSON.stringify(thumbs.map((t) => (t.mystery ? 'mystery' : 'drawn'))));
+check('a mystery picture gives nothing away in its thumbnail',
+  thumbs.filter((t) => t.mystery).every((t) => t.blind && !t.drawn));
+
+// Press and hold opens the big look — and letting go must not then load the
+// picture you were only looking at.
+const held = await page.evaluate(async () => {
+  const thumb = [...document.querySelectorAll('.pic-thumb')].find((t) => t.querySelector('svg'));
+  const box = thumb.getBoundingClientRect();
+  const at = { clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 };
+  thumb.dispatchEvent(new PointerEvent('pointerdown', { ...at, pointerType: 'touch', bubbles: true }));
+  await new Promise((r) => setTimeout(r, 900));
+  const opened = !document.getElementById('picPreview').classList.contains('hidden');
+  const drawn = !!document.querySelector('#picPreview .sheet svg path[d]');
+  const titled = document.querySelector('#picPreview .cap')?.textContent ?? '';
+  thumb.dispatchEvent(new PointerEvent('pointerup', { ...at, pointerType: 'touch', bubbles: true }));
+  thumb.closest('.row').click();
+  await new Promise((r) => setTimeout(r, 250));
+  return {
+    opened, drawn, titled,
+    stillOnPanel: !document.getElementById('panel').classList.contains('hidden'),
+    closedAfter: document.getElementById('picPreview').classList.contains('hidden'),
+  };
+});
+check('holding a thumbnail opens the large unpainted preview',
+  held.opened && held.drawn && held.titled.length > 0, JSON.stringify(held));
+check('letting go of a hold does not load the picture you were looking at',
+  held.stillOnPanel && held.closedAfter, JSON.stringify(held));
+
+await page.evaluate(() => document.querySelector('[data-act="panel-close"]')?.click());
+
 // Banding is applied in JS, so the thing worth checking is the property CSS
 // alone could not guarantee: that the stripes actually alternate once the
 // headings and controls each panel interleaves with its rows are in the DOM.
@@ -769,6 +867,67 @@ check('cancelling the chooser resolves', chooser.cancelled === 'resolved', choos
   check("the finish card's close button dismisses it without leaving the picture", closedByX);
 
   await page.screenshot({ path: path.join(OUT, 'finished-compare.png') });
+}
+
+/* ----------------------------------------------------- the raised element */
+
+// Last, because it switches pictures. Koi Pond's fish is small enough to be
+// raised; Harbour Row's water covers a quarter of the frame and is not.
+{
+  const sample = () => page.evaluate(() => {
+    const c = document.getElementById('board');
+    const g = c.getContext('2d');
+    const b = window.__paintblobTest.board;
+    const { box } = b.liftShape ?? b.unionOf(b.liftCells ?? []);
+    // A strip across the element, in canvas pixels, through its middle.
+    const k = b.scale * b.dpr;
+    const y = Math.round((b.offsetY + (box.y0 + box.y1) / 2) * b.dpr);
+    const x0 = Math.round((b.offsetX * b.dpr) + box.x0 * k) - 12;
+    const w = Math.round((box.x1 - box.x0) * k) + 24;
+    return [...g.getImageData(Math.max(0, x0), y, Math.max(1, w), 1).data];
+  });
+  const differing = (a, b) => a.reduce((n, v, i) => n + (v === b[i] ? 0 : 1), 0);
+
+  await page.evaluate(async () => {
+    document.querySelector('[data-act="pictures"]').click();
+    await new Promise((r) => setTimeout(r, 400));
+    const row = [...document.querySelectorAll('#panelBody .row')]
+      .find((r) => r.querySelector('.label')?.textContent === 'Koi Pond');
+    row.click();
+  });
+  await page.waitForFunction(() => /Koi Pond/.test(document.getElementById('barSubtitle').textContent),
+    null, { timeout: 10000, polling: 100 });
+  await page.waitForTimeout(500);
+
+  const tagged = await page.evaluate(() => window.__paintblobTest.board.liftCells?.length ?? 0);
+  check('a small tagged element is raised off the picture', tagged === 3, `${tagged} cells`);
+
+  const box = await page.evaluate(() => {
+    const b = document.getElementById('board').getBoundingClientRect();
+    return { x: b.x, y: b.y, w: b.width, h: b.height };
+  });
+  const look = async (fx) => {
+    await page.mouse.move(box.x + box.w * fx, box.y + box.h * 0.5);
+    await page.waitForTimeout(600); // the parallax eases rather than snapping
+    return sample();
+  };
+  const fromLeft = await look(0.05);
+  const fromRight = await look(0.95);
+  check('the raised element shifts as the pointer moves across the picture',
+    differing(fromLeft, fromRight) > 40, `${differing(fromLeft, fromRight)} channels moved`);
+
+  // And must not follow the picture into photo view: that is the living
+  // element's own stage, and a parallax on a photograph is just a wobble.
+  await page.evaluate(() => document.getElementById('comparePill').click());
+  await page.waitForFunction(() => window.__paintblobTest.board.living === null,
+    null, { timeout: 15000, polling: 120 });
+  await page.waitForTimeout(300);
+  const photoLeft = await look(0.05);
+  const photoRight = await look(0.95);
+  check('the raise does not follow the picture into photo view',
+    differing(photoLeft, photoRight) === 0,
+    `${differing(photoLeft, photoRight)} channels moved in photo view`);
+  await page.screenshot({ path: path.join(OUT, 'raised-element.png') });
 }
 
 await browser.close();

@@ -10,6 +10,7 @@ import {
 } from '../src/pipeline/denoise.js';
 import { labelRegions, mergeSmallRegions, labelAnchor } from '../src/pipeline/regions.js';
 import { boundsOf, traceRegion, ringsToPath } from '../src/pipeline/contour.js';
+import { smoothRings } from '../src/pipeline/smooth.js';
 import { nameColour, toHex, uniquifyNames } from '../src/pipeline/colour-names.js';
 import { buildPuzzle, DETAIL_PRESETS } from '../src/pipeline/build.js';
 import { parsePath, pointInRings, ringsBounds } from '../src/geometry.js';
@@ -406,4 +407,279 @@ test('parsePath understands the H/V shorthand the tracer emits', () => {
   assert.deepEqual([...rings[0]], [2, 3, 8, 3, 8, 9, 2, 9]);
   assert.ok(pointInRings(rings, 5, 6));
   assert.ok(!pointInRings(rings, 1, 6));
+});
+
+/* ------------------------------------------------------------- smoothing */
+
+/**
+ * A little map with everything smoothing has to survive: a diagonal (stair
+ * steps to round away), an axis-aligned block (right angles to keep), a
+ * three-region junction, an island fully enclosed by one region, and regions
+ * running off all four edges of the frame.
+ */
+function testMap(w = 48, h = 48) {
+  const labels = new Int32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let id = 0;
+      if (y > x) id = 1;                                        // diagonal split
+      if (x >= 30 && x < 42 && y >= 4 && y < 16) id = 2;        // square block
+      if (x >= 8 && x < 14 && y >= 30 && y < 36) id = 3;        // island inside 1
+      labels[y * w + x] = id;
+    }
+  }
+  return { labels, w, h };
+}
+
+function traceAll({ labels, w, h }, simplify) {
+  const rings = new Map();
+  for (let id = 0; id < 4; id++) {
+    const bbox = boundsOf(labels, w, h, id);
+    if (!bbox) continue;
+    rings.set(id, traceRegion(labels, w, h, id, bbox, simplify));
+  }
+  return rings;
+}
+
+/** Every directed edge in every ring, counted. */
+function edgeUse(ringsById) {
+  const uses = new Map();
+  for (const rings of ringsById.values()) {
+    for (const ring of rings) {
+      const n = ring.length / 2;
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const key = `${ring[i * 2]},${ring[i * 2 + 1]}|${ring[j * 2]},${ring[j * 2 + 1]}`;
+        uses.set(key, (uses.get(key) ?? 0) + 1);
+      }
+    }
+  }
+  return uses;
+}
+
+test('smoothing keeps every interior boundary welded, walked once from each side', () => {
+  // This is the whole point of smoothing arcs rather than rings. If the two
+  // sides of a boundary are rounded independently they stop matching, and the
+  // mismatch is a gap running down the middle of the picture. Sharing the arc
+  // makes them the same numbers, which shows up here as every directed edge
+  // appearing exactly once and its reverse appearing too.
+  const map = testMap();
+  const smoothed = smoothRings(map.labels, map.w, map.h, traceAll(map, false));
+  const uses = edgeUse(smoothed);
+
+  const onFrame = (p) => {
+    const [x, y] = p.split(',').map(Number);
+    return x === 0 || y === 0 || x === map.w || y === map.h;
+  };
+
+  let interior = 0;
+  for (const [edge, count] of uses) {
+    assert.equal(count, 1, `${edge} is walked twice in the same direction`);
+    const [a, b] = edge.split('|');
+    if (onFrame(a) && onFrame(b)) continue; // the frame has no far side
+    interior++;
+    assert.ok(uses.has(`${b}|${a}`),
+      `${edge} has no partner from the other side — that is a gap in the picture`);
+  }
+  assert.ok(interior > 100, `only ${interior} interior edges; the map is not exercising much`);
+});
+
+test('smoothing rounds a stair-stepped diagonal and leaves right angles alone', () => {
+  const map = testMap();
+  const hard = traceAll(map, true);
+  const soft = smoothRings(map.labels, map.w, map.h, traceAll(map, false));
+
+  // The square block is axis aligned with runs far longer than a stair step,
+  // so every one of its corners is a real corner and must survive untouched.
+  const block = soft.get(2).flat();
+  for (const [x, y] of [[30, 4], [42, 4], [42, 16], [30, 16]]) {
+    const found = block.some((_, i) => i % 2 === 0 && block[i] === x && block[i + 1] === y);
+    assert.ok(found, `the block lost its corner at ${x},${y}`);
+  }
+
+  // The diagonal, by contrast, should have stopped being a staircase: no
+  // axis-aligned unit steps left along it.
+  const diagonalSteps = (rings) => {
+    let steps = 0;
+    for (const ring of rings) {
+      const n = ring.length / 2;
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const dx = Math.abs(ring[j * 2] - ring[i * 2]);
+        const dy = Math.abs(ring[j * 2 + 1] - ring[i * 2 + 1]);
+        if ((dx === 1 && dy === 0) || (dx === 0 && dy === 1)) steps++;
+      }
+    }
+    return steps;
+  };
+  assert.ok(diagonalSteps(hard.get(0)) > 40,
+    'the unsmoothed diagonal should be full of single-pixel steps');
+  assert.ok(diagonalSteps(soft.get(0)) < diagonalSteps(hard.get(0)) / 4,
+    'smoothing barely touched the staircase');
+});
+
+test('an island and the hole around it keep opposite windings', () => {
+  // Region 3 sits entirely inside region 1, so neither ring has a junction to
+  // cut at and both are one closed loop. Handing them the same loop in the
+  // same direction stops the nonzero fill rule knocking the hole out, and the
+  // enclosing cell swallows the island whole.
+  const map = testMap();
+  const soft = smoothRings(map.labels, map.w, map.h, traceAll(map, false));
+
+  const area = (ring) => {
+    let a = 0;
+    const n = ring.length / 2;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      a += ring[i * 2] * ring[j * 2 + 1] - ring[j * 2] * ring[i * 2 + 1];
+    }
+    return a / 2;
+  };
+
+  const island = soft.get(3)[0];
+  // The hole in region 1 is the ring whose points match the island's.
+  const hole = soft.get(1).find((r) => r !== island && r.length === island.length
+    && r.includes(island[0]) && r.includes(island[1]));
+  assert.ok(hole, 'region 1 has no ring matching the island it encloses');
+  assert.ok(Math.sign(area(island)) !== Math.sign(area(hole)),
+    'the island and its hole wind the same way, so the hole will not be knocked out');
+});
+
+/**
+ * The firefly that broke smoothing, lifted straight out of the picture it
+ * broke on. A blob this convoluted is the point: it is one closed loop with no
+ * junction anywhere on it, its outline runs to 324 lattice corners, and the
+ * first corner worth pinning sits a long way into that ring.
+ */
+const FIREFLY = [
+  '.........................................',
+  '.........................................',
+  '.....#...................................',
+  '....###..................................',
+  '...#####.................................',
+  '...######................................',
+  '....######...............................',
+  '....########......###....................',
+  '.....########.....####...................',
+  '.....########.....#####..............##..',
+  '....########......#####.............###..',
+  '...#########.....######............###...',
+  '...#########.....#######..........###....',
+  '...#########.....#######..........###....',
+  '..###########....#######.........###.....',
+  '..###########....#######........####.....',
+  '..###########....########.......####.....',
+  '..#######........########.......###......',
+  '..######.........#########......###......',
+  '..######........###########....###.......',
+  '..######........############..####.......',
+  '..#####.........#################........',
+  '..####....###...###############..........',
+  '..####...#####.###############...........',
+  '..#####.#####################............',
+  '..###########################............',
+  '...##########################............',
+  '......#######################............',
+  '.......######################............',
+  '.......#####################.............',
+  '.......#####################.............',
+  '.......####################..............',
+  '.......###################...............',
+  '........################.................',
+  '.........######...#####..................',
+  '.........#####.....####..................',
+  '..........####.....####..................',
+  '...........##.....######.................',
+  '..................######.................',
+  '.......##........#######.................',
+  '......###.......#######..................',
+  '.....#####......######...................',
+  '.....######....#####.....................',
+  '....#######....####......................',
+  '....#######....###.......................',
+  '....########..###........................',
+  '...#############.........................',
+  '...############..........................',
+  '..###########............................',
+  '..##########.............................',
+  '..#########..............................',
+  '...########..............................',
+  '...#######...............................',
+  '.....####................................',
+  '.....####................................',
+  '......##.................................',
+  '.........................................',
+  '.........................................',
+];
+
+test('smoothing never turns a ring inside out', () => {
+  // Winding is what tells a hole from an outline. contour.js emits outer rings
+  // one way round and holes the other, and canvas' nonzero fill rule knocks
+  // holes out on that basis alone — so a ring that comes back wound the other
+  // way is a hole that no longer subtracts, and the cell around it swallows
+  // whatever was inside.
+  //
+  // What broke it: on a closed loop the run from the last pinned point wraps
+  // past the end of the array and round to the FIRST one, and every point
+  // before that first anchor lives in that run and nowhere else. End it at
+  // index 0 instead and those points belong to no run at all, so every one of
+  // them is dropped — which folds the polygon inside out. Here that took the
+  // firefly from 759 square pixels to 39, with the sign reversed.
+  const h = FIREFLY.length;
+  const w = FIREFLY[0].length;
+  const labels = new Int32Array(w * h);
+  FIREFLY.forEach((row, y) => [...row].forEach((c, x) => {
+    labels[y * w + x] = c === '#' ? 1 : 0;
+  }));
+
+  const raw = new Map();
+  for (const id of [0, 1]) {
+    raw.set(id, traceRegion(labels, w, h, id, boundsOf(labels, w, h, id), false));
+  }
+  const soft = smoothRings(labels, w, h, raw);
+
+  const area = (ring) => {
+    let sum = 0;
+    const n = ring.length / 2;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      sum += ring[i * 2] * ring[j * 2 + 1] - ring[j * 2] * ring[i * 2 + 1];
+    }
+    return sum / 2;
+  };
+
+  for (const [id, before] of raw) {
+    const after = soft.get(id);
+    assert.equal(after.length, before.length, `cell ${id} lost or gained a ring`);
+    before.forEach((ring, i) => {
+      const was = area(ring);
+      const now = area(after[i]);
+      assert.equal(Math.sign(now), Math.sign(was),
+        `cell ${id} ring ${i} came back wound the other way (${was} -> ${now})`);
+      // Rounding a staircase costs a sliver, never most of the shape.
+      assert.ok(Math.abs(now) > Math.abs(was) * 0.9,
+        `cell ${id} ring ${i} lost its area (${was} -> ${now})`);
+    });
+  }
+});
+
+test('a smoothed puzzle still covers every pixel exactly once', () => {
+  // The same guarantee verify-puzzle.mjs enforces across the shipped puzzles,
+  // asserted here on a picture built from scratch so a failure is diagnosable.
+  const data = image(W, H, (x, y) => (y > x ? [230, 60, 60] : [40, 90, 200]));
+  const puzzle = buildPuzzle(data, W, H, { title: 'Split', size: 64, maxCells: 8, maxColours: 4 });
+  const coverage = new Int32Array(puzzle.width * puzzle.height).fill(-1);
+  let overlaps = 0;
+  puzzle.cells.forEach((cell, id) => {
+    const rings = parsePath(cell.d);
+    for (let y = 0; y < puzzle.height; y++) {
+      for (let x = 0; x < puzzle.width; x++) {
+        if (!pointInRings(rings, x + 0.5, y + 0.5)) continue;
+        if (coverage[y * puzzle.width + x] !== -1) overlaps++;
+        coverage[y * puzzle.width + x] = id;
+      }
+    }
+  });
+  assert.equal(overlaps, 0, 'cells overlap after smoothing');
+  assert.equal([...coverage].filter((v) => v === -1).length, 0, 'pixels left uncovered');
 });

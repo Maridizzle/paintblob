@@ -146,7 +146,7 @@ button {
 #board.done { cursor: default; }
 
 /* Shown only once zoomed past fit-to-window; doubles as the reset button. */
-.zoom-pill, .compare-pill {
+.zoom-pill, .compare-pill, .undo-pill {
   position: absolute;
   z-index: 15;
   -webkit-app-region: no-drag;
@@ -160,12 +160,21 @@ button {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
   transition: background 120ms, transform 120ms;
 }
-.zoom-pill:hover, .compare-pill:hover { background: rgba(255, 255, 255, 0.14); transform: translateY(-1px); }
+.zoom-pill:hover, .compare-pill:hover, .undo-pill:hover {
+  background: rgba(255, 255, 255, 0.14);
+  transform: translateY(-1px);
+}
 .zoom-pill { top: 10px; right: 10px; }
 
 /* Shown once a picture is finished, to flip the canvas over to the real
    photo — top-left so it never collides with the zoom pill. */
 .compare-pill { top: 10px; left: 10px; }
+
+/* Shares that corner, and can: undo stops being offered at the exact moment
+   the compare pill starts, so the two are never on screen together. Kept as
+   see-through as the points HUD, for the same reason — unlike the zoom and
+   compare pills, this one is up while you are painting rather than after. */
+.undo-pill { top: 10px; left: 10px; background: rgba(28, 25, 38, 0.68); }
 
 /* Top-center is the one corner of #stage nothing else claims. Deliberately
    more transparent than the zoom/compare pills (0.68 vs their 0.9) — this
@@ -344,10 +353,32 @@ button {
 .avatar-stage svg [data-slot] { cursor: pointer; }
 .avatar-stage svg [data-slot]:hover { filter: brightness(1.18); }
 
+/* On her own she is a 120x210 frame — much taller than the room's 260x216, so
+   sizing this one by width would run the panel off the bottom of the window.
+   Height drives it instead and the width follows, which also means the figure
+   stays put when a race or a slider changes her proportions. */
+.avatar-stage.figure { width: auto; height: 300px; }
+.avatar-stage.figure svg { width: auto; height: 100%; margin: 0 auto; }
+
 .avatar-levelbar { width: 100%; }
 .avatar-levelbar .label { font-size: 11px; color: var(--muted); margin-bottom: 5px; text-align: center; }
 
 .avatar-tabs { margin: 2px 0 9px; }
+
+/* Everything in the room is selectable; the avatar inside it keeps her own
+   per-part cursor from the rule above, which is the finer of the two. */
+.avatar-stage svg [data-prop] { cursor: pointer; }
+.avatar-stage svg [data-prop]:hover { filter: brightness(1.09); }
+
+/* The current colour of one room part, shown on its row. Square rather than
+   round so it does not read as one of the palette swatches underneath. */
+.part-chip {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  flex: none;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+}
 
 .swatch-row { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 2px 2px; }
 .swatch {
@@ -576,6 +607,54 @@ button {
 .row.locked { opacity: 0.46; }
 .row.earned { background: rgba(255, 179, 92, 0.10); border-color: rgba(255, 179, 92, 0.26); }
 
+/* The unpainted picture, as a line drawing. Paper-coloured so it reads as the
+   page you are about to paint rather than as another dark panel; the outline
+   inherits `color`, so one rule sets both. */
+.pic-thumb {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: 5px;
+  overflow: hidden;
+  background: #f2efe6;
+  color: #1b1a24;
+  display: grid;
+  place-items: center;
+}
+.pic-thumb svg { width: 100%; height: 100%; display: block; }
+/* A blind pack's shapes give it away as fast as its title would. */
+.pic-thumb.blind {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.pic-preview {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(9, 8, 13, 0.78);
+  animation: fade 130ms ease both;
+  pointer-events: none; /* a look, not a target — the row underneath keeps its taps */
+}
+.pic-preview .sheet {
+  background: #f2efe6;
+  color: #1b1a24;
+  border-radius: 9px;
+  padding: 7px;
+  box-shadow: 0 20px 54px rgba(0, 0, 0, 0.55);
+  max-width: 88%;
+  max-height: 76%;
+}
+.pic-preview svg { width: 100%; height: 100%; display: block; }
+.pic-preview .cap { font-size: 12px; font-weight: 600; color: var(--text); }
+
 .swatches { display: flex; gap: 3px; }
 .swatches i { width: 11px; height: 22px; border-radius: 3px; display: block; }
 
@@ -755,7 +834,7 @@ button {
   .segmented button { padding: 10px 13px; font-size: 12px; }
   .row { padding: 12px 13px; }
   .primary.add { padding: 14px; font-size: 14px; }
-  .zoom-pill, .compare-pill { padding: 7px 14px; font-size: 12.5px; }
+  .zoom-pill, .compare-pill, .undo-pill { padding: 7px 14px; font-size: 12.5px; }
 }
 
 /* Short and narrow — a phone in portrait. Give the picture the room. */
@@ -774,6 +853,8 @@ button {
   #bar { padding: 4px 6px; }
   #stage { padding: 6px; }
   .tub { width: 40px; height: 40px; }
+  /* 300px of avatar leaves nothing for the tabs and rows underneath. */
+  .avatar-stage.figure { height: 190px; }
 }
 
 /* -------------------------------------------------------------------- grip */

@@ -26,7 +26,14 @@ export function boundsOf(labels, width, height, id) {
   return x0 === Infinity ? null : [x0, y0, x1, y1];
 }
 
-export function traceRegion(labels, width, height, id, bbox) {
+/**
+ * @param {boolean} simplify  collapse straight runs before returning. Off when
+ *   the caller is about to smooth: dropping collinear points can swallow a
+ *   corner where three regions meet, and smooth.js needs those to decide where
+ *   one shared boundary ends and the next begins. It does its own dropping
+ *   inside each arc instead, where it is safe.
+ */
+export function traceRegion(labels, width, height, id, bbox, simplify = true) {
   const [bx0, by0, bx1, by1] = bbox;
   const stride = width + 1;
   const at = (x, y) =>
@@ -103,7 +110,7 @@ export function traceRegion(labels, width, height, id, bbox) {
         if (current === startKey) break;
       }
 
-      if (ring.length >= 6) rings.push(dropCollinear(ring));
+      if (ring.length >= 6) rings.push(simplify ? dropCollinear(ring) : ring);
     }
   }
 
@@ -128,9 +135,10 @@ function dropCollinear(flat) {
 }
 
 /**
- * SVG path data using H/V shorthands. Every segment here is axis aligned, so
- * this roughly halves the number of emitted values versus L commands — and
- * these paths are the bulk of a puzzle file.
+ * SVG path data. H/V shorthands roughly halve the emitted values versus L, and
+ * these paths are the bulk of a puzzle file — so it is worth checking for them
+ * even after smoothing, where most segments are no longer axis aligned but the
+ * pinned runs along the image frame and through real corners still are.
  */
 export function ringsToPath(rings) {
   const parts = [];

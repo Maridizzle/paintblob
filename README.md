@@ -75,6 +75,15 @@ achievements are saved to the Electron `userData` directory and survive
 restarts. An achievement toast waits for a click to dismiss rather than fading
 on a timer — there is always time to actually read what you just earned.
 
+Painted the wrong cell, or changed your mind? **Ctrl/Cmd+Z** — or the ↶ pill
+in the corner — takes it back, as far back as this sitting goes. It is free
+and uncapped: a misclick is a misclick, and charging for one would be worse
+than the mistake. Everything the fill granted comes back off with it, the
+points included; achievements you already earned stay earned. Undo is offered
+until the picture is finished, at which point there is nothing left to
+correct — only a cell of the colour you are holding can be filled, so the last
+one was never wrong. The history is per-sitting and is not saved.
+
 Finishing a picture pauses on it rather than covering it immediately — the
 outlines and numbers fade away, then there is a real, unhurried look at the
 whole thing before the stats card appears, and that card has a close button
@@ -82,6 +91,25 @@ so you can back out of it and keep looking whenever you are done with it. A
 pill in the corner (🖼 Photo / 🎨 Painting) shows up once a picture is
 finished and swaps the canvas between what you painted and the real photo it
 was mapped from — zoom and pan keep working on either.
+
+One element of a picture stands proud of it while you paint — the fish above
+the pond, the sun over the harbour. It is a parallax trick rather than any
+real geometry: the shadow stays on the surface where the element belongs while
+the element itself slides against your pointer, and that gap is what your eye
+reads as height. It uses the cells already tagged as the picture's living
+element, so there is one thing per picture singled out rather than two, and it
+belongs to painting alone — flipping to the photo hands the same element over
+to its animation and drops the lift entirely. An element covering more than a
+tenth of the frame is left flat: that much of a picture floating reads as the
+artwork delaminating rather than as an object above a surface.
+
+The Pictures panel shows each one as the line drawing you are about to paint —
+its own outlines, nothing filled in — so you can see what you are picking
+rather than read its name. Hover it with a mouse or hold it with a finger for
+a full-size look. A picture too detailed to fit in a thumbnail drops its
+smallest cells rather than drawing all five hundred into a grey block, and a
+blind pack shows nothing at all: its shapes give it away every bit as fast as
+its title would.
 
 Scroll wheel or two-finger pinch to zoom in on a picture, up to 6×; drag (or
 one-finger pan on a touchscreen) to move around once zoomed. A pill in the
@@ -109,6 +137,7 @@ PNG ─► downscale ─► quantise (median cut + k-means, merge lookalike tubs
     ─► connected components
     ─► absorb undersized regions into their longest-shared-border neighbour
     ─► trace boundaries along pixel cracks
+    ─► smooth each shared boundary once, welded to both its cells
     ─► distance transform for number placement
     ─► puzzle JSON
 ```
@@ -122,6 +151,26 @@ centres, so two neighbouring cells trace the identical boundary from opposite
 sides and the finished picture has no hairline seams. `npm run verify` proves
 it: every pixel must belong to exactly one cell, and every number must land
 inside the cell it labels.
+
+That also makes every outline axis-aligned, which is why the stair steps cannot
+be rounded off a cell at a time — smooth two neighbours independently and their
+shared border stops matching, which opens a gap down the middle of the picture.
+So a boundary is smoothed **once** and both sides are handed the same polyline.
+Corners where three or more regions meet are found from the region map and the
+rings are cut there into arcs; each arc belongs to exactly two cells, one
+walking it forwards and the other backwards, so it is smoothed once and cached.
+Sharing the arc *is* the weld — nothing is matched within a tolerance, the two
+sides are the same numbers.
+
+Two kinds of point then stay exactly where they are: anything on the image
+frame, since moving it opens a gap at the edge of the picture, and any corner
+where two long straight runs meet. That last one is what keeps a window square
+while a one-pixel staircase rounds away. Corner cutting quadruples the vertex
+count, so the smoothed arc is thinned again to a fifth of a pixel — invisible
+under the outline stroke, and the difference between puzzle files growing by
+two thirds and by nearly threefold. Smoothing costs about 10ms of a 400ms
+build; `--no-soften` on the CLI leaves the raw lattice geometry, for when a
+boundary looks wrong and the question is whether smoothing put it there.
 
 ## Adding pictures
 
@@ -321,11 +370,6 @@ There is no bundler and no framework. `src/` is loaded directly as ES modules.
 
 ## Known gaps
 
-- Boundary simplification is lossless only (collinear points). Proper
-  topology-preserving smoothing would need a shared-edge graph so neighbouring
-  cells stay welded; until then diagonals are stair-stepped, which the outline
-  stroke hides at display scale.
-- No undo. The `undos` stat is reserved but unused.
 - The demo art is deliberately simple, so it yields 16–18 cells. Generated
   artwork gives considerably more.
 - Window transparency on Linux needs a running compositor.

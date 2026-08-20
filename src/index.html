@@ -37,6 +37,8 @@
       <canvas id="board"></canvas>
 
       <button id="zoomPill" class="zoom-pill hidden" data-act="zoom-reset" title="Reset zoom">100%</button>
+      <button id="undoPill" class="undo-pill hidden" data-act="undo"
+        title="Undo the last cell (Ctrl/Cmd+Z)">↶ Undo</button>
       <button id="comparePill" class="compare-pill hidden" data-act="toggle-source"
         title="Compare against the original picture"></button>
 
@@ -83,6 +85,9 @@
         <button class="icon" data-act="panel-close">✕</button>
       </header>
       <div id="panelBody" class="panel-body"></div>
+      <!-- The big look at an unpainted picture. Inside the panel so it covers
+           the list and nothing else, and so closing the panel takes it too. -->
+      <div id="picPreview" class="pic-preview hidden"></div>
     </section>
   </div>
 

@@ -17,9 +17,10 @@ import {
   NUMBER_RECOLOR_CYCLE, nextNumberRecolorIndex,
 } from './abilities.js';
 import { WARDROBE_ITEMS } from './wardrobe.js';
+import { outlineSVG, outlineWeight } from './thumbnail.js';
 import {
   ROOMS, HOUSE_ITEMS, LIGHTING, PETS, PROP_SLOTS, SLOT_LABEL,
-  defaultHouse, itemsFor, starterFor, buildRoomSVG,
+  defaultHouse, itemsFor, starterFor, buildRoomSVG, colourablesIn, colourKey,
 } from './house.js';
 
 let api;
@@ -48,8 +49,16 @@ const S = {
   importing: false,
   hintsThisPuzzle: 0,
   pending: new Set(), // cells with a burst already in flight, claimed but not yet filled
+  // What undo gives back, newest last. Per-sitting rather than saved: an
+  // unbounded array of every cell ever painted does not belong in a save file,
+  // and reopening a picture is a fresh start on it anyway.
+  history: [],
   avatarTab: 'customize', // UI-only, not persisted — resets to Customize each time the panel opens
   avatarSlot: null,       // which avatar part is currently being recoloured
+  previewId: null,        // picture whose large preview is open or pending
+  previewTimer: 0,
+  roomProp: null,         // which thing in the room is selected — an id from colourablesIn()
+  roomPart: null,         // which of that thing's parts is being recoloured, as a colour key
 };
 
 // Read-only handle for the smoke test (electron/main.cjs) so it can click a
@@ -230,6 +239,7 @@ async function loadPuzzle(id) {
   S.elapsedMs = (saved.seconds || 0) * 1000;
   S.finished = S.filled.size === S.cells.length;
   S.bursts = [];
+  S.history = [];
   S.selected = -1;
   S.revealFrom = S.finished ? 0 : -1;
   S.hintsThisPuzzle = 0;
@@ -256,6 +266,7 @@ async function loadPuzzle(id) {
   board.layout();
   syncZoom(); // board.setPuzzle() already reset zoom for the new picture
   syncCompare(); // ditto showSource
+  syncUndo(); // history was just cleared, so this always hides it
   if (!S.finished) nextTub();
 
   S.save.settings.lastPuzzle = id;
@@ -279,11 +290,19 @@ let tap = null;      // { id, x0, y0 } — sole pointer, decision pending
 let panning = null;  // { id, x, y } — single-pointer pan in progress
 let pinch = null;    // { ids, dist, zoom, midX, midY } — two-finger gesture
 
+// Nothing is looking at the picture any more, so the raised element settles
+// back square rather than staying frozen at whatever angle you left it.
+$('board').addEventListener('pointerleave', () => board.releaseLift());
+
 $('board').addEventListener('pointermove', (e) => {
   if (!pointers.has(e.pointerId)) {
     // No gesture claims this pointer: the plain hover-outline path. A finger
     // has no hover state, and touch drags would otherwise leave an outline
     // stranded under wherever the thumb last was.
+    // The raised element's parallax reads the pointer as an eye position, so
+    // it wants every move — including a finger's, and including one over a
+    // finished picture, neither of which the hover outline below cares about.
+    board.setLiftFrom(e.clientX, e.clientY);
     if (S.finished || e.pointerType === 'touch') return;
     const { cell } = pointerToCell(e.clientX, e.clientY);
     // Idle frames are throttled to 30fps; force the next one so the hover
@@ -466,6 +485,7 @@ function launch(cell, point) {
 function commitFill(burst) {
   const cell = burst.cell;
   const wasGolden = board.goldenCell?.id === cell.id;
+  const goldenWas = wasGolden ? board.goldenCell : null;
   S.filled.add(cell.id);
   S.pending.delete(cell.id);
   S.remaining[cell.colour]--;
@@ -473,8 +493,10 @@ function commitFill(burst) {
   if (wasGolden) board.goldenCell = null;
 
   S.save.stats.cells++;
-  if (!sfx.enabled) S.save.stats.mutedCells = (S.save.stats.mutedCells || 0) + 1;
-  if (accruePassiveHint(S.save.stats)) {
+  const muted = !sfx.enabled;
+  if (muted) S.save.stats.mutedCells = (S.save.stats.mutedCells || 0) + 1;
+  const hinted = accruePassiveHint(S.save.stats);
+  if (hinted) {
     sfx.play('bank');
     syncHints();
   }
@@ -504,10 +526,93 @@ function commitFill(burst) {
     nextTub();
   }
 
+  // Everything undo has to hand back, recorded as it is granted rather than
+  // recomputed later: `award` folds in a Golden Cell and a Colour Surge that
+  // may both have expired by the time this is taken back.
+  S.history.push({
+    cells: [cell.id],
+    colour: cell.colour,
+    points: award,
+    muted,
+    hint: hinted,
+    golden: wasGolden && goldenWas ? goldenWas : null,
+  });
+
   syncTubs();
+  syncUndo();
   persist();
 
   if (S.filled.size === S.cells.length) finish();
+}
+
+/**
+ * Takes back the last thing painted. Free, and as far back as this sitting
+ * goes: a misclick is a misclick, and either charging for it or capping it at
+ * one step would be worse than the mistake itself.
+ *
+ * Everything commitFill granted comes back off — the cell, the tub's count,
+ * the cell tally, the points. What does not come back off is anything already
+ * announced: achievements earned, and ability charges handed out at a level
+ * up. Taking those away is a nastier surprise than the inconsistency of
+ * keeping them, and their toast has already been read.
+ *
+ * Once a picture is finished, undo is over. Unwinding that would mean undoing
+ * stats.puzzles, the reveal and the stats card — and there is nothing to
+ * correct anyway, since only a cell of the colour you are holding can ever be
+ * filled, so the last one was never a mistake.
+ */
+function undoLast() {
+  if (!S.puzzle || S.finished || !S.history.length) return;
+  const step = S.history.pop();
+  const stats = S.save.stats;
+
+  for (const id of step.cells) {
+    S.filled.delete(id);
+    board.markUnfilled(id);
+  }
+  S.remaining[step.colour] += step.cells.length;
+
+  stats.cells -= step.cells.length;
+  stats.undos = (stats.undos ?? 0) + 1;
+  if (step.muted) stats.mutedCells = Math.max(0, (stats.mutedCells ?? 0) - step.cells.length);
+  if (step.points) {
+    stats.points = Math.max(0, (stats.points ?? 0) - step.points);
+    stats.pointsEarned = Math.max(0, (stats.pointsEarned ?? 0) - step.points);
+  }
+  if (step.hint) {
+    // hintsEarned is what the cell count has paid out, so it always comes back
+    // down — otherwise the same crossing could be sold again on a repaint. The
+    // spendable balance can only go to zero, which is where it stops if the
+    // hint was already used.
+    stats.hintsEarned = Math.max(0, (stats.hintsEarned ?? 0) - 1);
+    stats.hints = Math.max(0, (stats.hints ?? 0) - 1);
+    syncHints();
+  }
+  // Golden Cell was cleared when the cell it marked got filled. If its window
+  // has not run out, that cell is still worth five points.
+  if (step.golden && step.golden.end > Date.now()) board.goldenCell = step.golden;
+
+  // You are left holding the colour you just took back, which is nearly always
+  // the one you were about to use again — and the fill may have emptied that
+  // tub and moved the selection on by itself.
+  if (S.selected === step.colour) sfx.play('pick', step.colour);
+  else selectTub(step.colour);
+
+  syncTubs();
+  syncAvatarWidget();
+  syncAbilityRow();
+  syncUndo();
+  persist();
+  ensureFrame();
+}
+
+/** Offered only while there is something to take back, and never once the
+ *  picture is done — which is also why it can share the compare pill's corner,
+ *  since that one appears exactly when this one stops. */
+function syncUndo() {
+  const pill = $('undoPill');
+  if (!pill) return;
+  pill.classList.toggle('hidden', S.finished || !S.history.length);
 }
 
 /**
@@ -523,17 +628,27 @@ function autoFillHalfOfHeldColour() {
     (c) => c.colour === S.selected && !S.filled.has(c.id) && !S.pending.has(c.id),
   );
   const n = Math.ceil(candidates.length / 2);
+  const colour = S.selected;
   for (let i = 0; i < n; i++) {
     const cell = candidates[i];
     S.filled.add(cell.id);
     S.remaining[cell.colour]--;
     board.markFilled(cell.id);
   }
+  // One entry for the whole batch: it was one action, so it is one undo. It
+  // granted no points and no cell credit, so there is none to hand back.
+  if (n) {
+    S.history.push({
+      cells: candidates.slice(0, n).map((c) => c.id),
+      colour, points: 0, muted: false, hint: false, golden: null,
+    });
+  }
   if (n && S.remaining[S.selected] === 0) {
     achievements.award('tub-empty');
     nextTub();
   }
   syncTubs();
+  syncUndo();
   persist();
   ensureFrame();
   if (S.filled.size === S.cells.length) finish();
@@ -544,6 +659,7 @@ function finish() {
   S.finished = true;
   S.revealFrom = performance.now();
   $('board').classList.add('done');
+  syncUndo();
 
   S.save.stats.puzzles++;
   if (streaks.wrongClicks === 0) achievements.award('flawless');
@@ -670,8 +786,11 @@ function frame(now) {
   // board.living is safe to include where numberOverride was not: it counts
   // down and drawLiving() clears it the moment its window closes, so the
   // loop drops back to the idle cadence by itself.
+  // board.liftMoving() is safe to include for the same reason board.living is:
+  // it eases to a stop by itself, so the loop drops back to the idle cadence
+  // rather than being pinned at full rate forever.
   const busy = S.bursts.length > 0 || S.revealFrom > 0 || board.hintTarget
-    || board.colourFlash || board.goldenCell || board.living;
+    || board.colourFlash || board.goldenCell || board.living || board.liftMoving();
   if (busy || now - lastDraw > 33) {
     lastDraw = now;
     board.draw(S.bursts, now);
@@ -720,6 +839,7 @@ async function openPanel(kind) {
 
 function closePanel() {
   S.panel = null;
+  hidePicturePreview();
   $('panel').classList.add('hidden');
   $('pointsHud').classList.remove('hidden');
 }
@@ -742,6 +862,138 @@ function band(container) {
     .forEach((el, i) => el.classList.toggle('alt', i % 2 === 1));
 }
 
+/* ------------------------------------------------------- picture previews */
+
+// Row thumbnails, keyed by picture id. Only the finished markup is kept, not
+// the puzzle it came from: a puzzle carries its source photo as a data URI and
+// runs to a couple of hundred kilobytes, and there can be a lot of them.
+const thumbCache = new Map();
+
+const THUMB_PX = 46;
+
+/**
+ * Fills in a row's thumbnail once the row is actually on screen. Building
+ * every one up front means loading every puzzle the moment the panel opens,
+ * which is most of a megabyte the player may never scroll to.
+ */
+const thumbLoader = new IntersectionObserver((entries) => {
+  for (const entry of entries) {
+    if (!entry.isIntersecting) continue;
+    const el = entry.target;
+    thumbLoader.unobserve(el);
+    fillThumb(el, el.dataset.picture);
+  }
+}, { rootMargin: '120px' });
+
+async function fillThumb(el, id) {
+  if (!thumbCache.has(id)) {
+    try {
+      const puzzle = await api.loadPuzzle(id);
+      thumbCache.set(id, outlineSVG(puzzle, {
+        ...outlineWeight(puzzle.cells.length, THUMB_PX),
+      }));
+    } catch {
+      // A picture that will not load is the row's problem, not the panel's —
+      // clicking it already surfaces the failure. Leave the box empty.
+      thumbCache.set(id, '');
+    }
+  }
+  // The panel may have been closed and rebuilt while that was in flight.
+  if (el.isConnected) el.innerHTML = thumbCache.get(id);
+}
+
+/**
+ * The big look at an unpainted picture: hover it with a mouse, or hold it down
+ * with a finger. Loaded fresh rather than cached — it is one picture at a time
+ * and the wait is already covered by the delay before it opens.
+ */
+async function showPicturePreview(id, title) {
+  const host = $('picPreview');
+  if (!host) return;
+  let puzzle;
+  try {
+    puzzle = await api.loadPuzzle(id);
+  } catch {
+    return;
+  }
+  // Moved on, or closed the panel out from under it, while that was loading.
+  if (S.previewId !== id || S.panel !== 'pictures') return;
+
+  // Built as nodes with their sizing set as properties, not as a style="..."
+  // attribute in a markup string: the app ships a CSP of style-src 'self',
+  // which refuses inline style attributes outright — the sheet would have come
+  // out unsized. Presentation attributes inside the SVG are fine, which is why
+  // outlineSVG uses stroke/fill rather than CSS.
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet';
+  sheet.style.aspectRatio = `${puzzle.width} / ${puzzle.height}`;
+  if (puzzle.width >= puzzle.height) sheet.style.width = 'min(78vmin, 78vw)';
+  else sheet.style.height = 'min(78vmin, 72vh)';
+  sheet.innerHTML = outlineSVG(puzzle, { ...outlineWeight(puzzle.cells.length, 420) });
+
+  const cap = document.createElement('div');
+  cap.className = 'cap';
+  cap.textContent = title;
+
+  host.textContent = '';
+  host.append(sheet, cap);
+  host.classList.remove('hidden');
+}
+
+function hidePicturePreview() {
+  S.previewId = null;
+  clearTimeout(S.previewTimer);
+  const host = $('picPreview');
+  if (!host) return;
+  host.classList.add('hidden');
+  host.textContent = '';
+}
+
+/**
+ * Hover on a mouse, press-and-hold on a finger. A hold that opens the preview
+ * also has to swallow the click that follows it, or letting go loads the very
+ * picture you were only looking at.
+ */
+function wirePreview(el, id, title) {
+  const open = (delay) => {
+    clearTimeout(S.previewTimer);
+    S.previewId = id;
+    S.previewTimer = setTimeout(() => showPicturePreview(id, title), delay);
+  };
+
+  if (matchMedia('(pointer: fine)').matches) {
+    el.addEventListener('mouseenter', () => open(280));
+    el.addEventListener('mouseleave', hidePicturePreview);
+  }
+
+  let held = null;
+  el.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse') return; // hover already covers it
+    held = { x: e.clientX, y: e.clientY, fired: false };
+    clearTimeout(S.previewTimer);
+    S.previewId = id;
+    S.previewTimer = setTimeout(() => {
+      if (held) held.fired = true;
+      showPicturePreview(id, title);
+    }, 420);
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (!held) return;
+    // A drag is a scroll, not a hold.
+    if (Math.hypot(e.clientX - held.x, e.clientY - held.y) > 8) {
+      held = null;
+      hidePicturePreview();
+    }
+  });
+  const release = () => {
+    if (held?.fired) el.dataset.swallowClick = '1';
+    held = null;
+    hidePicturePreview();
+  };
+  el.addEventListener('pointerup', release);
+  el.addEventListener('pointercancel', release);
+}
+
 function renderPictures(body) {
   body.append(buildAddRow(body));
 
@@ -762,6 +1014,23 @@ function renderPictures(body) {
     const hidden = p.blind && !done;
 
     const el = row(`clickable ${p.id === S.puzzle?.id ? 'current' : ''}`);
+
+    // What you are picking, drawn the way it looks before you start on it. A
+    // blind pack shows nothing: the shape of the picture gives it away every
+    // bit as fast as its title would.
+    const thumb = document.createElement('div');
+    thumb.className = `pic-thumb${hidden ? ' blind' : ''}`;
+    if (hidden) {
+      thumb.textContent = '?';
+      thumb.title = 'Hidden until you finish it';
+    } else {
+      thumb.dataset.picture = p.id;
+      thumb.title = `${p.title} — hold or hover for a closer look`;
+      if (thumbCache.has(p.id)) thumb.innerHTML = thumbCache.get(p.id);
+      else thumbLoader.observe(thumb);
+      wirePreview(thumb, p.id, p.title);
+    }
+
     const sw = document.createElement('div');
     sw.className = 'swatches';
     if (!hidden) {
@@ -780,7 +1049,7 @@ function renderPictures(body) {
       ? `finished · ${p.cells} cells`
       : `${painted}/${p.cells} cells · ${p.colours} colours`;
 
-    el.append(sw, text);
+    el.append(thumb, sw, text);
     if (done) {
       const tick = document.createElement('span');
       tick.className = 'glyph';
@@ -803,6 +1072,13 @@ function renderPictures(body) {
       el.append(remove);
     }
     el.addEventListener('click', async () => {
+      // A press-and-hold that opened the preview ends in a click too; that one
+      // was a look, not a choice.
+      if (thumb.dataset.swallowClick) {
+        delete thumb.dataset.swallowClick;
+        return;
+      }
+      hidePicturePreview();
       closePanel();
       await loadPuzzle(p.id);
     });
@@ -1025,6 +1301,74 @@ function wireAvatarPartClicks(stageEl) {
   });
 }
 
+/**
+ * Paints the stage for whichever tab is open. Customize and Outfits show the
+ * figure on her own; Room and Abilities show the whole scene.
+ *
+ * The split is about what you are doing rather than what looks nicer. In the
+ * room she is drawn at AVATAR_SCALE inside a 260-wide frame shown at 208px,
+ * which puts the whole figure at about 77px and her eyes at two — fine to look
+ * at, impossible to aim at. Building her or dressing her wants her big; once
+ * you are just admiring the result, the room is the point.
+ *
+ * Delegation is wired once per stage element, not once per paint: the listener
+ * sits on the stage itself and survives innerHTML being replaced, so re-wiring
+ * on each redraw stacked one more handler per recolour.
+ */
+/**
+ * The colours on offer for any recolour: the paint from the picture currently
+ * open, falling back to a default set when there is none. Using the live
+ * palette is what ties a room to the pictures painted in it — you decorate in
+ * the colours you have just been working with.
+ */
+function paintPalette() {
+  return S.puzzle?.palette?.map((p) => p.hex) ?? DEFAULT_PALETTE;
+}
+
+function swatchRow(hexes, onPick) {
+  const swatches = document.createElement('div');
+  swatches.className = 'swatch-row';
+  for (const hex of hexes) {
+    const sw = document.createElement('button');
+    sw.className = 'swatch';
+    sw.style.background = hex;
+    sw.title = hex;
+    sw.addEventListener('click', () => onPick(hex));
+    swatches.append(sw);
+  }
+  return swatches;
+}
+
+/**
+ * Selecting a thing in the room. Deliberately coarser than the avatar's
+ * [data-slot]: this picks an OBJECT and its parts are then chosen from a list,
+ * because a drawer handle is three pixels wide and the shading washes sit on
+ * top of the parts they shade.
+ */
+function wireRoomPropClicks(stageEl) {
+  stageEl.addEventListener('click', (e) => {
+    const prop = e.target.closest('[data-prop]');
+    if (!prop) return;
+    S.roomProp = prop.dataset.prop;
+    S.roomPart = null;
+    S.avatarTab = 'room';
+    renderAvatarPanel($('panelBody'));
+  });
+}
+
+function paintStage(stage) {
+  const bare = S.avatarTab === 'customize' || S.avatarTab === 'outfits';
+  stage.classList.toggle('figure', bare);
+  stage.innerHTML = bare
+    ? buildAvatarSVG(S.save.avatar.customize)
+    : buildRoomSVG(S.save.avatar.house, S.save.avatar.customize);
+  if (!stage.dataset.wired) {
+    stage.dataset.wired = '1';
+    wireAvatarPartClicks(stage);
+    wireRoomPropClicks(stage);
+  }
+}
+
 function renderAvatarPanel(body) {
   body.textContent = '';
   const customize = S.save.avatar.customize;
@@ -1035,8 +1379,7 @@ function renderAvatarPanel(body) {
   head.className = 'avatar-head';
   const stage = document.createElement('div');
   stage.className = 'avatar-stage';
-  stage.innerHTML = buildRoomSVG(S.save.avatar.house, customize);
-  wireAvatarPartClicks(stage);
+  paintStage(stage);
 
   const levelbar = document.createElement('div');
   levelbar.className = 'avatar-levelbar';
@@ -1083,8 +1426,7 @@ function renderAvatarPanel(body) {
 function renderAvatarCustomize(section, stage) {
   const customize = S.save.avatar.customize;
   const redraw = () => {
-    stage.innerHTML = buildRoomSVG(S.save.avatar.house, customize);
-    wireAvatarPartClicks(stage);
+    paintStage(stage);
     persist();
     syncAvatarWidget();
   };
@@ -1158,22 +1500,7 @@ function renderAvatarCustomize(section, stage) {
 
   const target = S.avatarSlot && customize[S.avatarSlot];
   if (target && 'colour' in target) {
-    const swatchRow = (hexes) => {
-      const swatches = document.createElement('div');
-      swatches.className = 'swatch-row';
-      for (const hex of hexes) {
-        const sw = document.createElement('button');
-        sw.className = 'swatch';
-        sw.style.background = hex;
-        sw.title = hex;
-        sw.addEventListener('click', () => {
-          target.colour = hex;
-          redraw();
-        });
-        swatches.append(sw);
-      }
-      return swatches;
-    };
+    const set = (hex) => { target.colour = hex; redraw(); };
     // Skin gets its race's own tones offered first — green is a long way
     // from anything a landscape's palette will hand you — but the paint
     // from the current picture stays right below it, unchanged.
@@ -1182,9 +1509,9 @@ function renderAvatarCustomize(section, stage) {
       label.className = 'empty';
       label.style.padding = '2px 4px 0';
       label.textContent = `${RACE_PROFILE[customize.race]?.label ?? 'Human'} skin tones`;
-      section.append(label, swatchRow(raceSkinPalette(customize.race)));
+      section.append(label, swatchRow(raceSkinPalette(customize.race), set));
     }
-    section.append(swatchRow(S.puzzle?.palette?.map((p) => p.hex) ?? DEFAULT_PALETTE));
+    section.append(swatchRow(paintPalette(), set));
   }
 }
 
@@ -1199,8 +1526,7 @@ function renderAvatarOutfits(section, stage) {
   section.append(head);
 
   const redraw = () => {
-    stage.innerHTML = buildRoomSVG(S.save.avatar.house, customize);
-    wireAvatarPartClicks(stage);
+    paintStage(stage);
     persist();
     syncAvatarWidget();
     renderAvatarPanel($('panelBody'));
@@ -1336,6 +1662,8 @@ function renderAvatarRoom(section) {
     }
   };
 
+  renderRoomColours(section, house, redraw);
+
   pickerRow('Room', ROOMS, (r) => r.id === house.room, (r) => { house.room = r.id; },
     '🏠', (r, { gated }) => (gated ? `unlocks at level ${r.unlockLevel}` : 'tap to move in'));
 
@@ -1352,6 +1680,98 @@ function renderAvatarRoom(section) {
 
   pickerRow('Pet', PETS, (pet) => pet.id === house.pet, (pet) => { house.pet = pet.id; },
     '🐾', (pet, { has }) => (has ? 'tap to invite in' : `${pet.price}🪙`));
+}
+
+/**
+ * The colours of whatever is selected in the scene above.
+ *
+ * Two steps, not one: tapping the room picks an object, and its parts are then
+ * chosen from this list. Parts are not clickable targets themselves — a drawer
+ * handle is three pixels wide, and half of what is on screen is a translucent
+ * wash lying over the thing it shades, so a tap would land on the wash.
+ *
+ * Nothing here costs anything. The props were the purchase; what colour you
+ * paint them is not a second one.
+ */
+function renderRoomColours(section, house, redraw) {
+  const colourables = colourablesIn(house);
+  // A selection made before the room or a prop changed may no longer be on
+  // screen. Fall back to the room itself rather than to nothing.
+  const target = colourables.find((o) => o.id === S.roomProp) ?? colourables[0];
+  S.roomProp = target.id;
+
+  const head = document.createElement('div');
+  head.className = 'empty';
+  head.style.padding = '2px 4px 7px';
+  head.textContent = `${target.name} — tap the room above to pick something else`;
+  section.append(head);
+
+  for (const part of target.parts) {
+    const key = colourKey(target.id, part.key);
+    const changed = key in house.colours;
+    const on = S.roomPart === key;
+    const el = row('clickable');
+    if (on) el.classList.add('on');
+
+    const chip = document.createElement('span');
+    chip.className = 'part-chip';
+    chip.style.background = house.colours[key] ?? part.default;
+    el.append(chip);
+
+    const text = document.createElement('div');
+    text.className = 'grow';
+    text.innerHTML = '<div class="label"></div><div class="sub"></div>';
+    text.querySelector('.label').textContent = part.name;
+    text.querySelector('.sub').textContent = on
+      ? 'pick a colour below'
+      : changed ? 'changed · tap to edit' : 'tap to recolour';
+    el.append(text);
+    el.addEventListener('click', () => {
+      S.roomPart = on ? null : key;
+      renderAvatarPanel($('panelBody'));
+    });
+
+    if (changed) {
+      const reset = document.createElement('button');
+      reset.textContent = '↺';
+      reset.title = `Back to ${part.default}`;
+      reset.addEventListener('click', (e) => {
+        e.stopPropagation();
+        delete house.colours[key];
+        redraw();
+      });
+      el.append(reset);
+    }
+    section.append(el);
+  }
+
+  if (S.roomPart) {
+    section.append(swatchRow(paintPalette(), (hex) => {
+      house.colours[S.roomPart] = hex;
+      redraw();
+    }));
+  }
+
+  // Every key belonging to anything currently in this room. Without a way back
+  // out, one bad palette is only undoable by wiping the save.
+  const roomKeys = colourables.flatMap((o) => o.parts.map((part) => colourKey(o.id, part.key)))
+    .filter((key) => key in house.colours);
+  if (roomKeys.length) {
+    const el = row('clickable');
+    const text = document.createElement('div');
+    text.className = 'grow';
+    text.innerHTML = '<div class="label"></div><div class="sub"></div>';
+    text.querySelector('.label').textContent = 'Reset this room';
+    text.querySelector('.sub').textContent =
+      `${roomKeys.length} colour${roomKeys.length === 1 ? '' : 's'} changed`;
+    el.append(text);
+    el.addEventListener('click', () => {
+      for (const key of roomKeys) delete house.colours[key];
+      S.roomPart = null;
+      redraw();
+    });
+    section.append(el);
+  }
 }
 
 function renderAvatarAbilities(section) {
@@ -1592,6 +2012,7 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'hint': useHint(); break;
+    case 'undo': undoLast(); break;
     case 'zoom-reset': board.resetZoom(); syncZoom(); ensureFrame(); break;
     case 'toggle-source': {
       // Every trip into photo view plays the picture's living element again,
@@ -1634,6 +2055,11 @@ document.addEventListener('keydown', (e) => {
     if (dismissAddGuide) return dismissAddGuide();
     return closePanel();
   }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+    e.preventDefault();
+    return undoLast();
+  }
+  if (e.ctrlKey || e.metaKey) return undefined;
   if (e.key >= '1' && e.key <= '9') return selectTub(Number(e.key) - 1, true);
   if (e.key === '0') return selectTub(9, true);
   return undefined;
@@ -1763,6 +2189,10 @@ async function boot() {
   S.save.avatar.house.unlocked ??= freshHouse.unlocked;
   if (!('pet' in S.save.avatar.house)) S.save.avatar.house.pet = freshHouse.pet;
   S.save.avatar.house.props ??= {};
+  // Same reason as `pet` above: a save written before parts were recolourable
+  // has no map at all, and an absent one has to mean "everything at default"
+  // rather than throwing on the first lookup.
+  S.save.avatar.house.colours ??= {};
   // Rooms added in a later version have no entry yet, and a slot whose prop id
   // no longer exists falls back to that room's starter rather than rendering
   // an empty corner.

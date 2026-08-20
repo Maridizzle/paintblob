@@ -534,6 +534,41 @@ test('every emitted data-slot is one of the known eight, and groups balance', ()
   }
 });
 
+test('the bare figure exposes every part the customize tab can recolour', () => {
+  // The customize tab shows buildAvatarSVG rather than the room scene, and it
+  // is the only place a part can be picked. Anything carrying a `colour` in
+  // the save but no group in this render is a colour you own and can never
+  // reach.
+  const groups = (c) =>
+    new Set([...buildAvatarSVG(c).matchAll(/<g data-slot="([a-z]+)"/g)].map((m) => m[1]));
+
+  // A dress stands in for the shirt and bottoms, so no single render carries
+  // all eight — undressed covers seven, and the dress covers the eighth.
+  const plain = groups(defaultAvatarCustomize());
+  for (const slot of SLOTS) {
+    if (slot === 'dress') continue;
+    assert.ok(plain.has(slot), `no <g data-slot="${slot}"> to click on the customize screen`);
+  }
+
+  const c = defaultAvatarCustomize();
+  c.dress.itemId = 'dress-basic';
+  assert.ok(groups(c).has('dress'), 'an equipped dress is not clickable');
+});
+
+test('customize and outfits stage the figure, room and abilities the scene', () => {
+  // Which builder each tab uses is the whole point of the customize screen —
+  // rendering the room there puts her at about 77px and her eyes at two.
+  const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  assert.match(game, /function paintStage\(stage\)/,
+    'the stage builder choice must live in one place, not be repeated per call site');
+  assert.match(game, /const bare = S\.avatarTab === 'customize' \|\| S\.avatarTab === 'outfits'/);
+  assert.ok(!/stage\.innerHTML = buildRoomSVG/.test(game),
+    'a call site is painting the room directly instead of going through paintStage');
+  const css = fs.readFileSync(path.join(ROOT, 'src/styles.css'), 'utf8');
+  assert.match(css, /\.avatar-stage\.figure\b/,
+    'the figure stage needs its own height-driven sizing or it overflows the panel');
+});
+
 test('a save predating the race field still renders, defaulting to human', () => {
   const c = defaultAvatarCustomize();
   delete c.race;
@@ -652,10 +687,161 @@ test('the band tint is distinct from both the base row and the hover tint', () =
   assert.notEqual(hover, base, 'hover must not match the base tint');
 });
 
+/* ------------------------------------------------------- the raised element */
+
+test('the raise belongs to painting, and cannot reach the photo', () => {
+  const render = fs.readFileSync(path.join(ROOT, 'src/render.js'), 'utf8');
+  const draw = render.slice(render.indexOf('  draw(bursts, timeMs) {'));
+  const body = draw.slice(0, draw.indexOf('\n  }\n'));
+
+  const photoReturn = body.indexOf('if (this.showSource) {');
+  const liftCall = body.indexOf('this.drawLift(');
+  assert.ok(photoReturn >= 0 && liftCall >= 0, 'draw() no longer has both branches');
+  assert.ok(liftCall > photoReturn,
+    'drawLift must sit after the showSource early return, or the parallax rides the photograph');
+});
+
+test('the shadow stays on the surface while the element moves off it', () => {
+  // The gap between the two is the entire illusion. A shadow carried along
+  // with the element is just a picture that has slipped sideways.
+  const render = fs.readFileSync(path.join(ROOT, 'src/render.js'), 'utf8');
+  const fn = render.slice(render.indexOf('  drawLift(shakeX, shakeY) {'));
+  const body = fn.slice(0, fn.indexOf('\n  }\n'));
+  assert.match(body, /this\.applyTransform\(ctx, shakeX, shakeY\);[\s\S]*?ctx\.shadowColor/,
+    'the shadow is drawn at the element\'s own position, without the parallax offset');
+  assert.match(body, /this\.applyTransform\(ctx, shakeX \+ dx, shakeY \+ dy\)/,
+    'the element itself is drawn with the parallax offset');
+  assert.match(body, /ctx\.rect\(0, 0, width, height\)/,
+    'both must be clipped to the artwork, or a raised element hangs off the paper');
+});
+
+test('an element too big to be an object is not raised at all', () => {
+  const render = fs.readFileSync(path.join(ROOT, 'src/render.js'), 'utf8');
+  assert.match(render, /const LIFT_MAX_AREA = 0\.\d+;/);
+  assert.match(render, /covered <= puzzle\.width \* puzzle\.height \* LIFT_MAX_AREA/);
+
+  // And the shipped tags actually straddle it, so the rule is doing something.
+  const sidecar = JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles/animations.json'), 'utf8'));
+  const shares = Object.entries(sidecar).filter(([id]) => !id.startsWith('_')).map(([id, tag]) => {
+    const p = JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles', `${id}.json`), 'utf8'));
+    return tag.cells.reduce((n, i) => n + p.cells[i].a, 0) / (p.width * p.height);
+  });
+  assert.ok(shares.some((f) => f <= 0.1), 'no shipped picture would ever raise anything');
+  assert.ok(shares.some((f) => f > 0.1), 'nothing exercises the cap');
+});
+
+/* -------------------------------------------------------------- thumbnails */
+
+const { outlineSVG, outlineWeight } = await import('../src/thumbnail.js');
+
+const fakePuzzle = (n) => ({
+  width: 400,
+  height: 300,
+  cells: Array.from({ length: n }, (_, i) => ({ d: `M${i} 0H9V9Z`, a: n - i })),
+});
+
+test('the unpainted outline is one path in the picture\'s own coordinates', () => {
+  const svg = outlineSVG(fakePuzzle(5));
+  assert.match(svg, /viewBox="0 0 400 300"/);
+  assert.equal((svg.match(/<path/g) ?? []).length, 1,
+    'one path, not one per cell — a 500-cell picture strokes 500 times otherwise');
+  assert.match(svg, /vector-effect="non-scaling-stroke"/,
+    'stroke width is a display measure; in picture units it is a hairline at one size and a slab at the other');
+});
+
+test('the outline carries no style attribute, which the CSP would refuse', () => {
+  // The app ships style-src 'self'. An inline style="..." is dropped outright,
+  // so everything here has to be a presentation attribute.
+  assert.ok(!/style=/.test(outlineSVG(fakePuzzle(4), { stroke: '#123456' })));
+});
+
+test('a dense picture drops its smallest cells rather than drawing them all', () => {
+  const puzzle = fakePuzzle(500);
+  const thumb = outlineWeight(500, 46);
+  assert.ok(thumb.maxCells < 500, 'a 46px thumbnail cannot show 500 outlines');
+  const svg = outlineSVG(puzzle, thumb);
+  // Biggest first: cell 0 has the largest area, the last has the smallest.
+  assert.ok(svg.includes('M0 0H9V9Z'), 'the biggest cell was dropped');
+  assert.ok(!svg.includes('M499 0H9V9Z'), 'the smallest cell survived the cut');
+
+  // At preview size there is room for everything.
+  const preview = outlineWeight(500, 420);
+  assert.ok(preview.maxCells >= 500, 'a 420px preview should show the whole picture');
+});
+
+test('a sparse picture keeps every cell it has', () => {
+  // The cap is what handles density, so a seventeen-cell picture is never cut
+  // at any size — there is nothing to gain by dropping a seventh of it.
+  const weight = outlineWeight(17, 46);
+  assert.ok(weight.maxCells >= 17, 'a 17-cell picture should not be thinned at all');
+  assert.equal((outlineSVG(fakePuzzle(17), weight).match(/M\d+ 0H9V9Z/g) ?? []).length, 17);
+});
+
+test('the line gets heavier as the picture gets more room', () => {
+  const thumb = outlineWeight(500, 46);
+  const preview = outlineWeight(500, 420);
+  assert.ok(preview.width > thumb.width && preview.opacity > thumb.opacity,
+    'the same picture should be drawn more confidently when there is room for it');
+});
+
+/* -------------------------------------------------------------------- undo */
+
+test('undo reverses commitFill, and is structurally unavailable once finished', () => {
+  const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  const body = game.slice(game.indexOf('function undoLast()'));
+  const fn = body.slice(0, body.indexOf('\n}\n') + 2);
+
+  assert.match(fn, /if \(!S\.puzzle \|\| S\.finished \|\| !S\.history\.length\) return;/,
+    'undo must refuse on a finished picture and on an empty history');
+  // Each of these is something commitFill granted. Missing one leaves the save
+  // claiming work that is no longer on the board.
+  for (const [what, re] of [
+    ['the cell itself', /S\.filled\.delete\(id\)/],
+    ['the board', /board\.markUnfilled\(id\)/],
+    ["the tub's count", /S\.remaining\[step\.colour\] \+= step\.cells\.length/],
+    ['the cell tally', /stats\.cells -= step\.cells\.length/],
+    ['the points', /stats\.pointsEarned = Math\.max\(0, \(stats\.pointsEarned \?\? 0\) - step\.points\)/],
+    ['the passive hint', /stats\.hintsEarned = Math\.max\(0/],
+    ['the undo tally', /stats\.undos = \(stats\.undos \?\? 0\) \+ 1/],
+  ]) {
+    assert.match(fn, re, `undo does not hand back ${what}`);
+  }
+
+  assert.match(fs.readFileSync(path.join(ROOT, 'src/render.js'), 'utf8'),
+    /markUnfilled\(id\) \{/, 'the renderer has no way to clear a cell again');
+});
+
+test('half fill is one undo, not one per cell', () => {
+  // It is a single ability use; taking it back a cell at a time would be a
+  // different thing from what the player did.
+  const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  const fn = game.slice(game.indexOf('function autoFillHalfOfHeldColour()'));
+  const body = fn.slice(0, fn.indexOf('\n}\n'));
+  assert.equal((body.match(/S\.history\.push\(/g) ?? []).length, 1,
+    'half fill must record exactly one history entry for the whole batch');
+  assert.match(body, /cells: candidates\.slice\(0, n\)\.map/,
+    'the entry has to name every cell the batch painted');
+  assert.match(body, /points: 0/,
+    'half fill grants no points, so undo must not take any away');
+});
+
+test('history is per-sitting, and never written to the save', () => {
+  const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  assert.match(game, /S\.history = \[\];/, 'loading a picture must clear the history');
+  const persisted = game.slice(game.indexOf('function persist'), game.indexOf('function persist') + 900);
+  assert.ok(!/history/.test(persisted),
+    'an unbounded array of every cell ever painted does not belong in a save');
+});
+
 /* ------------------------------------------------------------------- house */
 
-const { ROOMS, HOUSE_ITEMS, LIGHTING, PETS, PROP_SLOTS, defaultHouse, itemsFor, starterFor } =
-  await import('../src/house.js');
+const {
+  ROOMS, HOUSE_ITEMS, LIGHTING, PETS, PROP_SLOTS, defaultHouse, itemsFor, starterFor,
+  resolveColours, colourKey, colourablesIn, roomColourId, petColourId, buildRoomSVG,
+} = await import('../src/house.js');
+
+/** Every prop drawn at its own defaults, which is what an untouched save gets. */
+const atDefaults = (item) => item.draw(resolveColours(item.id, item.parts, {}));
 
 test('house catalogue ids are unique across every kind of thing', () => {
   const ids = [...ROOMS, ...HOUSE_ITEMS, ...LIGHTING, ...PETS].map((x) => x.id);
@@ -715,7 +901,91 @@ test('boot backfills the house, which neither backend deep-merges', () => {
 
 test('no prop draws data-slot, which would hijack avatar recolouring', () => {
   for (const item of HOUSE_ITEMS) {
-    assert.ok(!/data-slot/.test(item.draw()), `${item.id} emits data-slot`);
+    assert.ok(!/data-slot/.test(atDefaults(item)), `${item.id} emits data-slot`);
+  }
+});
+
+/* ------------------------------------------------------- recolourable parts */
+
+test('every part declares a unique key, a name and a real hex default', () => {
+  const owners = [
+    ...HOUSE_ITEMS.map((i) => [i.id, i.parts]),
+    ...PETS.map((p) => [petColourId(p.id), p.parts]),
+    ...ROOMS.map((r) => [roomColourId(r.id), r.parts]),
+  ];
+  for (const [id, parts] of owners) {
+    assert.ok(parts?.length, `${id} declares no recolourable parts`);
+    const keys = new Set();
+    for (const part of parts) {
+      assert.ok(!keys.has(part.key), `${id} declares "${part.key}" twice`);
+      keys.add(part.key);
+      assert.match(part.default, /^#[0-9a-f]{6}$/, `${id}.${part.key} default is not a hex colour`);
+      assert.ok(part.name?.length, `${id}.${part.key} has no label to show`);
+    }
+  }
+});
+
+test('every colour a prop draws with is one it declared', () => {
+  // A draw() reading c.somethingUndeclared puts the string "undefined" into an
+  // SVG fill, which paints black and is invisible in review.
+  for (const item of HOUSE_ITEMS) {
+    assert.ok(!/undefined|NaN/.test(atDefaults(item)), `${item.id} draws with an undeclared part`);
+  }
+  for (const room of ROOMS) {
+    for (const pet of PETS) {
+      const svg = buildRoomSVG({ ...defaultHouse(), room: room.id, pet: pet.id }, {});
+      assert.ok(!/undefined|NaN/.test(svg), `${room.id}/${pet.id} draws with an undeclared part`);
+    }
+  }
+});
+
+test('an override reaches the drawing, and only that part', () => {
+  const house = defaultHouse();
+  const bed = HOUSE_ITEMS.find((i) => i.id === 'bd-furn-bed');
+  const duvet = bed.parts.find((p) => p.key === 'duvet');
+  house.colours[colourKey(bed.id, 'duvet')] = '#123456';
+
+  const svg = buildRoomSVG(house, {});
+  assert.ok(svg.includes('#123456'), 'the override never reached the SVG');
+  assert.ok(!svg.includes(duvet.default), 'the default is still being drawn as well');
+  // The frame shares the bed but not the part, so it must be untouched.
+  assert.ok(svg.includes(bed.parts.find((p) => p.key === 'frame').default),
+    'overriding one part disturbed another');
+});
+
+test('a house with no colours map at all still renders', () => {
+  // Every save written before parts were recolourable is exactly this.
+  const house = defaultHouse();
+  delete house.colours;
+  const svg = buildRoomSVG(house, {});
+  assert.ok(!/undefined|NaN/.test(svg));
+  assert.ok(svg.startsWith('<svg'));
+});
+
+test('every data-prop in a scene is something the panel can offer', () => {
+  // colourablesIn drives the panel's list; a scene emitting an id it does not
+  // return would be selectable and then show no parts.
+  for (const room of ROOMS) {
+    for (const pet of PETS) {
+      const house = { ...defaultHouse(), room: room.id, pet: pet.id };
+      const offered = new Set(colourablesIn(house).map((o) => o.id));
+      const drawn = [...buildRoomSVG(house, {}).matchAll(/data-prop="([^"]+)"/g)].map((m) => m[1]);
+      assert.ok(drawn.length, `${room.id}/${pet.id} has nothing selectable`);
+      for (const id of drawn) {
+        assert.ok(offered.has(id), `${room.id}/${pet.id} draws "${id}", which the panel never lists`);
+      }
+    }
+  }
+});
+
+test('the lighting wash does not swallow taps meant for the room', () => {
+  // It is drawn last and covers the whole scene, so without pointer-events
+  // none of the props below it can be selected under anything but daylight.
+  for (const lighting of LIGHTING) {
+    const svg = buildRoomSVG({ ...defaultHouse(), lighting: lighting.id }, {});
+    const wash = svg.slice(svg.lastIndexOf('<g pointer-events="none">'));
+    assert.ok(wash.startsWith('<g pointer-events="none">'),
+      `${lighting.id} is not wrapped in a pointer-events:none group`);
   }
 });
 
