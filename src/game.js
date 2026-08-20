@@ -17,6 +17,7 @@ import {
   NUMBER_RECOLOR_CYCLE, nextNumberRecolorIndex,
 } from './abilities.js';
 import { WARDROBE_ITEMS } from './wardrobe.js';
+import { outlineSVG, outlineWeight } from './thumbnail.js';
 import {
   ROOMS, HOUSE_ITEMS, LIGHTING, PETS, PROP_SLOTS, SLOT_LABEL,
   defaultHouse, itemsFor, starterFor, buildRoomSVG, colourablesIn, colourKey,
@@ -54,6 +55,8 @@ const S = {
   history: [],
   avatarTab: 'customize', // UI-only, not persisted — resets to Customize each time the panel opens
   avatarSlot: null,       // which avatar part is currently being recoloured
+  previewId: null,        // picture whose large preview is open or pending
+  previewTimer: 0,
   roomProp: null,         // which thing in the room is selected — an id from colourablesIn()
   roomPart: null,         // which of that thing's parts is being recoloured, as a colour key
 };
@@ -825,6 +828,7 @@ async function openPanel(kind) {
 
 function closePanel() {
   S.panel = null;
+  hidePicturePreview();
   $('panel').classList.add('hidden');
   $('pointsHud').classList.remove('hidden');
 }
@@ -847,6 +851,138 @@ function band(container) {
     .forEach((el, i) => el.classList.toggle('alt', i % 2 === 1));
 }
 
+/* ------------------------------------------------------- picture previews */
+
+// Row thumbnails, keyed by picture id. Only the finished markup is kept, not
+// the puzzle it came from: a puzzle carries its source photo as a data URI and
+// runs to a couple of hundred kilobytes, and there can be a lot of them.
+const thumbCache = new Map();
+
+const THUMB_PX = 46;
+
+/**
+ * Fills in a row's thumbnail once the row is actually on screen. Building
+ * every one up front means loading every puzzle the moment the panel opens,
+ * which is most of a megabyte the player may never scroll to.
+ */
+const thumbLoader = new IntersectionObserver((entries) => {
+  for (const entry of entries) {
+    if (!entry.isIntersecting) continue;
+    const el = entry.target;
+    thumbLoader.unobserve(el);
+    fillThumb(el, el.dataset.picture);
+  }
+}, { rootMargin: '120px' });
+
+async function fillThumb(el, id) {
+  if (!thumbCache.has(id)) {
+    try {
+      const puzzle = await api.loadPuzzle(id);
+      thumbCache.set(id, outlineSVG(puzzle, {
+        ...outlineWeight(puzzle.cells.length, THUMB_PX),
+      }));
+    } catch {
+      // A picture that will not load is the row's problem, not the panel's —
+      // clicking it already surfaces the failure. Leave the box empty.
+      thumbCache.set(id, '');
+    }
+  }
+  // The panel may have been closed and rebuilt while that was in flight.
+  if (el.isConnected) el.innerHTML = thumbCache.get(id);
+}
+
+/**
+ * The big look at an unpainted picture: hover it with a mouse, or hold it down
+ * with a finger. Loaded fresh rather than cached — it is one picture at a time
+ * and the wait is already covered by the delay before it opens.
+ */
+async function showPicturePreview(id, title) {
+  const host = $('picPreview');
+  if (!host) return;
+  let puzzle;
+  try {
+    puzzle = await api.loadPuzzle(id);
+  } catch {
+    return;
+  }
+  // Moved on, or closed the panel out from under it, while that was loading.
+  if (S.previewId !== id || S.panel !== 'pictures') return;
+
+  // Built as nodes with their sizing set as properties, not as a style="..."
+  // attribute in a markup string: the app ships a CSP of style-src 'self',
+  // which refuses inline style attributes outright — the sheet would have come
+  // out unsized. Presentation attributes inside the SVG are fine, which is why
+  // outlineSVG uses stroke/fill rather than CSS.
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet';
+  sheet.style.aspectRatio = `${puzzle.width} / ${puzzle.height}`;
+  if (puzzle.width >= puzzle.height) sheet.style.width = 'min(78vmin, 78vw)';
+  else sheet.style.height = 'min(78vmin, 72vh)';
+  sheet.innerHTML = outlineSVG(puzzle, { ...outlineWeight(puzzle.cells.length, 420) });
+
+  const cap = document.createElement('div');
+  cap.className = 'cap';
+  cap.textContent = title;
+
+  host.textContent = '';
+  host.append(sheet, cap);
+  host.classList.remove('hidden');
+}
+
+function hidePicturePreview() {
+  S.previewId = null;
+  clearTimeout(S.previewTimer);
+  const host = $('picPreview');
+  if (!host) return;
+  host.classList.add('hidden');
+  host.textContent = '';
+}
+
+/**
+ * Hover on a mouse, press-and-hold on a finger. A hold that opens the preview
+ * also has to swallow the click that follows it, or letting go loads the very
+ * picture you were only looking at.
+ */
+function wirePreview(el, id, title) {
+  const open = (delay) => {
+    clearTimeout(S.previewTimer);
+    S.previewId = id;
+    S.previewTimer = setTimeout(() => showPicturePreview(id, title), delay);
+  };
+
+  if (matchMedia('(pointer: fine)').matches) {
+    el.addEventListener('mouseenter', () => open(280));
+    el.addEventListener('mouseleave', hidePicturePreview);
+  }
+
+  let held = null;
+  el.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse') return; // hover already covers it
+    held = { x: e.clientX, y: e.clientY, fired: false };
+    clearTimeout(S.previewTimer);
+    S.previewId = id;
+    S.previewTimer = setTimeout(() => {
+      if (held) held.fired = true;
+      showPicturePreview(id, title);
+    }, 420);
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (!held) return;
+    // A drag is a scroll, not a hold.
+    if (Math.hypot(e.clientX - held.x, e.clientY - held.y) > 8) {
+      held = null;
+      hidePicturePreview();
+    }
+  });
+  const release = () => {
+    if (held?.fired) el.dataset.swallowClick = '1';
+    held = null;
+    hidePicturePreview();
+  };
+  el.addEventListener('pointerup', release);
+  el.addEventListener('pointercancel', release);
+}
+
 function renderPictures(body) {
   body.append(buildAddRow(body));
 
@@ -867,6 +1003,23 @@ function renderPictures(body) {
     const hidden = p.blind && !done;
 
     const el = row(`clickable ${p.id === S.puzzle?.id ? 'current' : ''}`);
+
+    // What you are picking, drawn the way it looks before you start on it. A
+    // blind pack shows nothing: the shape of the picture gives it away every
+    // bit as fast as its title would.
+    const thumb = document.createElement('div');
+    thumb.className = `pic-thumb${hidden ? ' blind' : ''}`;
+    if (hidden) {
+      thumb.textContent = '?';
+      thumb.title = 'Hidden until you finish it';
+    } else {
+      thumb.dataset.picture = p.id;
+      thumb.title = `${p.title} — hold or hover for a closer look`;
+      if (thumbCache.has(p.id)) thumb.innerHTML = thumbCache.get(p.id);
+      else thumbLoader.observe(thumb);
+      wirePreview(thumb, p.id, p.title);
+    }
+
     const sw = document.createElement('div');
     sw.className = 'swatches';
     if (!hidden) {
@@ -885,7 +1038,7 @@ function renderPictures(body) {
       ? `finished · ${p.cells} cells`
       : `${painted}/${p.cells} cells · ${p.colours} colours`;
 
-    el.append(sw, text);
+    el.append(thumb, sw, text);
     if (done) {
       const tick = document.createElement('span');
       tick.className = 'glyph';
@@ -908,6 +1061,13 @@ function renderPictures(body) {
       el.append(remove);
     }
     el.addEventListener('click', async () => {
+      // A press-and-hold that opened the preview ends in a click too; that one
+      // was a look, not a choice.
+      if (thumb.dataset.swallowClick) {
+        delete thumb.dataset.swallowClick;
+        return;
+      }
+      hidePicturePreview();
       closePanel();
       await loadPuzzle(p.id);
     });

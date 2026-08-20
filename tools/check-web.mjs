@@ -547,6 +547,56 @@ check('both mystery pictures are listed with hidden titles and no colour swatche
   mysteryRows.count >= 2 && mysteryRows.swatchCounts.every((n) => n === 0),
   JSON.stringify(mysteryRows));
 
+/* ------------------------------------------------- unpainted thumbnails */
+
+const thumbs = await page.evaluate(async () => {
+  document.querySelector('[data-act="pictures"]').click();
+  // Thumbnails load lazily as rows come into view, so give the observer and
+  // the puzzle fetches a moment.
+  await new Promise((r) => setTimeout(r, 1500));
+  const rows = [...document.querySelectorAll('#panelBody .row')];
+  return rows.map((r) => {
+    const t = r.querySelector('.pic-thumb');
+    return {
+      mystery: r.querySelector('.label')?.textContent === 'Mystery picture',
+      blind: !!t?.classList.contains('blind'),
+      drawn: !!t?.querySelector('svg path[d]'),
+    };
+  }).filter((r) => r.blind || r.drawn || r.mystery);
+});
+check('every ordinary picture shows its unpainted outline',
+  thumbs.some((t) => t.drawn) && thumbs.every((t) => (t.mystery ? !t.drawn : t.drawn)),
+  JSON.stringify(thumbs.map((t) => (t.mystery ? 'mystery' : 'drawn'))));
+check('a mystery picture gives nothing away in its thumbnail',
+  thumbs.filter((t) => t.mystery).every((t) => t.blind && !t.drawn));
+
+// Press and hold opens the big look — and letting go must not then load the
+// picture you were only looking at.
+const held = await page.evaluate(async () => {
+  const thumb = [...document.querySelectorAll('.pic-thumb')].find((t) => t.querySelector('svg'));
+  const box = thumb.getBoundingClientRect();
+  const at = { clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 };
+  thumb.dispatchEvent(new PointerEvent('pointerdown', { ...at, pointerType: 'touch', bubbles: true }));
+  await new Promise((r) => setTimeout(r, 900));
+  const opened = !document.getElementById('picPreview').classList.contains('hidden');
+  const drawn = !!document.querySelector('#picPreview .sheet svg path[d]');
+  const titled = document.querySelector('#picPreview .cap')?.textContent ?? '';
+  thumb.dispatchEvent(new PointerEvent('pointerup', { ...at, pointerType: 'touch', bubbles: true }));
+  thumb.closest('.row').click();
+  await new Promise((r) => setTimeout(r, 250));
+  return {
+    opened, drawn, titled,
+    stillOnPanel: !document.getElementById('panel').classList.contains('hidden'),
+    closedAfter: document.getElementById('picPreview').classList.contains('hidden'),
+  };
+});
+check('holding a thumbnail opens the large unpainted preview',
+  held.opened && held.drawn && held.titled.length > 0, JSON.stringify(held));
+check('letting go of a hold does not load the picture you were looking at',
+  held.stillOnPanel && held.closedAfter, JSON.stringify(held));
+
+await page.evaluate(() => document.querySelector('[data-act="panel-close"]')?.click());
+
 // Banding is applied in JS, so the thing worth checking is the property CSS
 // alone could not guarantee: that the stripes actually alternate once the
 // headings and controls each panel interleaves with its rows are in the DOM.

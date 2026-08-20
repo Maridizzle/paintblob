@@ -607,6 +607,54 @@ button {
 .row.locked { opacity: 0.46; }
 .row.earned { background: rgba(255, 179, 92, 0.10); border-color: rgba(255, 179, 92, 0.26); }
 
+/* The unpainted picture, as a line drawing. Paper-coloured so it reads as the
+   page you are about to paint rather than as another dark panel; the outline
+   inherits `color`, so one rule sets both. */
+.pic-thumb {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: 5px;
+  overflow: hidden;
+  background: #f2efe6;
+  color: #1b1a24;
+  display: grid;
+  place-items: center;
+}
+.pic-thumb svg { width: 100%; height: 100%; display: block; }
+/* A blind pack's shapes give it away as fast as its title would. */
+.pic-thumb.blind {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.pic-preview {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(9, 8, 13, 0.78);
+  animation: fade 130ms ease both;
+  pointer-events: none; /* a look, not a target — the row underneath keeps its taps */
+}
+.pic-preview .sheet {
+  background: #f2efe6;
+  color: #1b1a24;
+  border-radius: 9px;
+  padding: 7px;
+  box-shadow: 0 20px 54px rgba(0, 0, 0, 0.55);
+  max-width: 88%;
+  max-height: 76%;
+}
+.pic-preview svg { width: 100%; height: 100%; display: block; }
+.pic-preview .cap { font-size: 12px; font-weight: 600; color: var(--text); }
+
 .swatches { display: flex; gap: 3px; }
 .swatches i { width: 11px; height: 22px; border-radius: 3px; display: block; }
 

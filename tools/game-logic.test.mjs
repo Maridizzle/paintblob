@@ -687,6 +687,60 @@ test('the band tint is distinct from both the base row and the hover tint', () =
   assert.notEqual(hover, base, 'hover must not match the base tint');
 });
 
+/* -------------------------------------------------------------- thumbnails */
+
+const { outlineSVG, outlineWeight } = await import('../src/thumbnail.js');
+
+const fakePuzzle = (n) => ({
+  width: 400,
+  height: 300,
+  cells: Array.from({ length: n }, (_, i) => ({ d: `M${i} 0H9V9Z`, a: n - i })),
+});
+
+test('the unpainted outline is one path in the picture\'s own coordinates', () => {
+  const svg = outlineSVG(fakePuzzle(5));
+  assert.match(svg, /viewBox="0 0 400 300"/);
+  assert.equal((svg.match(/<path/g) ?? []).length, 1,
+    'one path, not one per cell — a 500-cell picture strokes 500 times otherwise');
+  assert.match(svg, /vector-effect="non-scaling-stroke"/,
+    'stroke width is a display measure; in picture units it is a hairline at one size and a slab at the other');
+});
+
+test('the outline carries no style attribute, which the CSP would refuse', () => {
+  // The app ships style-src 'self'. An inline style="..." is dropped outright,
+  // so everything here has to be a presentation attribute.
+  assert.ok(!/style=/.test(outlineSVG(fakePuzzle(4), { stroke: '#123456' })));
+});
+
+test('a dense picture drops its smallest cells rather than drawing them all', () => {
+  const puzzle = fakePuzzle(500);
+  const thumb = outlineWeight(500, 46);
+  assert.ok(thumb.maxCells < 500, 'a 46px thumbnail cannot show 500 outlines');
+  const svg = outlineSVG(puzzle, thumb);
+  // Biggest first: cell 0 has the largest area, the last has the smallest.
+  assert.ok(svg.includes('M0 0H9V9Z'), 'the biggest cell was dropped');
+  assert.ok(!svg.includes('M499 0H9V9Z'), 'the smallest cell survived the cut');
+
+  // At preview size there is room for everything.
+  const preview = outlineWeight(500, 420);
+  assert.ok(preview.maxCells >= 500, 'a 420px preview should show the whole picture');
+});
+
+test('a sparse picture keeps every cell it has', () => {
+  // The cap is what handles density, so a seventeen-cell picture is never cut
+  // at any size — there is nothing to gain by dropping a seventh of it.
+  const weight = outlineWeight(17, 46);
+  assert.ok(weight.maxCells >= 17, 'a 17-cell picture should not be thinned at all');
+  assert.equal((outlineSVG(fakePuzzle(17), weight).match(/M\d+ 0H9V9Z/g) ?? []).length, 17);
+});
+
+test('the line gets heavier as the picture gets more room', () => {
+  const thumb = outlineWeight(500, 46);
+  const preview = outlineWeight(500, 420);
+  assert.ok(preview.width > thumb.width && preview.opacity > thumb.opacity,
+    'the same picture should be drawn more confidently when there is room for it');
+});
+
 /* -------------------------------------------------------------------- undo */
 
 test('undo reverses commitFill, and is structurally unavailable once finished', () => {

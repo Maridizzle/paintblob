@@ -92,6 +92,14 @@ pill in the corner (🖼 Photo / 🎨 Painting) shows up once a picture is
 finished and swaps the canvas between what you painted and the real photo it
 was mapped from — zoom and pan keep working on either.
 
+The Pictures panel shows each one as the line drawing you are about to paint —
+its own outlines, nothing filled in — so you can see what you are picking
+rather than read its name. Hover it with a mouse or hold it with a finger for
+a full-size look. A picture too detailed to fit in a thumbnail drops its
+smallest cells rather than drawing all five hundred into a grey block, and a
+blind pack shows nothing at all: its shapes give it away every bit as fast as
+its title would.
+
 Scroll wheel or two-finger pinch to zoom in on a picture, up to 6×; drag (or
 one-finger pan on a touchscreen) to move around once zoomed. A pill in the
 corner shows the current zoom level and doubles as the reset button. The same
