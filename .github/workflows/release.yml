@@ -7,9 +7,9 @@ name: release
 #
 # A hand-run DOES publish. It takes its version from package.json rather than
 # from the ref, and the publish job below uploads with --clobber, so running it
-# against an unchanged package.json replaces the assets on the release that
-# already carries that version. Bump first, or run it against a tag whose
-# release does not exist yet.
+# against an unchanged package.json replaces the assets, title and notes on the
+# release that already carries that version. Bump first, or run it against a
+# tag whose release does not exist yet.
 on:
   push:
     tags: ['v*']
@@ -48,6 +48,14 @@ jobs:
           # electron-builder hunts for a keychain identity on macOS and fails
           # the build rather than producing an unsigned app.
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          # Only so @electron/get can fetch the Electron binary without
+          # sharing a runner's anonymous rate limit. It is emphatically not
+          # permission to publish: electron-builder publishes on its own
+          # whenever it sees both a token and a tag, and this workflow is run
+          # against a tag. The first time that happened it opened a draft
+          # release behind our backs and the job below filled it with every
+          # installer, leaving a green run and nothing anyone could download.
+          # The `--publish never` in the dist scripts is what holds it back.
           GH_TOKEN: ${{ github.token }}
 
       - uses: actions/upload-artifact@v4
@@ -154,8 +162,18 @@ jobs:
           printf '  %s\n' "${FILES[@]}"
           [ "${#FILES[@]}" -gt 0 ] || { echo "no artifacts to publish"; exit 1; }
 
+          # `gh release view` finds drafts, so this branch can be taken for a
+          # release that nobody but us can see — which is how v0.7.13 first
+          # shipped into a draft electron-builder had opened. Uploading is
+          # therefore not the end of the job: a release this workflow has
+          # finished filling is a published one, so say so explicitly rather
+          # than trusting whatever created it to have got that right.
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "${FILES[@]}"
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --draft=false \
+              --title "paintblob $TAG" \
+              --notes-file notes.md
           else
             gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \

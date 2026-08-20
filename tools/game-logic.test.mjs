@@ -882,6 +882,28 @@ test('cutting a version asks for the build rather than trusting the tag to', () 
     'release.yml must stay dispatchable or the step above silently fails');
 });
 
+test('nothing but the publish job is allowed to publish', () => {
+  // Asking for the build against the tag, rather than the branch, is what
+  // pins a release to the commit it claims to be. It also hands
+  // electron-builder the two things it treats as permission to publish on its
+  // own — a token and a tag — and it then opens a draft release and uploads
+  // into it. That draft is the trap: `gh release view` finds drafts, so the
+  // publish job below appends to it rather than creating anything, and the
+  // run goes green having shipped a release only its owner can see. v0.7.13
+  // shipped that way. Both halves are asserted because either alone leaves a
+  // way back into it.
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  for (const [name, script] of Object.entries(pkg.scripts)) {
+    if (!script.includes('electron-builder')) continue;
+    assert.match(script, /--publish never/,
+      `${name} lets electron-builder decide whether to publish`);
+  }
+
+  const release = readSource('.github/workflows/release.yml');
+  assert.match(release, /gh release edit "\$TAG"[\s\S]{0,200}--draft=false/,
+    'the publish job must promote a draft it uploaded into, not leave it hidden');
+});
+
 /* ------------------------------------------------------------------- house */
 
 const {
