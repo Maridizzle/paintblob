@@ -146,7 +146,7 @@ button {
 #board.done { cursor: default; }
 
 /* Shown only once zoomed past fit-to-window; doubles as the reset button. */
-.zoom-pill, .compare-pill {
+.zoom-pill, .compare-pill, .undo-pill {
   position: absolute;
   z-index: 15;
   -webkit-app-region: no-drag;
@@ -160,12 +160,21 @@ button {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
   transition: background 120ms, transform 120ms;
 }
-.zoom-pill:hover, .compare-pill:hover { background: rgba(255, 255, 255, 0.14); transform: translateY(-1px); }
+.zoom-pill:hover, .compare-pill:hover, .undo-pill:hover {
+  background: rgba(255, 255, 255, 0.14);
+  transform: translateY(-1px);
+}
 .zoom-pill { top: 10px; right: 10px; }
 
 /* Shown once a picture is finished, to flip the canvas over to the real
    photo — top-left so it never collides with the zoom pill. */
 .compare-pill { top: 10px; left: 10px; }
+
+/* Shares that corner, and can: undo stops being offered at the exact moment
+   the compare pill starts, so the two are never on screen together. Kept as
+   see-through as the points HUD, for the same reason — unlike the zoom and
+   compare pills, this one is up while you are painting rather than after. */
+.undo-pill { top: 10px; left: 10px; background: rgba(28, 25, 38, 0.68); }
 
 /* Top-center is the one corner of #stage nothing else claims. Deliberately
    more transparent than the zoom/compare pills (0.68 vs their 0.9) — this
@@ -777,7 +786,7 @@ button {
   .segmented button { padding: 10px 13px; font-size: 12px; }
   .row { padding: 12px 13px; }
   .primary.add { padding: 14px; font-size: 14px; }
-  .zoom-pill, .compare-pill { padding: 7px 14px; font-size: 12.5px; }
+  .zoom-pill, .compare-pill, .undo-pill { padding: 7px 14px; font-size: 12.5px; }
 }
 
 /* Short and narrow — a phone in portrait. Give the picture the room. */

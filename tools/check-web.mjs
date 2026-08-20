@@ -173,6 +173,54 @@ check('tapping a cell paints it', true,
 await page.waitForTimeout(900);
 await page.screenshot({ path: path.join(OUT, 'portrait-after.png') });
 
+/* --------------------------------------------------------------------- undo */
+
+// Everything a fill granted has to come back off together. Reading it from
+// the DOM rather than from internals is the point — these four are what the
+// player actually sees change.
+const snapshot = () => page.evaluate(() => ({
+  progress: document.getElementById('barSubtitle').textContent,
+  points: document.getElementById('pointsValue').textContent,
+  tubs: [...document.querySelectorAll('#tubs .count')].map((n) => n.textContent).join(','),
+  undoOffered: !document.getElementById('undoPill').classList.contains('hidden'),
+}));
+
+const painted = await snapshot();
+check('undo is offered once something has been painted', painted.undoOffered);
+
+await page.click('#undoPill');
+await page.waitForTimeout(200);
+const undone = await snapshot();
+check('undo puts the cell back', /· 0\//.test(undone.progress), undone.progress);
+check('undo hands back the point it granted',
+  Number(undone.points) === Number(painted.points) - 1,
+  `${painted.points} -> ${undone.points}`);
+check('undo refills the tub it emptied', undone.tubs !== painted.tubs,
+  `${painted.tubs} -> ${undone.tubs}`);
+check('undo stops being offered with nothing left to take back', !undone.undoOffered);
+
+// Ctrl+Z is the same path, and has to survive there being no history left.
+await page.keyboard.press('Control+z');
+await page.waitForTimeout(150);
+check('undo with an empty history is a no-op, not a crash',
+  (await snapshot()).progress === undone.progress);
+
+// Put the cell back so everything downstream sees the state it expects.
+{
+  const t = await boardTransform();
+  await page.touchscreen.tap(t.ox + target.x * t.scale, t.oy + target.y * t.scale);
+  await page.waitForFunction(
+    () => /· [1-9]\d*\//.test(document.getElementById('barSubtitle').textContent),
+    null, { timeout: 10000, polling: 100 },
+  );
+  await page.waitForTimeout(700);
+  const again = await snapshot();
+  check('repainting after an undo restores exactly what was there',
+    again.progress === painted.progress && again.tubs === painted.tubs
+      && again.points === painted.points,
+    `${again.progress} · ${again.points}🪙`);
+}
+
 /* -------------------------------------------------------------- zoom & pan */
 
 // Two-finger pinch: Playwright's touchscreen API is single-touch only, so

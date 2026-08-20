@@ -48,6 +48,10 @@ const S = {
   importing: false,
   hintsThisPuzzle: 0,
   pending: new Set(), // cells with a burst already in flight, claimed but not yet filled
+  // What undo gives back, newest last. Per-sitting rather than saved: an
+  // unbounded array of every cell ever painted does not belong in a save file,
+  // and reopening a picture is a fresh start on it anyway.
+  history: [],
   avatarTab: 'customize', // UI-only, not persisted — resets to Customize each time the panel opens
   avatarSlot: null,       // which avatar part is currently being recoloured
   roomProp: null,         // which thing in the room is selected — an id from colourablesIn()
@@ -232,6 +236,7 @@ async function loadPuzzle(id) {
   S.elapsedMs = (saved.seconds || 0) * 1000;
   S.finished = S.filled.size === S.cells.length;
   S.bursts = [];
+  S.history = [];
   S.selected = -1;
   S.revealFrom = S.finished ? 0 : -1;
   S.hintsThisPuzzle = 0;
@@ -258,6 +263,7 @@ async function loadPuzzle(id) {
   board.layout();
   syncZoom(); // board.setPuzzle() already reset zoom for the new picture
   syncCompare(); // ditto showSource
+  syncUndo(); // history was just cleared, so this always hides it
   if (!S.finished) nextTub();
 
   S.save.settings.lastPuzzle = id;
@@ -468,6 +474,7 @@ function launch(cell, point) {
 function commitFill(burst) {
   const cell = burst.cell;
   const wasGolden = board.goldenCell?.id === cell.id;
+  const goldenWas = wasGolden ? board.goldenCell : null;
   S.filled.add(cell.id);
   S.pending.delete(cell.id);
   S.remaining[cell.colour]--;
@@ -475,8 +482,10 @@ function commitFill(burst) {
   if (wasGolden) board.goldenCell = null;
 
   S.save.stats.cells++;
-  if (!sfx.enabled) S.save.stats.mutedCells = (S.save.stats.mutedCells || 0) + 1;
-  if (accruePassiveHint(S.save.stats)) {
+  const muted = !sfx.enabled;
+  if (muted) S.save.stats.mutedCells = (S.save.stats.mutedCells || 0) + 1;
+  const hinted = accruePassiveHint(S.save.stats);
+  if (hinted) {
     sfx.play('bank');
     syncHints();
   }
@@ -506,10 +515,93 @@ function commitFill(burst) {
     nextTub();
   }
 
+  // Everything undo has to hand back, recorded as it is granted rather than
+  // recomputed later: `award` folds in a Golden Cell and a Colour Surge that
+  // may both have expired by the time this is taken back.
+  S.history.push({
+    cells: [cell.id],
+    colour: cell.colour,
+    points: award,
+    muted,
+    hint: hinted,
+    golden: wasGolden && goldenWas ? goldenWas : null,
+  });
+
   syncTubs();
+  syncUndo();
   persist();
 
   if (S.filled.size === S.cells.length) finish();
+}
+
+/**
+ * Takes back the last thing painted. Free, and as far back as this sitting
+ * goes: a misclick is a misclick, and either charging for it or capping it at
+ * one step would be worse than the mistake itself.
+ *
+ * Everything commitFill granted comes back off — the cell, the tub's count,
+ * the cell tally, the points. What does not come back off is anything already
+ * announced: achievements earned, and ability charges handed out at a level
+ * up. Taking those away is a nastier surprise than the inconsistency of
+ * keeping them, and their toast has already been read.
+ *
+ * Once a picture is finished, undo is over. Unwinding that would mean undoing
+ * stats.puzzles, the reveal and the stats card — and there is nothing to
+ * correct anyway, since only a cell of the colour you are holding can ever be
+ * filled, so the last one was never a mistake.
+ */
+function undoLast() {
+  if (!S.puzzle || S.finished || !S.history.length) return;
+  const step = S.history.pop();
+  const stats = S.save.stats;
+
+  for (const id of step.cells) {
+    S.filled.delete(id);
+    board.markUnfilled(id);
+  }
+  S.remaining[step.colour] += step.cells.length;
+
+  stats.cells -= step.cells.length;
+  stats.undos = (stats.undos ?? 0) + 1;
+  if (step.muted) stats.mutedCells = Math.max(0, (stats.mutedCells ?? 0) - step.cells.length);
+  if (step.points) {
+    stats.points = Math.max(0, (stats.points ?? 0) - step.points);
+    stats.pointsEarned = Math.max(0, (stats.pointsEarned ?? 0) - step.points);
+  }
+  if (step.hint) {
+    // hintsEarned is what the cell count has paid out, so it always comes back
+    // down — otherwise the same crossing could be sold again on a repaint. The
+    // spendable balance can only go to zero, which is where it stops if the
+    // hint was already used.
+    stats.hintsEarned = Math.max(0, (stats.hintsEarned ?? 0) - 1);
+    stats.hints = Math.max(0, (stats.hints ?? 0) - 1);
+    syncHints();
+  }
+  // Golden Cell was cleared when the cell it marked got filled. If its window
+  // has not run out, that cell is still worth five points.
+  if (step.golden && step.golden.end > Date.now()) board.goldenCell = step.golden;
+
+  // You are left holding the colour you just took back, which is nearly always
+  // the one you were about to use again — and the fill may have emptied that
+  // tub and moved the selection on by itself.
+  if (S.selected === step.colour) sfx.play('pick', step.colour);
+  else selectTub(step.colour);
+
+  syncTubs();
+  syncAvatarWidget();
+  syncAbilityRow();
+  syncUndo();
+  persist();
+  ensureFrame();
+}
+
+/** Offered only while there is something to take back, and never once the
+ *  picture is done — which is also why it can share the compare pill's corner,
+ *  since that one appears exactly when this one stops. */
+function syncUndo() {
+  const pill = $('undoPill');
+  if (!pill) return;
+  pill.classList.toggle('hidden', S.finished || !S.history.length);
 }
 
 /**
@@ -525,17 +617,27 @@ function autoFillHalfOfHeldColour() {
     (c) => c.colour === S.selected && !S.filled.has(c.id) && !S.pending.has(c.id),
   );
   const n = Math.ceil(candidates.length / 2);
+  const colour = S.selected;
   for (let i = 0; i < n; i++) {
     const cell = candidates[i];
     S.filled.add(cell.id);
     S.remaining[cell.colour]--;
     board.markFilled(cell.id);
   }
+  // One entry for the whole batch: it was one action, so it is one undo. It
+  // granted no points and no cell credit, so there is none to hand back.
+  if (n) {
+    S.history.push({
+      cells: candidates.slice(0, n).map((c) => c.id),
+      colour, points: 0, muted: false, hint: false, golden: null,
+    });
+  }
   if (n && S.remaining[S.selected] === 0) {
     achievements.award('tub-empty');
     nextTub();
   }
   syncTubs();
+  syncUndo();
   persist();
   ensureFrame();
   if (S.filled.size === S.cells.length) finish();
@@ -546,6 +648,7 @@ function finish() {
   S.finished = true;
   S.revealFrom = performance.now();
   $('board').classList.add('done');
+  syncUndo();
 
   S.save.stats.puzzles++;
   if (streaks.wrongClicks === 0) achievements.award('flawless');
@@ -1738,6 +1841,7 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'hint': useHint(); break;
+    case 'undo': undoLast(); break;
     case 'zoom-reset': board.resetZoom(); syncZoom(); ensureFrame(); break;
     case 'toggle-source': {
       // Every trip into photo view plays the picture's living element again,
@@ -1780,6 +1884,11 @@ document.addEventListener('keydown', (e) => {
     if (dismissAddGuide) return dismissAddGuide();
     return closePanel();
   }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+    e.preventDefault();
+    return undoLast();
+  }
+  if (e.ctrlKey || e.metaKey) return undefined;
   if (e.key >= '1' && e.key <= '9') return selectTub(Number(e.key) - 1, true);
   if (e.key === '0') return selectTub(9, true);
   return undefined;

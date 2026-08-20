@@ -687,6 +687,55 @@ test('the band tint is distinct from both the base row and the hover tint', () =
   assert.notEqual(hover, base, 'hover must not match the base tint');
 });
 
+/* -------------------------------------------------------------------- undo */
+
+test('undo reverses commitFill, and is structurally unavailable once finished', () => {
+  const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  const body = game.slice(game.indexOf('function undoLast()'));
+  const fn = body.slice(0, body.indexOf('\n}\n') + 2);
+
+  assert.match(fn, /if \(!S\.puzzle \|\| S\.finished \|\| !S\.history\.length\) return;/,
+    'undo must refuse on a finished picture and on an empty history');
+  // Each of these is something commitFill granted. Missing one leaves the save
+  // claiming work that is no longer on the board.
+  for (const [what, re] of [
+    ['the cell itself', /S\.filled\.delete\(id\)/],
+    ['the board', /board\.markUnfilled\(id\)/],
+    ["the tub's count", /S\.remaining\[step\.colour\] \+= step\.cells\.length/],
+    ['the cell tally', /stats\.cells -= step\.cells\.length/],
+    ['the points', /stats\.pointsEarned = Math\.max\(0, \(stats\.pointsEarned \?\? 0\) - step\.points\)/],
+    ['the passive hint', /stats\.hintsEarned = Math\.max\(0/],
+    ['the undo tally', /stats\.undos = \(stats\.undos \?\? 0\) \+ 1/],
+  ]) {
+    assert.match(fn, re, `undo does not hand back ${what}`);
+  }
+
+  assert.match(fs.readFileSync(path.join(ROOT, 'src/render.js'), 'utf8'),
+    /markUnfilled\(id\) \{/, 'the renderer has no way to clear a cell again');
+});
+
+test('half fill is one undo, not one per cell', () => {
+  // It is a single ability use; taking it back a cell at a time would be a
+  // different thing from what the player did.
+  const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  const fn = game.slice(game.indexOf('function autoFillHalfOfHeldColour()'));
+  const body = fn.slice(0, fn.indexOf('\n}\n'));
+  assert.equal((body.match(/S\.history\.push\(/g) ?? []).length, 1,
+    'half fill must record exactly one history entry for the whole batch');
+  assert.match(body, /cells: candidates\.slice\(0, n\)\.map/,
+    'the entry has to name every cell the batch painted');
+  assert.match(body, /points: 0/,
+    'half fill grants no points, so undo must not take any away');
+});
+
+test('history is per-sitting, and never written to the save', () => {
+  const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  assert.match(game, /S\.history = \[\];/, 'loading a picture must clear the history');
+  const persisted = game.slice(game.indexOf('function persist'), game.indexOf('function persist') + 900);
+  assert.ok(!/history/.test(persisted),
+    'an unbounded array of every cell ever painted does not belong in a save');
+});
+
 /* ------------------------------------------------------------------- house */
 
 const {

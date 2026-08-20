@@ -257,6 +257,13 @@ export class Board {
     this.dirty = true;
   }
 
+  /** Undo's counterpart. The Set is shared with game.js, so the delete is what
+   *  the renderer sees; the flag is what makes it repaint. */
+  markUnfilled(id) {
+    this.filled.delete(id);
+    this.dirty = true;
+  }
+
   showHint(cellId, now) {
     this.hintTarget = { id: cellId, start: now };
   }

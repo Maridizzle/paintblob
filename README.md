@@ -75,6 +75,15 @@ achievements are saved to the Electron `userData` directory and survive
 restarts. An achievement toast waits for a click to dismiss rather than fading
 on a timer — there is always time to actually read what you just earned.
 
+Painted the wrong cell, or changed your mind? **Ctrl/Cmd+Z** — or the ↶ pill
+in the corner — takes it back, as far back as this sitting goes. It is free
+and uncapped: a misclick is a misclick, and charging for one would be worse
+than the mistake. Everything the fill granted comes back off with it, the
+points included; achievements you already earned stay earned. Undo is offered
+until the picture is finished, at which point there is nothing left to
+correct — only a cell of the colour you are holding can be filled, so the last
+one was never wrong. The history is per-sitting and is not saved.
+
 Finishing a picture pauses on it rather than covering it immediately — the
 outlines and numbers fade away, then there is a real, unhurried look at the
 whole thing before the stats card appears, and that card has a close button
@@ -325,7 +334,6 @@ There is no bundler and no framework. `src/` is loaded directly as ES modules.
   topology-preserving smoothing would need a shared-edge graph so neighbouring
   cells stay welded; until then diagonals are stair-stepped, which the outline
   stroke hides at display scale.
-- No undo. The `undos` stat is reserved but unused.
 - The demo art is deliberately simple, so it yields 16–18 cells. Generated
   artwork gives considerably more.
 - Window transparency on Linux needs a running compositor.
