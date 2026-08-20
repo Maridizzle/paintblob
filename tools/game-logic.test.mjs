@@ -860,6 +860,28 @@ test('history is per-sitting, and never written to the save', () => {
     'an unbounded array of every cell ever painted does not belong in a save');
 });
 
+/* --------------------------------------------------------------- workflows */
+
+test('cutting a version asks for the build rather than trusting the tag to', () => {
+  // A push made with GITHUB_TOKEN does not trigger another workflow — GitHub
+  // blocks that so workflows cannot recurse — so release.yml's `on: push:
+  // tags` never fires from weekly-release. Nothing about that failure is
+  // visible from outside: the version bumps, the tag lands, the run goes
+  // green, and not one installer is built. It hid for 32 releases because
+  // every one of them happened to be started by hand.
+  const weekly = readSource('.github/workflows/weekly-release.yml');
+  assert.match(weekly, /actions: write/,
+    'dispatching a workflow needs actions: write');
+  assert.match(weekly, /gh workflow run release\.yml --ref/,
+    'weekly-release has to ask release.yml to run; the tag will not do it');
+  assert.match(weekly, /if: steps\.cut\.outputs\.tag != ''/,
+    'and has to skip asking when the guard found nothing worth releasing');
+
+  // The dispatch is only possible while release.yml still accepts one.
+  assert.match(readSource('.github/workflows/release.yml'), /workflow_dispatch:/,
+    'release.yml must stay dispatchable or the step above silently fails');
+});
+
 /* ------------------------------------------------------------------- house */
 
 const {
