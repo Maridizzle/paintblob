@@ -224,35 +224,32 @@ function simplify(pts, pinned, closed) {
 
   const keepFlags = pinned.slice();
   if (!closed) { keepFlags[0] = true; keepFlags[n - 1] = true; }
-  let anchors = [];
+  const anchors = [];
   for (let i = 0; i < n; i++) if (keepFlags[i]) anchors.push(i);
   // A closed loop with nothing pinned has no ends to work between; two points
   // opposite each other give the recursion something to bisect.
   if (closed && anchors.length < 2) {
-    anchors = [0, Math.floor(n / 2)];
-    for (const i of anchors) keepFlags[i] = true;
+    for (const i of [0, Math.floor(n / 2)]) if (!keepFlags[i]) { keepFlags[i] = true; anchors.push(i); }
+    anchors.sort((a, b) => a - b);
   }
 
   for (let k = 0; k < anchors.length; k++) {
     const from = anchors[k];
-    const to = k + 1 < anchors.length ? anchors[k + 1] : (closed ? n : -1);
-    if (to < 0) break;
-    if (to === n) {
-      // The wrap-around run, measured against a chord back to the first
-      // anchor. Walking a copy keeps the index arithmetic straightforward.
-      const tail = [];
-      const map = [];
-      for (let i = from; i <= n; i++) {
-        const j = i % n;
-        tail.push(pts[j * 2], pts[j * 2 + 1]);
-        map.push(j);
-      }
-      const tailKeep = new Array(map.length).fill(false);
-      decimate(tail, 0, map.length - 1, tailKeep);
-      for (let i = 1; i < map.length - 1; i++) if (tailKeep[i]) keepFlags[map[i]] = true;
-      break;
-    }
-    decimate(pts, from, to, keepFlags);
+    if (k + 1 < anchors.length) { decimate(pts, from, anchors[k + 1], keepFlags); continue; }
+    // An open arc ends at its last anchor. A closed one does not: the run from
+    // there wraps past the end of the array and round to the FIRST anchor, and
+    // every point before that anchor lives in this run and nowhere else. Ending
+    // at index 0 instead leaves them covered by no run at all, so they are all
+    // dropped — which folds the polygon inside out and inverts its winding.
+    if (!closed) break;
+    const span = ((anchors[0] - from) + n) % n;
+    const map = [];
+    for (let i = 0; i <= span; i++) map.push((from + i) % n);
+    const tail = [];
+    for (const j of map) tail.push(pts[j * 2], pts[j * 2 + 1]);
+    const tailKeep = new Array(map.length).fill(false);
+    decimate(tail, 0, map.length - 1, tailKeep);
+    for (let i = 1; i < map.length - 1; i++) if (tailKeep[i]) keepFlags[map[i]] = true;
   }
 
   const out = [];

@@ -545,6 +545,124 @@ test('an island and the hole around it keep opposite windings', () => {
     'the island and its hole wind the same way, so the hole will not be knocked out');
 });
 
+/**
+ * The firefly that broke smoothing, lifted straight out of the picture it
+ * broke on. A blob this convoluted is the point: it is one closed loop with no
+ * junction anywhere on it, its outline runs to 324 lattice corners, and the
+ * first corner worth pinning sits a long way into that ring.
+ */
+const FIREFLY = [
+  '.........................................',
+  '.........................................',
+  '.....#...................................',
+  '....###..................................',
+  '...#####.................................',
+  '...######................................',
+  '....######...............................',
+  '....########......###....................',
+  '.....########.....####...................',
+  '.....########.....#####..............##..',
+  '....########......#####.............###..',
+  '...#########.....######............###...',
+  '...#########.....#######..........###....',
+  '...#########.....#######..........###....',
+  '..###########....#######.........###.....',
+  '..###########....#######........####.....',
+  '..###########....########.......####.....',
+  '..#######........########.......###......',
+  '..######.........#########......###......',
+  '..######........###########....###.......',
+  '..######........############..####.......',
+  '..#####.........#################........',
+  '..####....###...###############..........',
+  '..####...#####.###############...........',
+  '..#####.#####################............',
+  '..###########################............',
+  '...##########################............',
+  '......#######################............',
+  '.......######################............',
+  '.......#####################.............',
+  '.......#####################.............',
+  '.......####################..............',
+  '.......###################...............',
+  '........################.................',
+  '.........######...#####..................',
+  '.........#####.....####..................',
+  '..........####.....####..................',
+  '...........##.....######.................',
+  '..................######.................',
+  '.......##........#######.................',
+  '......###.......#######..................',
+  '.....#####......######...................',
+  '.....######....#####.....................',
+  '....#######....####......................',
+  '....#######....###.......................',
+  '....########..###........................',
+  '...#############.........................',
+  '...############..........................',
+  '..###########............................',
+  '..##########.............................',
+  '..#########..............................',
+  '...########..............................',
+  '...#######...............................',
+  '.....####................................',
+  '.....####................................',
+  '......##.................................',
+  '.........................................',
+  '.........................................',
+];
+
+test('smoothing never turns a ring inside out', () => {
+  // Winding is what tells a hole from an outline. contour.js emits outer rings
+  // one way round and holes the other, and canvas' nonzero fill rule knocks
+  // holes out on that basis alone — so a ring that comes back wound the other
+  // way is a hole that no longer subtracts, and the cell around it swallows
+  // whatever was inside.
+  //
+  // What broke it: on a closed loop the run from the last pinned point wraps
+  // past the end of the array and round to the FIRST one, and every point
+  // before that first anchor lives in that run and nowhere else. End it at
+  // index 0 instead and those points belong to no run at all, so every one of
+  // them is dropped — which folds the polygon inside out. Here that took the
+  // firefly from 759 square pixels to 39, with the sign reversed.
+  const h = FIREFLY.length;
+  const w = FIREFLY[0].length;
+  const labels = new Int32Array(w * h);
+  FIREFLY.forEach((row, y) => [...row].forEach((c, x) => {
+    labels[y * w + x] = c === '#' ? 1 : 0;
+  }));
+
+  const raw = new Map();
+  for (const id of [0, 1]) {
+    raw.set(id, traceRegion(labels, w, h, id, boundsOf(labels, w, h, id), false));
+  }
+  const soft = smoothRings(labels, w, h, raw);
+
+  const area = (ring) => {
+    let sum = 0;
+    const n = ring.length / 2;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      sum += ring[i * 2] * ring[j * 2 + 1] - ring[j * 2] * ring[i * 2 + 1];
+    }
+    return sum / 2;
+  };
+
+  for (const [id, before] of raw) {
+    const after = soft.get(id);
+    assert.equal(after.length, before.length, `cell ${id} lost or gained a ring`);
+    before.forEach((ring, i) => {
+      const was = area(ring);
+      const now = area(after[i]);
+      assert.equal(Math.sign(now), Math.sign(was),
+        `cell ${id} ring ${i} came back wound the other way (${was} -> ${now})`);
+      // Rounding a staircase costs a sliver, never most of the shape.
+      assert.ok(Math.abs(now) > Math.abs(was) * 0.9,
+        `cell ${id} ring ${i} lost its area (${was} -> ${now})`);
+    });
+  }
+});
+
 test('a smoothed puzzle still covers every pixel exactly once', () => {
   // The same guarantee verify-puzzle.mjs enforces across the shipped puzzles,
   // asserted here on a picture built from scratch so a failure is diagnosable.
