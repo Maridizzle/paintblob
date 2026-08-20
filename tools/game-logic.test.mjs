@@ -534,6 +534,41 @@ test('every emitted data-slot is one of the known eight, and groups balance', ()
   }
 });
 
+test('the bare figure exposes every part the customize tab can recolour', () => {
+  // The customize tab shows buildAvatarSVG rather than the room scene, and it
+  // is the only place a part can be picked. Anything carrying a `colour` in
+  // the save but no group in this render is a colour you own and can never
+  // reach.
+  const groups = (c) =>
+    new Set([...buildAvatarSVG(c).matchAll(/<g data-slot="([a-z]+)"/g)].map((m) => m[1]));
+
+  // A dress stands in for the shirt and bottoms, so no single render carries
+  // all eight — undressed covers seven, and the dress covers the eighth.
+  const plain = groups(defaultAvatarCustomize());
+  for (const slot of SLOTS) {
+    if (slot === 'dress') continue;
+    assert.ok(plain.has(slot), `no <g data-slot="${slot}"> to click on the customize screen`);
+  }
+
+  const c = defaultAvatarCustomize();
+  c.dress.itemId = 'dress-basic';
+  assert.ok(groups(c).has('dress'), 'an equipped dress is not clickable');
+});
+
+test('customize and outfits stage the figure, room and abilities the scene', () => {
+  // Which builder each tab uses is the whole point of the customize screen —
+  // rendering the room there puts her at about 77px and her eyes at two.
+  const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  assert.match(game, /function paintStage\(stage\)/,
+    'the stage builder choice must live in one place, not be repeated per call site');
+  assert.match(game, /const bare = S\.avatarTab === 'customize' \|\| S\.avatarTab === 'outfits'/);
+  assert.ok(!/stage\.innerHTML = buildRoomSVG/.test(game),
+    'a call site is painting the room directly instead of going through paintStage');
+  const css = fs.readFileSync(path.join(ROOT, 'src/styles.css'), 'utf8');
+  assert.match(css, /\.avatar-stage\.figure\b/,
+    'the figure stage needs its own height-driven sizing or it overflows the panel');
+});
+
 test('a save predating the race field still renders, defaulting to human', () => {
   const c = defaultAvatarCustomize();
   delete c.race;

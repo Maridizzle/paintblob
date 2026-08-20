@@ -1025,6 +1025,32 @@ function wireAvatarPartClicks(stageEl) {
   });
 }
 
+/**
+ * Paints the stage for whichever tab is open. Customize and Outfits show the
+ * figure on her own; Room and Abilities show the whole scene.
+ *
+ * The split is about what you are doing rather than what looks nicer. In the
+ * room she is drawn at AVATAR_SCALE inside a 260-wide frame shown at 208px,
+ * which puts the whole figure at about 77px and her eyes at two — fine to look
+ * at, impossible to aim at. Building her or dressing her wants her big; once
+ * you are just admiring the result, the room is the point.
+ *
+ * Delegation is wired once per stage element, not once per paint: the listener
+ * sits on the stage itself and survives innerHTML being replaced, so re-wiring
+ * on each redraw stacked one more handler per recolour.
+ */
+function paintStage(stage) {
+  const bare = S.avatarTab === 'customize' || S.avatarTab === 'outfits';
+  stage.classList.toggle('figure', bare);
+  stage.innerHTML = bare
+    ? buildAvatarSVG(S.save.avatar.customize)
+    : buildRoomSVG(S.save.avatar.house, S.save.avatar.customize);
+  if (!stage.dataset.wired) {
+    stage.dataset.wired = '1';
+    wireAvatarPartClicks(stage);
+  }
+}
+
 function renderAvatarPanel(body) {
   body.textContent = '';
   const customize = S.save.avatar.customize;
@@ -1035,8 +1061,7 @@ function renderAvatarPanel(body) {
   head.className = 'avatar-head';
   const stage = document.createElement('div');
   stage.className = 'avatar-stage';
-  stage.innerHTML = buildRoomSVG(S.save.avatar.house, customize);
-  wireAvatarPartClicks(stage);
+  paintStage(stage);
 
   const levelbar = document.createElement('div');
   levelbar.className = 'avatar-levelbar';
@@ -1083,8 +1108,7 @@ function renderAvatarPanel(body) {
 function renderAvatarCustomize(section, stage) {
   const customize = S.save.avatar.customize;
   const redraw = () => {
-    stage.innerHTML = buildRoomSVG(S.save.avatar.house, customize);
-    wireAvatarPartClicks(stage);
+    paintStage(stage);
     persist();
     syncAvatarWidget();
   };
@@ -1199,8 +1223,7 @@ function renderAvatarOutfits(section, stage) {
   section.append(head);
 
   const redraw = () => {
-    stage.innerHTML = buildRoomSVG(S.save.avatar.house, customize);
-    wireAvatarPartClicks(stage);
+    paintStage(stage);
     persist();
     syncAvatarWidget();
     renderAvatarPanel($('panelBody'));

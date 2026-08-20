@@ -344,6 +344,13 @@ button {
 .avatar-stage svg [data-slot] { cursor: pointer; }
 .avatar-stage svg [data-slot]:hover { filter: brightness(1.18); }
 
+/* On her own she is a 120x210 frame — much taller than the room's 260x216, so
+   sizing this one by width would run the panel off the bottom of the window.
+   Height drives it instead and the width follows, which also means the figure
+   stays put when a race or a slider changes her proportions. */
+.avatar-stage.figure { width: auto; height: 300px; }
+.avatar-stage.figure svg { width: auto; height: 100%; margin: 0 auto; }
+
 .avatar-levelbar { width: 100%; }
 .avatar-levelbar .label { font-size: 11px; color: var(--muted); margin-bottom: 5px; text-align: center; }
 
@@ -774,6 +781,8 @@ button {
   #bar { padding: 4px 6px; }
   #stage { padding: 6px; }
   .tub { width: 40px; height: 40px; }
+  /* 300px of avatar leaves nothing for the tabs and rows underneath. */
+  .avatar-stage.figure { height: 190px; }
 }
 
 /* -------------------------------------------------------------------- grip */
