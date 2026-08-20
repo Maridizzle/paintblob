@@ -729,19 +729,24 @@ test('the shadow stays on the surface while the element moves off it', () => {
     'both must be clipped to the artwork, or a raised element hangs off the paper');
 });
 
-test('an element too big to be an object is not raised at all', () => {
+test('a subject with no room to move against is not raised at all', () => {
   const render = readSource('src/render.js');
   assert.match(render, /const LIFT_MAX_AREA = 0\.\d+;/);
   assert.match(render, /covered <= puzzle\.width \* puzzle\.height \* LIFT_MAX_AREA/);
 
-  // And the shipped tags actually straddle it, so the rule is doing something.
-  const sidecar = JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles/animations.json'), 'utf8'));
-  const shares = Object.entries(sidecar).filter(([id]) => !id.startsWith('_')).map(([id, tag]) => {
+  // Every shipped lift must actually clear the cap. This used to assert that
+  // the tags straddled it — back when the lift borrowed the animation tag and
+  // the cap was standing in for "is this an object at all". A lift tag is that
+  // judgement now, so a tag above the cap is not the rule working, it is a
+  // picture silently shipping flat.
+  const LIMIT = Number(render.match(/const LIFT_MAX_AREA = ([\d.]+);/)[1]);
+  const lifts = JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles/lifts.json'), 'utf8'));
+  for (const [id, cells] of Object.entries(lifts).filter(([k]) => !k.startsWith('_'))) {
     const p = JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles', `${id}.json`), 'utf8'));
-    return tag.cells.reduce((n, i) => n + p.cells[i].a, 0) / (p.width * p.height);
-  });
-  assert.ok(shares.some((f) => f <= 0.1), 'no shipped picture would ever raise anything');
-  assert.ok(shares.some((f) => f > 0.1), 'nothing exercises the cap');
+    const share = cells.reduce((n, i) => n + p.cells[i].a, 0) / (p.width * p.height);
+    assert.ok(share <= LIMIT,
+      `${id}: lift covers ${(share * 100).toFixed(1)}% of the picture, over the ${(LIMIT * 100).toFixed(0)}% cap — it would never be raised`);
+  }
 });
 
 test('every source read in this file goes through readSource', () => {
@@ -1106,6 +1111,8 @@ test('the tags survive a re-bake, which is the whole point of the sidecar', () =
   const mapify = readSource('tools/mapify.mjs');
   assert.match(mapify, /rest\.animation = animation/,
     'writePuzzle() must inject the animation field from the sidecar');
+  assert.match(mapify, /rest\.lift = lift/,
+    'writePuzzle() must inject the lift field too, or a re-bake drops it');
   for (const [id, tag] of TAGS) {
     const baked = JSON.parse(fs.readFileSync(puzzleFile(id), 'utf8')).animation;
     assert.deepEqual(baked, tag, `${id}: puzzle JSON is out of date — run \`npm run seed\``);
@@ -1198,4 +1205,63 @@ test('the avatar circle is bigger than a paint tub at both pointer sizes', () =>
     'the collapsed circle must outsize a tub, or it reads as a stray colour');
   assert.ok(widthIn(coarse, '.avatar-ring {', 'touch') > widthIn(coarse, '.tub {', 'touch'),
     'the circle must still outsize a tub on a touch screen');
+});
+
+/* ----------------------------------------------------------- the lift tags */
+
+const LIFTS = Object.entries(
+  JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles/lifts.json'), 'utf8')),
+).filter(([id]) => !id.startsWith('_'));
+
+test('every lift tag names a real picture and real cells', () => {
+  for (const [id, cells] of LIFTS) {
+    assert.ok(fs.existsSync(puzzleFile(id)), `lifts.json tags "${id}", which is not a puzzle`);
+    assert.ok(Array.isArray(cells) && cells.length, `${id}: nothing tagged to raise`);
+    assert.equal(new Set(cells).size, cells.length, `${id}: the same cell is listed twice`);
+    const { cells: all } = JSON.parse(fs.readFileSync(puzzleFile(id), 'utf8'));
+    for (const i of cells) {
+      assert.ok(Number.isInteger(i) && i >= 0 && i < all.length,
+        `${id}: cell ${i} is out of range (0..${all.length - 1})`);
+    }
+  }
+});
+
+test('the lift tags survive a re-bake, same as the animation tags', () => {
+  for (const [id, cells] of LIFTS) {
+    const baked = JSON.parse(fs.readFileSync(puzzleFile(id), 'utf8')).lift;
+    assert.deepEqual(baked, cells, `${id}: puzzle JSON is out of date — run \`npm run seed\``);
+  }
+});
+
+test('a picture with no liftable subject carries no lift at all', () => {
+  const lifted = new Set(LIFTS.map(([id]) => id));
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles/manifest.json'), 'utf8'));
+  for (const { id } of manifest) {
+    if (lifted.has(id)) continue;
+    const puzzle = JSON.parse(fs.readFileSync(puzzleFile(id), 'utf8'));
+    assert.equal(puzzle.lift, undefined, `${id} has a lift but is not tagged`);
+  }
+});
+
+test('the lift is read from its own tag, never from the animation', () => {
+  // The bug this whole tag exists to fix: the animation names what moves in
+  // the photo, which on Humpback Whale is one pectoral fin. Deriving the lift
+  // from it raised the fin and left the whale flat.
+  const render = readSource('src/render.js');
+  assert.match(render, /const tagged = puzzle\.lift \?\? \[\]/,
+    'setPuzzle() must take the lift cells from puzzle.lift');
+  assert.ok(!/puzzle\.animation\?\.cells/.test(render),
+    'the lift is reading the animation tag again');
+});
+
+test('the two sidecars are kept out of the web build, but the manifest is not', () => {
+  const build = readSource('tools/build-web.mjs');
+  assert.match(build, /!TAG_SIDECARS\.has\(n\)/,
+    'the tag sidecars are build-time only — they must not ship');
+  const apply = readSource('tools/apply-animations.mjs');
+  const tagOnly = apply.match(/export const TAG_SIDECARS = new Set\(\[([^\]]*)\]\)/)[1];
+  assert.ok(!tagOnly.includes('manifest'),
+    'the manifest is the client index and has to ship — it is not a sidecar');
+  assert.match(apply, /export const SIDECAR_FILES = new Set\(\['manifest\.json', \.\.\.TAG_SIDECARS\]\)/,
+    'the scanners skip the manifest as well as the sidecars');
 });

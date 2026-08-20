@@ -1008,17 +1008,23 @@ check('cancelling the chooser resolves', chooser.cancelled === 'resolved', choos
 
 /* ----------------------------------------------------- the raised element */
 
-// Last, because it switches pictures. Koi Pond's fish is small enough to be
-// raised; Harbour Row's water covers a quarter of the frame and is not.
+// Last, because it switches pictures. Koi Pond's subject is its three koi —
+// bodies and fins, which is what its lift tag holds; the pond around them is
+// not part of the fish and is not raised with them.
 {
   const sample = () => page.evaluate(() => {
     const c = document.getElementById('board');
     const g = c.getContext('2d');
     const b = window.__paintblobTest.board;
-    const { box } = b.liftShape ?? b.unionOf(b.liftCells ?? []);
-    // A strip across the element, in canvas pixels, through its middle.
+    // A strip through the middle of the FIRST lifted cell, not of the whole
+    // union: a subject of several parts — three koi — has a union box that is
+    // mostly the water between them, and a strip through its centre misses
+    // every fish. One cell is guaranteed to be solid subject. Both axes go
+    // through the same picture-units-to-device conversion.
+    const cell = b.cells[(b.liftCells ?? [])[0]];
+    const { box } = b.unionOf([(b.liftCells ?? [])[0]]);
     const k = b.scale * b.dpr;
-    const y = Math.round((b.offsetY + (box.y0 + box.y1) / 2) * b.dpr);
+    const y = Math.round((b.offsetY * b.dpr) + cell.anchor.y * k);
     const x0 = Math.round((b.offsetX * b.dpr) + box.x0 * k) - 12;
     const w = Math.round((box.x1 - box.x0) * k) + 24;
     return [...g.getImageData(Math.max(0, x0), y, Math.max(1, w), 1).data];
@@ -1036,8 +1042,14 @@ check('cancelling the chooser resolves', chooser.cancelled === 'resolved', choos
     null, { timeout: 10000, polling: 100 });
   await page.waitForTimeout(500);
 
-  const tagged = await page.evaluate(() => window.__paintblobTest.board.liftCells?.length ?? 0);
-  check('a small tagged element is raised off the picture', tagged === 3, `${tagged} cells`);
+  // Against the tag rather than a literal, so re-tagging the picture updates
+  // the expectation instead of failing the check. What matters here is that
+  // the board raised exactly what the sidecar asked for.
+  const want = JSON.parse(fs.readFileSync(path.join(WEB, 'puzzles', 'koi-pond.json'), 'utf8')).lift;
+  const tagged = await page.evaluate(() => window.__paintblobTest.board.liftCells ?? []);
+  check('the tagged subject is raised off the picture',
+    want?.length > 0 && JSON.stringify(tagged) === JSON.stringify(want),
+    `${tagged.length} of ${want?.length ?? 0} cells`);
 
   const box = await page.evaluate(() => {
     const b = document.getElementById('board').getBoundingClientRect();

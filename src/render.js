@@ -30,13 +30,19 @@ const LIFT_SHADOW = 'rgba(10, 8, 18, 0.42)';
 /**
  * Past this share of the picture, nothing is raised at all.
  *
- * The tagged element is chosen for what it does in the PHOTO — water ripples,
- * an aurora shimmers — and those are sometimes most of the frame. Raising a
- * quarter of a picture does not read as an object standing off a surface, it
- * reads as the picture coming apart in layers, and it drags an edge of the
- * artwork away from the frame with it. An object it is, or nothing.
+ * This used to be a tenth, and it used to be guarding the wrong thing. The
+ * lift once borrowed the animation tag, which is chosen for what moves in the
+ * PHOTO rather than for what is an object, so the cap was standing in for a
+ * judgement the data could not make. A lift tag is that judgement, made by
+ * hand, so the cap no longer has to ask "is this an object" — the whale is
+ * nearly a fifth of its picture and reads perfectly.
+ *
+ * What is left is the part that really is about area: a lift needs background
+ * to move against. Past about half the frame there is not enough left to read
+ * as still, and the parallax stops looking like an object above a surface and
+ * starts looking like the whole picture sliding.
  */
-const LIFT_MAX_AREA = 0.1;
+const LIFT_MAX_AREA = 0.55;
 
 const HINT_DURATION = 1600;
 const HINT_PING = 500;
@@ -95,9 +101,9 @@ export class Board {
     // screen. { effect, cells:[id], start, end } — see drawLiving().
     this.living = null;
 
-    // The same element again, standing proud of the surface while you PAINT.
-    // Separate from `living` on purpose: that one is the photo's own content
-    // moving, this one is a trick of depth on the painted picture, and the
+    // The picture's subject, standing proud of the surface while you PAINT.
+    // Its own tag, and usually its own cells: `living` is the photo's own
+    // content moving, this is a trick of depth on the painted picture, and the
     // two never show at once. See drawLift().
     this.liftCells = null;
     this.liftShape = null;
@@ -153,10 +159,13 @@ export class Board {
 
     this.showSource = false;
     this.living = null;
-    // The element that stands proud is the one already tagged as alive —
-    // there is one thing in a picture worth singling out, not two — unless it
-    // is too much of the picture to be an object at all.
-    const tagged = puzzle.animation?.cells ?? [];
+    // The element that stands proud is the picture's subject, tagged for that
+    // and nothing else. It used to be borrowed from the animation tag, on the
+    // theory that a picture has one thing worth singling out; but that tag
+    // names what MOVES in the photo, which is rarely the same thing and is
+    // often a piece of it. Humpback Whale's ripple sits on the pectoral fin,
+    // so the whale lay flat and its fin floated.
+    const tagged = puzzle.lift ?? [];
     const covered = tagged.reduce((sum, id) => sum + (cells[id]?.area ?? 0), 0);
     this.liftCells = tagged.length
       && covered <= puzzle.width * puzzle.height * LIFT_MAX_AREA ? tagged : null;

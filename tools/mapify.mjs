@@ -90,7 +90,21 @@ export function manifestEntry(puzzle, { id, title, blind }) {
  * time, and the client still only makes the one fetch it always did.
  */
 export function animationFor(id, dir = PUZZLE_DIR) {
-  const file = path.join(dir, 'animations.json');
+  return sidecarTag('animations.json', id, dir);
+}
+
+/**
+ * The subject a picture raises off the surface while it is painted, if it has
+ * one. Its own sidecar rather than a field on the animation tag: the two are
+ * chosen for different reasons and are rarely the same cells, and tagging or
+ * clearing one must not disturb the other.
+ */
+export function liftFor(id, dir = PUZZLE_DIR) {
+  return sidecarTag('lifts.json', id, dir);
+}
+
+function sidecarTag(name, id, dir) {
+  const file = path.join(dir, name);
   if (!fs.existsSync(file)) return null;
   const tag = JSON.parse(fs.readFileSync(file, 'utf8'))[id];
   if (!tag || id.startsWith('_')) return null;
@@ -104,6 +118,8 @@ export function writePuzzle(puzzle, { id, title, blind }) {
   if (blind) rest.blind = true;
   const animation = animationFor(id);
   if (animation) rest.animation = animation;
+  const lift = liftFor(id);
+  if (lift) rest.lift = lift;
   const out = path.join(PUZZLE_DIR, `${id}.json`);
   fs.writeFileSync(out, JSON.stringify({ id, title, ...rest, sourceImage }));
   updateManifest(manifestEntry(puzzle, { id, title, blind }));

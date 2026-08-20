@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { TAG_SIDECARS } from './apply-animations.mjs';
 
 import { iconBuffer } from './make-icon.mjs';
 
@@ -45,10 +46,10 @@ function copyDir(from, to, filter = () => true) {
 }
 
 copyDir(path.join(ROOT, 'src'), outDir);
-// animations.json is a build-time sidecar: mapify bakes its tags into the
-// puzzle files, so the client never fetches it and it does not ship.
+// The tag sidecars are build-time only: mapify bakes their contents into the
+// puzzle files, so the client never fetches them and they do not ship.
 copyDir(path.join(ROOT, 'puzzles'), path.join(outDir, 'puzzles'),
-  (n) => n.endsWith('.json') && n !== 'animations.json');
+  (n) => n.endsWith('.json') && !TAG_SIDECARS.has(n));
 
 /* ---------------------------------------------------------------------- icons */
 

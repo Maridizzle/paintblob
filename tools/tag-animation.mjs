@@ -39,7 +39,12 @@ import { LIVING_EFFECTS } from '../src/render.js';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const PUZZLE_DIR = path.join(ROOT, 'puzzles');
-const SIDECAR = path.join(PUZZLE_DIR, 'animations.json');
+// --lift switches every read and write from the animation sidecar to the lift
+// one. Same file shape, same selection flags, same map renders — only what the
+// entry means differs: an animation is { effect, cells, ... }, a lift is the
+// bare cell array of the picture's subject.
+const LIFT_MODE = process.argv.includes('--lift');
+const SIDECAR = path.join(PUZZLE_DIR, LIFT_MODE ? 'lifts.json' : 'animations.json');
 
 const MIME = {
   '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
@@ -57,6 +62,7 @@ const manifest = JSON.parse(fs.readFileSync(path.join(PUZZLE_DIR, 'manifest.json
 const id = args.find((a) => !a.startsWith('--') && manifest.some((p) => p.id === a));
 if (!id) {
   console.error('usage: node tools/tag-animation.mjs <puzzle-id> [--set effect --cells 1,2] ...');
+  console.error('       add --lift to author the raised-subject tag instead (lifts.json)');
   console.error(`  puzzles: ${manifest.map((p) => p.id).join(', ')}`);
   console.error(`  effects: ${LIVING_EFFECTS.join(', ')}`);
   process.exit(1);
@@ -143,10 +149,28 @@ if (has('clear')) {
   const tags = readSidecar();
   delete tags[id];
   writeSidecar(tags);
-  console.log(`cleared the animation tag for ${id}`);
+  console.log(`cleared the ${LIFT_MODE ? 'lift' : 'animation'} tag for ${id}`);
 }
 
-if (has('set')) {
+if (has('set') && LIFT_MODE) {
+  // A lift has no effect, speed or amplitude — it is a silhouette. `--set`
+  // with any value commits the selection; the value itself is ignored.
+  if (!selected?.length) {
+    console.error('--set needs --cells 1,2,3 or --box x0,y0,x1,y1 to say what is raised');
+    process.exit(1);
+  }
+  const bad = selected.filter((i) => !Number.isInteger(i) || i < 0 || i >= puzzle.cells.length);
+  if (bad.length) {
+    console.error(`cell ids out of range for ${id} (0..${puzzle.cells.length - 1}): ${bad.join(', ')}`);
+    process.exit(1);
+  }
+  const tags = readSidecar();
+  tags[id] = [...new Set(selected)].sort((a, b) => a - b);
+  writeSidecar(tags);
+  console.log(`${id}: lift on ${tags[id].length} cell(s)`);
+  describe(tags[id]);
+  console.log('\nrun `npm run seed` to bake it into the puzzle JSON');
+} else if (has('set')) {
   const effect = flag('set');
   if (!LIVING_EFFECTS.includes(effect)) {
     console.error(`--set must be one of ${LIVING_EFFECTS.join(', ')}`);
@@ -175,7 +199,7 @@ if (has('set')) {
 }
 
 const tag = readSidecar()[id] ?? null;
-const highlight = selected ?? tag?.cells ?? [];
+const highlight = selected ?? (LIFT_MODE ? tag : tag?.cells) ?? [];
 
 /* -------------------------------------------------------------- the pictures */
 
@@ -331,7 +355,9 @@ console.log(labelAll
 // --- the effect actually moving -------------------------------------------
 // Nothing else in the loop tells you whether the motion reads as the thing
 // it is meant to be, or whether it tears at the silhouette's edge.
-if (tag) {
+// A lift has no clock to step — the map's highlight already IS its whole
+// story — so this stage belongs to animations alone.
+if (tag && !LIFT_MODE) {
   const frames = path.join(outDir, 'frames');
   fs.rmSync(frames, { recursive: true, force: true });
   fs.mkdirSync(frames, { recursive: true });
@@ -378,6 +404,10 @@ if (tag) {
   const stillLiving = await page.evaluate(() => !!window.__paintblobTest.board.living);
   console.log(`frames: ${path.relative(ROOT, frames)}/  (${tag.effect})`);
   console.log(stillLiving ? '  WARNING: the window did not close itself' : '  window closed cleanly');
+} else if (LIFT_MODE) {
+  console.log(tag
+    ? `lift: ${tag.length} cell(s) — the highlight on the map is the raised subject`
+    : 'no lift tagged for this picture yet');
 } else {
   console.log('no animation tagged for this picture yet');
 }
