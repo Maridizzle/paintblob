@@ -675,12 +675,16 @@ test('both DEFAULT_SAVE literals ship the blob opacity, and boot backfills it', 
 test('every panel renderer bands its list', () => {
   const text = readSource('src/game.js');
   // Each renderer's body, from its signature to the next top-level function.
+  // Pictures bands through its filter (applyPicFilter → bandVisible) because the
+  // stripe has to follow which rows a filter leaves showing; the rest call band
+  // directly.
+  const bander = { renderPictures: /applyPicFilter\(\)/ };
   for (const name of ['renderPictures', 'renderTrophies', 'renderAvatarPanel', 'renderSettings']) {
     const start = text.indexOf(`function ${name}(`);
     assert.ok(start > 0, `${name} is missing from game.js`);
     const end = text.indexOf('\nfunction ', start + 1);
     const body = text.slice(start, end === -1 ? text.length : end);
-    assert.match(body, /\bband\(/, `${name} does not band its rows`);
+    assert.match(body, bander[name] ?? /\bband\(/, `${name} does not band its rows`);
   }
 });
 
@@ -1264,4 +1268,27 @@ test('the two sidecars are kept out of the web build, but the manifest is not', 
     'the manifest is the client index and has to ship — it is not a sidecar');
   assert.match(apply, /export const SIDECAR_FILES = new Set\(\['manifest\.json', \.\.\.TAG_SIDECARS\]\)/,
     'the scanners skip the manifest as well as the sidecars');
+});
+
+/* ------------------------------------------------------- the pictures filter */
+
+test('the pictures list opens showing everything, alphabetical', () => {
+  const game = readSource('src/game.js');
+  // The filter resets to the widest possible view every time the panel opens,
+  // so nothing is ever hidden behind a filter left on from last time.
+  assert.match(game,
+    /S\.picFilter = \{ q: '', status: 'all', source: 'all', size: 'all', sort: 'az' \}/,
+    'openPanel must reset the picture filter to show-everything, A–Z');
+});
+
+test('the filter controls are not rows, so the harness never counts them', () => {
+  const game = readSource('src/game.js');
+  // check-web enumerates `#panelBody .row` and bands them; a filter chip or the
+  // search box carrying `.row` would be mistaken for a picture.
+  const bar = game.slice(game.indexOf('function buildPicFilterBar()'),
+    game.indexOf('function applyPicFilter()'));
+  assert.ok(!/'row|\brow\b/.test(bar.replace(/pic-\w+/g, '')),
+    'the filter bar must not use the .row class');
+  assert.match(game, /list\.className = 'pic-list'/,
+    'picture rows live in their own .pic-list container');
 });

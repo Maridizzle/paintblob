@@ -675,6 +675,73 @@ check('both mystery pictures are listed with hidden titles and no colour swatche
   mysteryRows.count >= 2 && mysteryRows.swatchCounts.every((n) => n === 0),
   JSON.stringify(mysteryRows));
 
+/* --------------------------------------------------------- filtering the list */
+
+const filter = await page.evaluate(async () => {
+  const wait = () => new Promise((r) => setTimeout(r, 150));
+  document.querySelector('[data-act="pictures"]').click();
+  await wait();
+  const list = document.querySelector('#panelBody .pic-list');
+  const vis = () => [...list.querySelectorAll(':scope > .row')].filter((r) => !r.classList.contains('hidden'));
+  const labels = () => vis().map((r) => r.querySelector('.label').textContent);
+  // Several groups repeat "All", so target by axis, not by button text.
+  const chip = (axis, text) => [...document.querySelectorAll(`.pic-chips [data-axis="${axis}"] button`)]
+    .find((b) => b.textContent === text);
+  const out = { total: vis().length };
+
+  // Search narrows to the matching visible titles and hides everything else,
+  // mystery rows included (their label is "Mystery picture", never a real name).
+  const input = document.querySelector('.pic-search input');
+  input.value = 'harbour';
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  await wait();
+  out.searchLabels = labels();
+
+  // Clearing puts everything back.
+  document.querySelector('.pic-search-clear').click();
+  await wait();
+  out.afterClear = vis().length;
+
+  // A status nobody has reached yet empties the list and shows the empty note.
+  chip('status', 'Done')?.click();
+  await wait();
+  out.doneCount = vis().length;
+  out.emptyShown = !document.querySelector('.pic-empty').classList.contains('hidden');
+  chip('status', 'All')?.click();
+  await wait();
+
+  // The zip drop earlier added imported pictures, so Source chips exist.
+  out.hasSourceChips = !!chip('source', 'Yours');
+  chip('source', 'Yours')?.click();
+  await wait();
+  out.yoursAllImported = vis().every((r) => r._pic.imported) && vis().length > 0;
+  chip('source', 'Built-in')?.click();
+  await wait();
+  out.builtinNoneImported = vis().every((r) => !r._pic.imported);
+  chip('source', 'All')?.click();
+  await wait();
+
+  // Recent floats your imports to the top.
+  chip('sort', 'Recent')?.click();
+  await wait();
+  out.recentTopImported = vis()[0]?._pic.imported === true;
+
+  document.querySelector('[data-act="panel-close"]')?.click();
+  return out;
+});
+check('search narrows the list to matching titles and hides the rest',
+  filter.searchLabels.length > 0
+  && filter.searchLabels.every((l) => /harbour/i.test(l))
+  && filter.searchLabels.length < filter.total,
+  JSON.stringify(filter.searchLabels));
+check('clearing the search restores every row', filter.afterClear === filter.total,
+  `${filter.afterClear} of ${filter.total}`);
+check('a status with no pictures shows the empty note',
+  filter.doneCount === 0 && filter.emptyShown);
+check('Yours shows only imported pictures, Built-in only bundled',
+  filter.hasSourceChips && filter.yoursAllImported && filter.builtinNoneImported);
+check('Recent floats your imports to the top', filter.recentTopImported);
+
 /* ------------------------------------------------- unpainted thumbnails */
 
 const thumbs = await page.evaluate(async () => {
