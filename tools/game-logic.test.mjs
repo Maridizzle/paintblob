@@ -26,6 +26,20 @@ import {
 } from '../src/avatar.js';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
+
+/**
+ * A source file as text, with line endings normalised.
+ *
+ * Several tests below assert on the *structure* of the source rather than on
+ * behaviour — slicing a function out by looking for "\n}\n", matching a
+ * pattern that spans lines. A Windows checkout hands those back with CRLF, at
+ * which point the search finds nothing: indexOf returns -1, the slice collapses
+ * to a single character, and the assertion fails on a file that is perfectly
+ * correct. A release build died on exactly that. Line endings are not what any
+ * of these tests are about, so they are normalised on the way in.
+ */
+const readSource = (rel) =>
+  fs.readFileSync(path.join(ROOT, rel), 'utf8').replace(/\r\n/g, '\n');
 const IDS = new Set(ACHIEVEMENTS.map((a) => a.id));
 
 /* -------------------------------------------------------------------- hints */
@@ -396,21 +410,21 @@ test('every starter wardrobe item is free', () => {
 // "why didn't that unlock".
 
 test('every achievement id awarded by game.js exists in ACHIEVEMENTS', () => {
-  const text = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  const text = readSource('src/game.js');
   const ids = [...text.matchAll(/achievements\.award\('([^']+)'\)/g)].map((m) => m[1]);
   assert.ok(ids.length > 0, 'sanity check: the scan should find some award() calls');
   for (const id of ids) assert.ok(IDS.has(id), `game.js awards unknown achievement id "${id}"`);
 });
 
 test('every achievement id pushed by StreakTracker exists in ACHIEVEMENTS', () => {
-  const text = fs.readFileSync(path.join(ROOT, 'src/achievements.js'), 'utf8');
+  const text = readSource('src/achievements.js');
   const ids = [...text.matchAll(/earned\.push\('([^']+)'\)/g)].map((m) => m[1]);
   assert.ok(ids.length > 0, 'sanity check: the scan should find some earned.push() calls');
   for (const id of ids) assert.ok(IDS.has(id), `StreakTracker pushes unknown achievement id "${id}"`);
 });
 
 test('every achievement id checked with unlocked.has() in achievements.js exists in ACHIEVEMENTS', () => {
-  const text = fs.readFileSync(path.join(ROOT, 'src/achievements.js'), 'utf8');
+  const text = readSource('src/achievements.js');
   const ids = [...text.matchAll(/unlocked\.has\('([^']+)'\)/g)].map((m) => m[1]);
   assert.ok(ids.length > 0, 'sanity check: the scan should find at least the completionist check');
   for (const id of ids) assert.ok(IDS.has(id), `references unknown achievement id "${id}"`);
@@ -558,13 +572,13 @@ test('the bare figure exposes every part the customize tab can recolour', () => 
 test('customize and outfits stage the figure, room and abilities the scene', () => {
   // Which builder each tab uses is the whole point of the customize screen —
   // rendering the room there puts her at about 77px and her eyes at two.
-  const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  const game = readSource('src/game.js');
   assert.match(game, /function paintStage\(stage\)/,
     'the stage builder choice must live in one place, not be repeated per call site');
   assert.match(game, /const bare = S\.avatarTab === 'customize' \|\| S\.avatarTab === 'outfits'/);
   assert.ok(!/stage\.innerHTML = buildRoomSVG/.test(game),
     'a call site is painting the room directly instead of going through paintStage');
-  const css = fs.readFileSync(path.join(ROOT, 'src/styles.css'), 'utf8');
+  const css = readSource('src/styles.css');
   assert.match(css, /\.avatar-stage\.figure\b/,
     'the figure stage needs its own height-driven sizing or it overflows the panel');
 });
@@ -612,12 +626,12 @@ test('every race profile has a usable skin palette', () => {
 
 test('both DEFAULT_SAVE literals declare a race, and boot backfills it', () => {
   for (const f of ['src/platform.js', 'electron/main.cjs']) {
-    const text = fs.readFileSync(path.join(ROOT, f), 'utf8');
+    const text = readSource(f);
     assert.match(text, /race: 'human'/, `${f} is missing race in DEFAULT_SAVE`);
   }
   // The backfill is the only path that reaches an existing save, since
   // neither backend deep-merges `avatar`.
-  const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  const game = readSource('src/game.js');
   assert.match(game, /customize\.race \?\?= 'human'/,
     'boot() must backfill customize.race or every returning player loses their avatar');
 });
@@ -643,7 +657,7 @@ test('a Burst stores its opacity and defaults to fully opaque', () => {
 });
 
 test('game.js passes an opacity through to every Burst it launches', () => {
-  const text = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  const text = readSource('src/game.js');
   const constructions = [...text.matchAll(/new Burst\(\{[\s\S]*?\}\)/g)];
   assert.equal(constructions.length, 1, 'expected exactly one Burst construction site');
   assert.match(constructions[0][0], /opacity:/, 'the blob opacity setting is not reaching the Burst');
@@ -651,15 +665,15 @@ test('game.js passes an opacity through to every Burst it launches', () => {
 
 test('both DEFAULT_SAVE literals ship the blob opacity, and boot backfills it', () => {
   for (const f of ['src/platform.js', 'electron/main.cjs']) {
-    const text = fs.readFileSync(path.join(ROOT, f), 'utf8');
+    const text = readSource(f);
     assert.match(text, /settings: \{[^}]*opacity:/, `${f} is missing opacity in DEFAULT_SAVE.settings`);
   }
-  const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  const game = readSource('src/game.js');
   assert.match(game, /settings\.opacity \?\?=/, 'boot() should backfill settings.opacity');
 });
 
 test('every panel renderer bands its list', () => {
-  const text = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  const text = readSource('src/game.js');
   // Each renderer's body, from its signature to the next top-level function.
   for (const name of ['renderPictures', 'renderTrophies', 'renderAvatarPanel', 'renderSettings']) {
     const start = text.indexOf(`function ${name}(`);
@@ -671,7 +685,7 @@ test('every panel renderer bands its list', () => {
 });
 
 test('the band tint is distinct from both the base row and the hover tint', () => {
-  const css = fs.readFileSync(path.join(ROOT, 'src/styles.css'), 'utf8');
+  const css = readSource('src/styles.css');
   const tint = (selector) => {
     const m = css.match(new RegExp(`${selector}\\s*\\{[^}]*background: (rgba\\([^)]*\\))`));
     assert.ok(m, `no background found for ${selector}`);
@@ -690,7 +704,7 @@ test('the band tint is distinct from both the base row and the hover tint', () =
 /* ------------------------------------------------------- the raised element */
 
 test('the raise belongs to painting, and cannot reach the photo', () => {
-  const render = fs.readFileSync(path.join(ROOT, 'src/render.js'), 'utf8');
+  const render = readSource('src/render.js');
   const draw = render.slice(render.indexOf('  draw(bursts, timeMs) {'));
   const body = draw.slice(0, draw.indexOf('\n  }\n'));
 
@@ -704,7 +718,7 @@ test('the raise belongs to painting, and cannot reach the photo', () => {
 test('the shadow stays on the surface while the element moves off it', () => {
   // The gap between the two is the entire illusion. A shadow carried along
   // with the element is just a picture that has slipped sideways.
-  const render = fs.readFileSync(path.join(ROOT, 'src/render.js'), 'utf8');
+  const render = readSource('src/render.js');
   const fn = render.slice(render.indexOf('  drawLift(shakeX, shakeY) {'));
   const body = fn.slice(0, fn.indexOf('\n  }\n'));
   assert.match(body, /this\.applyTransform\(ctx, shakeX, shakeY\);[\s\S]*?ctx\.shadowColor/,
@@ -716,7 +730,7 @@ test('the shadow stays on the surface while the element moves off it', () => {
 });
 
 test('an element too big to be an object is not raised at all', () => {
-  const render = fs.readFileSync(path.join(ROOT, 'src/render.js'), 'utf8');
+  const render = readSource('src/render.js');
   assert.match(render, /const LIFT_MAX_AREA = 0\.\d+;/);
   assert.match(render, /covered <= puzzle\.width \* puzzle\.height \* LIFT_MAX_AREA/);
 
@@ -728,6 +742,19 @@ test('an element too big to be an object is not raised at all', () => {
   });
   assert.ok(shares.some((f) => f <= 0.1), 'no shipped picture would ever raise anything');
   assert.ok(shares.some((f) => f > 0.1), 'nothing exercises the cap');
+});
+
+test('every source read in this file goes through readSource', () => {
+  // The whole reason readSource exists. A bare readFileSync works on every
+  // machine anyone develops on and then fails on a Windows runner, which means
+  // it fails in a release build rather than here. JSON.parse is immune — CRLF
+  // is whitespace to it — so those are left alone.
+  const self = readSource('tools/game-logic.test.mjs')
+    .replace(/const readSource =[\s\S]*?;\n/, ''); // the one place it is allowed
+  const bare = (self.match(/fs\.readFileSync\([^\n]*'utf8'\)/g) ?? [])
+    .filter((m) => !self.includes(`JSON.parse(${m}`));
+  assert.deepEqual(bare, [],
+    'read source with readSource(), or a CRLF checkout silently breaks the match');
 });
 
 /* -------------------------------------------------------------- thumbnails */
@@ -787,7 +814,7 @@ test('the line gets heavier as the picture gets more room', () => {
 /* -------------------------------------------------------------------- undo */
 
 test('undo reverses commitFill, and is structurally unavailable once finished', () => {
-  const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  const game = readSource('src/game.js');
   const body = game.slice(game.indexOf('function undoLast()'));
   const fn = body.slice(0, body.indexOf('\n}\n') + 2);
 
@@ -807,14 +834,14 @@ test('undo reverses commitFill, and is structurally unavailable once finished', 
     assert.match(fn, re, `undo does not hand back ${what}`);
   }
 
-  assert.match(fs.readFileSync(path.join(ROOT, 'src/render.js'), 'utf8'),
+  assert.match(readSource('src/render.js'),
     /markUnfilled\(id\) \{/, 'the renderer has no way to clear a cell again');
 });
 
 test('half fill is one undo, not one per cell', () => {
   // It is a single ability use; taking it back a cell at a time would be a
   // different thing from what the player did.
-  const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  const game = readSource('src/game.js');
   const fn = game.slice(game.indexOf('function autoFillHalfOfHeldColour()'));
   const body = fn.slice(0, fn.indexOf('\n}\n'));
   assert.equal((body.match(/S\.history\.push\(/g) ?? []).length, 1,
@@ -826,7 +853,7 @@ test('half fill is one undo, not one per cell', () => {
 });
 
 test('history is per-sitting, and never written to the save', () => {
-  const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  const game = readSource('src/game.js');
   assert.match(game, /S\.history = \[\];/, 'loading a picture must clear the history');
   const persisted = game.slice(game.indexOf('function persist'), game.indexOf('function persist') + 900);
   assert.ok(!/history/.test(persisted),
@@ -890,11 +917,11 @@ test('everything sold has a price, everything free is a starter', () => {
 });
 
 test('boot backfills the house, which neither backend deep-merges', () => {
-  const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  const game = readSource('src/game.js');
   assert.match(game, /avatar\.house \?\?= defaultHouse\(\)/,
     'boot() must backfill avatar.house — an existing save replaces it wholesale');
   for (const f of ['src/platform.js', 'electron/main.cjs']) {
-    const text = fs.readFileSync(path.join(ROOT, f), 'utf8');
+    const text = readSource(f);
     assert.match(text, /house: null/, `${f} is missing house in DEFAULT_SAVE.avatar`);
   }
 });
@@ -1032,7 +1059,7 @@ test('the tags survive a re-bake, which is the whole point of the sidecar', () =
   // writePuzzle() rewrites the puzzle JSON from scratch on every `npm run
   // seed` — which CI runs on every push — so a tag added to that file by hand
   // would silently disappear. It has to be re-injected from here instead.
-  const mapify = fs.readFileSync(path.join(ROOT, 'tools/mapify.mjs'), 'utf8');
+  const mapify = readSource('tools/mapify.mjs');
   assert.match(mapify, /rest\.animation = animation/,
     'writePuzzle() must inject the animation field from the sidecar');
   for (const [id, tag] of TAGS) {
@@ -1052,16 +1079,16 @@ test('an untagged picture carries no animation at all', () => {
 });
 
 test('the animation window plays for the 5-10 seconds it was asked to', () => {
-  const render = fs.readFileSync(path.join(ROOT, 'src/render.js'), 'utf8');
+  const render = readSource('src/render.js');
   const ms = Number(render.match(/const LIVING_DURATION = (\d+)/)[1]);
   assert.ok(ms >= 5000 && ms <= 10000, `LIVING_DURATION is ${ms}ms`);
 });
 
 test('the frame loop treats the animation as busy, and it can end itself', () => {
-  const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  const game = readSource('src/game.js');
   assert.match(game, /const busy = [^;]*board\.living/s,
     'frame() must run at full rate while the element is alive');
-  const render = fs.readFileSync(path.join(ROOT, 'src/render.js'), 'utf8');
+  const render = readSource('src/render.js');
   // The numberOverride mistake: an indefinite flag in `busy` pins the loop to
   // 60fps forever. This one has to clear itself when its window closes.
   assert.match(render, /timeMs >= live\.end\)\s*\{\s*(\/\/[^\n]*\n\s*)*this\.living = null/,
