@@ -290,11 +290,19 @@ let tap = null;      // { id, x0, y0 } — sole pointer, decision pending
 let panning = null;  // { id, x, y } — single-pointer pan in progress
 let pinch = null;    // { ids, dist, zoom, midX, midY } — two-finger gesture
 
+// Nothing is looking at the picture any more, so the raised element settles
+// back square rather than staying frozen at whatever angle you left it.
+$('board').addEventListener('pointerleave', () => board.releaseLift());
+
 $('board').addEventListener('pointermove', (e) => {
   if (!pointers.has(e.pointerId)) {
     // No gesture claims this pointer: the plain hover-outline path. A finger
     // has no hover state, and touch drags would otherwise leave an outline
     // stranded under wherever the thumb last was.
+    // The raised element's parallax reads the pointer as an eye position, so
+    // it wants every move — including a finger's, and including one over a
+    // finished picture, neither of which the hover outline below cares about.
+    board.setLiftFrom(e.clientX, e.clientY);
     if (S.finished || e.pointerType === 'touch') return;
     const { cell } = pointerToCell(e.clientX, e.clientY);
     // Idle frames are throttled to 30fps; force the next one so the hover
@@ -778,8 +786,11 @@ function frame(now) {
   // board.living is safe to include where numberOverride was not: it counts
   // down and drawLiving() clears it the moment its window closes, so the
   // loop drops back to the idle cadence by itself.
+  // board.liftMoving() is safe to include for the same reason board.living is:
+  // it eases to a stop by itself, so the loop drops back to the idle cadence
+  // rather than being pinned at full rate forever.
   const busy = S.bursts.length > 0 || S.revealFrom > 0 || board.hintTarget
-    || board.colourFlash || board.goldenCell || board.living;
+    || board.colourFlash || board.goldenCell || board.living || board.liftMoving();
   if (busy || now - lastDraw > 33) {
     lastDraw = now;
     board.draw(S.bursts, now);

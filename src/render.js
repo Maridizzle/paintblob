@@ -20,6 +20,24 @@ const NUMBER_MIN_PX = 5;
 // A hint flash: a ring pings out from the cell's anchor for the first
 // stretch, while the cell itself pulses at full visibility until fading out
 // over the last stretch.
+/* One element of a picture stands proud of the surface while you paint it —
+   see drawLift(). A height in screen pixels rather than picture units,
+   because that is what height above a surface actually is: zooming in moves
+   you closer to the picture, not to a different picture. */
+const LIFT_PX = 7;         // how far the parallax can carry it, at full swing
+const LIFT_EASE = 0.14;    // per frame, toward wherever the pointer is asking
+const LIFT_SHADOW = 'rgba(10, 8, 18, 0.42)';
+/**
+ * Past this share of the picture, nothing is raised at all.
+ *
+ * The tagged element is chosen for what it does in the PHOTO — water ripples,
+ * an aurora shimmers — and those are sometimes most of the frame. Raising a
+ * quarter of a picture does not read as an object standing off a surface, it
+ * reads as the picture coming apart in layers, and it drags an edge of the
+ * artwork away from the frame with it. An object it is, or nothing.
+ */
+const LIFT_MAX_AREA = 0.1;
+
 const HINT_DURATION = 1600;
 const HINT_PING = 500;
 const HINT_FADE = 400;
@@ -77,6 +95,15 @@ export class Board {
     // screen. { effect, cells:[id], start, end } — see drawLiving().
     this.living = null;
 
+    // The same element again, standing proud of the surface while you PAINT.
+    // Separate from `living` on purpose: that one is the photo's own content
+    // moving, this one is a trick of depth on the painted picture, and the
+    // two never show at once. See drawLift().
+    this.liftCells = null;
+    this.liftShape = null;
+    this.lift = { x: 0, y: 0 };        // where the parallax is now
+    this.liftTarget = { x: 0, y: 0 };  // where the pointer is asking it to be
+
     this.dpr = 1;
     this.fitScale = 1;  // fit-to-container scale, before zoom
     this.zoom = 1;      // user zoom multiplier, always >= 1
@@ -126,6 +153,16 @@ export class Board {
 
     this.showSource = false;
     this.living = null;
+    // The element that stands proud is the one already tagged as alive —
+    // there is one thing in a picture worth singling out, not two — unless it
+    // is too much of the picture to be an object at all.
+    const tagged = puzzle.animation?.cells ?? [];
+    const covered = tagged.reduce((sum, id) => sum + (cells[id]?.area ?? 0), 0);
+    this.liftCells = tagged.length
+      && covered <= puzzle.width * puzzle.height * LIFT_MAX_AREA ? tagged : null;
+    this.liftShape = null;
+    this.lift = { x: 0, y: 0 };
+    this.liftTarget = { x: 0, y: 0 };
     this.sourceBitmap?.close();
     this.sourceBitmap = null;
     if (puzzle.sourceImage) {
@@ -501,6 +538,12 @@ export class Board {
       return;
     }
 
+    // Straight after the base and before every overlay: the raised element is
+    // part of the picture, not something drawn over it. showSource returned
+    // above, so this never reaches the photo — the living element has that
+    // view to itself.
+    const lifted = this.liftCells ? this.drawLift(sx, sy) : null;
+
     this.applyTransform(ctx, sx, sy);
 
     // Pulsing wash over every cell that takes the selected paint.
@@ -560,6 +603,12 @@ export class Board {
       const cell = this.cells[this.hover];
       if (cell && !this.filled.has(cell.id)) {
         ctx.save();
+        // A cell that is part of the raised element is not where the picture
+        // says it is. The wash above is 11% alpha and can live with the few
+        // pixels; a crisp outline sitting beside its own cell cannot.
+        if (lifted && this.liftCells.includes(cell.id)) {
+          this.applyTransform(ctx, sx + lifted.dx, sy + lifted.dy);
+        }
         ctx.strokeStyle = cell.colour === this.selected
           ? 'rgba(24, 20, 34, 0.85)'
           : 'rgba(24, 20, 34, 0.35)';
@@ -629,20 +678,134 @@ export class Board {
    */
   livingShape() {
     const live = this.living;
-    if (live.clip) return live;
-    const clip = new Path2D();
+    if (!live.clip) {
+      const { path, box } = this.unionOf(live.cells);
+      live.clip = path;
+      live.box = box;
+    }
+    return live;
+  }
+
+  /**
+   * A set of cells as one Path2D, plus its bounding box in picture units.
+   *
+   * One path rather than a fill per cell is what makes the silhouette clean:
+   * the shared edges between neighbours disappear into the single fill instead
+   * of each cell casting its own shadow onto the one beside it.
+   */
+  unionOf(ids) {
+    const path = new Path2D();
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const id of live.cells) {
+    for (const id of ids) {
       const cell = this.cells[id];
-      clip.addPath(cell.path);
+      if (!cell) continue;
+      path.addPath(cell.path);
       x0 = Math.min(x0, cell.bounds.x0);
       y0 = Math.min(y0, cell.bounds.y0);
       x1 = Math.max(x1, cell.bounds.x1);
       y1 = Math.max(y1, cell.bounds.y1);
     }
-    live.clip = clip;
-    live.box = { x0, y0, x1, y1 };
-    return live;
+    return { path, box: { x0, y0, x1, y1 } };
+  }
+
+  /* ----------------------------------------------------------- the lift */
+
+  /**
+   * Aims the parallax. The pointer stands in for where you are looking from,
+   * so it is normalised against the canvas rather than the picture — where
+   * your eye is has nothing to do with how far the picture is zoomed.
+   *
+   * The element moves AGAINST the pointer, which is the way round real
+   * parallax works: move your head left and the near thing slides right
+   * across what is behind it. Following the cursor instead reads as a card
+   * being tilted, which is a different and weaker illusion.
+   */
+  setLiftFrom(clientX, clientY) {
+    if (!this.liftCells) return false;
+    const r = this.canvas.getBoundingClientRect();
+    if (!r.width || !r.height) return false;
+    const nx = ((clientX - r.left) / r.width) * 2 - 1;
+    const ny = ((clientY - r.top) / r.height) * 2 - 1;
+    this.liftTarget = {
+      x: -Math.max(-1, Math.min(1, nx)),
+      y: -Math.max(-1, Math.min(1, ny)),
+    };
+    return true;
+  }
+
+  /** Lets the element settle back to square when the pointer leaves. */
+  releaseLift() {
+    this.liftTarget = { x: 0, y: 0 };
+  }
+
+  /** True while the parallax is still easing, so the frame loop knows to keep
+   *  drawing until it has settled rather than freezing it half-shifted. */
+  liftMoving() {
+    if (!this.liftCells) return false;
+    return Math.abs(this.liftTarget.x - this.lift.x) > 0.004
+      || Math.abs(this.liftTarget.y - this.lift.y) > 0.004;
+  }
+
+  /**
+   * Draws the tagged element raised off the picture.
+   *
+   * The shadow sits on the surface at the element's OWN position and does not
+   * travel with it. That gap is the height, and it is the whole reason this
+   * reads as something raised rather than as a picture that has slipped.
+   *
+   * The element itself is a clipped blit of the base layer, offset — copying
+   * the pixels means it lifts whatever state that region happens to be in,
+   * painted or unpainted or striped or numbered, with none of drawBase's
+   * logic repeated here to drift out of step with it.
+   */
+  drawLift(shakeX, shakeY) {
+    this.liftShape ??= this.unionOf(this.liftCells);
+    const { path } = this.liftShape;
+    const ctx = this.ctx;
+
+    // Eased rather than snapped: the pointer arrives in jumps, and the thing
+    // is meant to have some mass behind it.
+    this.lift.x += (this.liftTarget.x - this.lift.x) * LIFT_EASE;
+    this.lift.y += (this.liftTarget.y - this.lift.y) * LIFT_EASE;
+    const dx = this.lift.x * LIFT_PX;
+    const dy = this.lift.y * LIFT_PX;
+
+    // Nothing to do with the lift may stray off the artwork — the picture is
+    // the surface, and paper does not have a shadow falling past its own edge.
+    const { width, height } = this.puzzle;
+
+    ctx.save();
+    this.applyTransform(ctx, shakeX, shakeY);
+    ctx.beginPath();
+    ctx.rect(0, 0, width, height);
+    ctx.clip();
+    // Shadow geometry is in canvas pixels and ignores the transform, so it
+    // stays a constant softness however far the picture is zoomed.
+    ctx.shadowColor = LIFT_SHADOW;
+    ctx.shadowBlur = 13 * this.dpr;
+    ctx.shadowOffsetX = 2.5 * this.dpr;
+    ctx.shadowOffsetY = 5 * this.dpr;
+    // The silhouette is filled in the shadow's own colour, so wherever the
+    // offset copy fails to cover it, what shows through is simply more
+    // shadow — which is exactly what is under a lifted object anyway.
+    ctx.fillStyle = LIFT_SHADOW;
+    ctx.fill(path);
+    ctx.restore();
+
+    ctx.save();
+    this.applyTransform(ctx, shakeX, shakeY);
+    ctx.beginPath();
+    ctx.rect(0, 0, width, height);
+    ctx.clip();
+    this.applyTransform(ctx, shakeX + dx, shakeY + dy);
+    ctx.clip(path);
+    // clip() is resolved into canvas space as it is called, so it survives
+    // dropping back to identity to blit the base layer wholesale.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(this.base, (shakeX + dx) * this.dpr, (shakeY + dy) * this.dpr);
+    ctx.restore();
+
+    return { dx, dy };
   }
 
   /**

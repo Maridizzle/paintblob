@@ -869,6 +869,67 @@ check('cancelling the chooser resolves', chooser.cancelled === 'resolved', choos
   await page.screenshot({ path: path.join(OUT, 'finished-compare.png') });
 }
 
+/* ----------------------------------------------------- the raised element */
+
+// Last, because it switches pictures. Koi Pond's fish is small enough to be
+// raised; Harbour Row's water covers a quarter of the frame and is not.
+{
+  const sample = () => page.evaluate(() => {
+    const c = document.getElementById('board');
+    const g = c.getContext('2d');
+    const b = window.__paintblobTest.board;
+    const { box } = b.liftShape ?? b.unionOf(b.liftCells ?? []);
+    // A strip across the element, in canvas pixels, through its middle.
+    const k = b.scale * b.dpr;
+    const y = Math.round((b.offsetY + (box.y0 + box.y1) / 2) * b.dpr);
+    const x0 = Math.round((b.offsetX * b.dpr) + box.x0 * k) - 12;
+    const w = Math.round((box.x1 - box.x0) * k) + 24;
+    return [...g.getImageData(Math.max(0, x0), y, Math.max(1, w), 1).data];
+  });
+  const differing = (a, b) => a.reduce((n, v, i) => n + (v === b[i] ? 0 : 1), 0);
+
+  await page.evaluate(async () => {
+    document.querySelector('[data-act="pictures"]').click();
+    await new Promise((r) => setTimeout(r, 400));
+    const row = [...document.querySelectorAll('#panelBody .row')]
+      .find((r) => r.querySelector('.label')?.textContent === 'Koi Pond');
+    row.click();
+  });
+  await page.waitForFunction(() => /Koi Pond/.test(document.getElementById('barSubtitle').textContent),
+    null, { timeout: 10000, polling: 100 });
+  await page.waitForTimeout(500);
+
+  const tagged = await page.evaluate(() => window.__paintblobTest.board.liftCells?.length ?? 0);
+  check('a small tagged element is raised off the picture', tagged === 3, `${tagged} cells`);
+
+  const box = await page.evaluate(() => {
+    const b = document.getElementById('board').getBoundingClientRect();
+    return { x: b.x, y: b.y, w: b.width, h: b.height };
+  });
+  const look = async (fx) => {
+    await page.mouse.move(box.x + box.w * fx, box.y + box.h * 0.5);
+    await page.waitForTimeout(600); // the parallax eases rather than snapping
+    return sample();
+  };
+  const fromLeft = await look(0.05);
+  const fromRight = await look(0.95);
+  check('the raised element shifts as the pointer moves across the picture',
+    differing(fromLeft, fromRight) > 40, `${differing(fromLeft, fromRight)} channels moved`);
+
+  // And must not follow the picture into photo view: that is the living
+  // element's own stage, and a parallax on a photograph is just a wobble.
+  await page.evaluate(() => document.getElementById('comparePill').click());
+  await page.waitForFunction(() => window.__paintblobTest.board.living === null,
+    null, { timeout: 15000, polling: 120 });
+  await page.waitForTimeout(300);
+  const photoLeft = await look(0.05);
+  const photoRight = await look(0.95);
+  check('the raise does not follow the picture into photo view',
+    differing(photoLeft, photoRight) === 0,
+    `${differing(photoLeft, photoRight)} channels moved in photo view`);
+  await page.screenshot({ path: path.join(OUT, 'raised-element.png') });
+}
+
 await browser.close();
 server.close();
 

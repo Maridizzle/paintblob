@@ -687,6 +687,49 @@ test('the band tint is distinct from both the base row and the hover tint', () =
   assert.notEqual(hover, base, 'hover must not match the base tint');
 });
 
+/* ------------------------------------------------------- the raised element */
+
+test('the raise belongs to painting, and cannot reach the photo', () => {
+  const render = fs.readFileSync(path.join(ROOT, 'src/render.js'), 'utf8');
+  const draw = render.slice(render.indexOf('  draw(bursts, timeMs) {'));
+  const body = draw.slice(0, draw.indexOf('\n  }\n'));
+
+  const photoReturn = body.indexOf('if (this.showSource) {');
+  const liftCall = body.indexOf('this.drawLift(');
+  assert.ok(photoReturn >= 0 && liftCall >= 0, 'draw() no longer has both branches');
+  assert.ok(liftCall > photoReturn,
+    'drawLift must sit after the showSource early return, or the parallax rides the photograph');
+});
+
+test('the shadow stays on the surface while the element moves off it', () => {
+  // The gap between the two is the entire illusion. A shadow carried along
+  // with the element is just a picture that has slipped sideways.
+  const render = fs.readFileSync(path.join(ROOT, 'src/render.js'), 'utf8');
+  const fn = render.slice(render.indexOf('  drawLift(shakeX, shakeY) {'));
+  const body = fn.slice(0, fn.indexOf('\n  }\n'));
+  assert.match(body, /this\.applyTransform\(ctx, shakeX, shakeY\);[\s\S]*?ctx\.shadowColor/,
+    'the shadow is drawn at the element\'s own position, without the parallax offset');
+  assert.match(body, /this\.applyTransform\(ctx, shakeX \+ dx, shakeY \+ dy\)/,
+    'the element itself is drawn with the parallax offset');
+  assert.match(body, /ctx\.rect\(0, 0, width, height\)/,
+    'both must be clipped to the artwork, or a raised element hangs off the paper');
+});
+
+test('an element too big to be an object is not raised at all', () => {
+  const render = fs.readFileSync(path.join(ROOT, 'src/render.js'), 'utf8');
+  assert.match(render, /const LIFT_MAX_AREA = 0\.\d+;/);
+  assert.match(render, /covered <= puzzle\.width \* puzzle\.height \* LIFT_MAX_AREA/);
+
+  // And the shipped tags actually straddle it, so the rule is doing something.
+  const sidecar = JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles/animations.json'), 'utf8'));
+  const shares = Object.entries(sidecar).filter(([id]) => !id.startsWith('_')).map(([id, tag]) => {
+    const p = JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles', `${id}.json`), 'utf8'));
+    return tag.cells.reduce((n, i) => n + p.cells[i].a, 0) / (p.width * p.height);
+  });
+  assert.ok(shares.some((f) => f <= 0.1), 'no shipped picture would ever raise anything');
+  assert.ok(shares.some((f) => f > 0.1), 'nothing exercises the cap');
+});
+
 /* -------------------------------------------------------------- thumbnails */
 
 const { outlineSVG, outlineWeight } = await import('../src/thumbnail.js');

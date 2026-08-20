@@ -150,6 +150,24 @@ effect that matches **what that thing physically does in reality**:
 - If two effects both seem fine, pick the calmer one. This runs every single
   time the player looks at the photo; it must not become irritating.
 
+**The tag now does two jobs.** The cells you pick are also the ones raised off
+the surface while the picture is being *painted* — a parallax lift that tracks
+the pointer, with a shadow under it (`drawLift` in `src/render.js`). You do not
+choose it and you cannot turn it off; it comes with the tag.
+
+That does not change how you pick, but it does raise the stakes on one rule
+already above: **pick an object, not a region.** A fish, a lantern, a boat, a
+bowl. Something that could plausibly stand off the page.
+
+If your element covers more than **10% of the picture**, it is not raised at
+all — a quarter of a picture floating does not read as an object above a
+surface, it reads as the artwork coming apart in layers. Nothing warns you and
+no test fails; the picture simply animates in photo view and stays flat while
+painting. That is a fine outcome for water or an aurora, which genuinely are
+most of the frame. It is a wasted opportunity for anything else, so if you find
+yourself tagging half the sky, check first that there is not a smaller, more
+object-like thing in the picture worth having instead.
+
 ---
 
 ## 5. Select the cells

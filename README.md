@@ -92,6 +92,17 @@ pill in the corner (🖼 Photo / 🎨 Painting) shows up once a picture is
 finished and swaps the canvas between what you painted and the real photo it
 was mapped from — zoom and pan keep working on either.
 
+One element of a picture stands proud of it while you paint — the fish above
+the pond, the sun over the harbour. It is a parallax trick rather than any
+real geometry: the shadow stays on the surface where the element belongs while
+the element itself slides against your pointer, and that gap is what your eye
+reads as height. It uses the cells already tagged as the picture's living
+element, so there is one thing per picture singled out rather than two, and it
+belongs to painting alone — flipping to the photo hands the same element over
+to its animation and drops the lift entirely. An element covering more than a
+tenth of the frame is left flat: that much of a picture floating reads as the
+artwork delaminating rather than as an object above a surface.
+
 The Pictures panel shows each one as the line drawing you are about to paint —
 its own outlines, nothing filled in — so you can see what you are picking
 rather than read its name. Hover it with a mouse or hold it with a finger for
