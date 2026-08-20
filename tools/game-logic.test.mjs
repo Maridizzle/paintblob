@@ -1140,3 +1140,62 @@ test('the frame loop treats the animation as busy, and it can end itself', () =>
   assert.match(render, /if \(!next\) this\.living = null/,
     'leaving photo view must end the animation immediately');
 });
+
+test('the avatar widget sits in the tray, not on top of the picture', () => {
+  const html = readSource('src/index.html');
+  const stage = html.slice(html.indexOf('<div id="stage">'), html.indexOf('</footer>'));
+  const tray = html.slice(html.indexOf('<footer id="tray">'), html.indexOf('</footer>'));
+  assert.ok(tray.includes('id="avatarWidget"'),
+    'the avatar widget belongs in the tray with the tubs');
+  // The whole point of the move: up to eight ability buttons used to stand on
+  // the canvas. Putting it back inside #stage would undo that silently.
+  assert.ok(!stage.slice(0, stage.indexOf('<footer id="tray">')).includes('id="avatarWidget"'),
+    'the avatar widget is back inside #stage, covering the artwork again');
+  assert.match(tray, /id="abilityRow" class="ability-row hidden"/,
+    'the ability pop-up must start collapsed, or it covers the picture on load');
+});
+
+test('the avatar circle is bigger than a paint tub at both pointer sizes', () => {
+  const css = readSource('src/styles.css');
+
+  // Split the sheet into what applies unconditionally and what a touch screen
+  // adds. Both matter, and neither can be found by a plain indexOf: the base
+  // `.tub` rule sits *after* the first @media block, and the touch sizes for
+  // the pill and the tub live in two *separate* `@media (pointer: coarse)`
+  // blocks. Scanning naively lands on the wrong rule and passes without ever
+  // comparing the sizes it claims to.
+  const split = () => {
+    let outside = '';
+    let coarse = '';
+    for (let i = 0; i < css.length; i++) {
+      if (css[i] !== '@') { outside += css[i]; continue; }
+      const head = css.slice(i, css.indexOf('{', i) + 1);
+      let depth = 0;
+      let j = css.indexOf('{', i);
+      const from = j + 1;
+      for (; j < css.length; j++) {
+        if (css[j] === '{') depth++;
+        else if (css[j] === '}' && --depth === 0) break;
+      }
+      if (head.startsWith('@media (pointer: coarse)')) coarse += css.slice(from, j);
+      i = j;
+    }
+    return { outside, coarse };
+  };
+
+  const widthIn = (text, selector, label) => {
+    const at = text.indexOf(selector);
+    assert.notEqual(at, -1, `no ${label} rule for ${selector}`);
+    const m = text.slice(at).match(/width:\s*(\d+)px/);
+    assert.ok(m, `no ${label} width for ${selector}`);
+    return Number(m[1]);
+  };
+
+  // The ring, not the pill: the pill is inset by the XP sweep, so the ring's
+  // outer edge is the circle a player actually sees against the tubs.
+  const { outside, coarse } = split();
+  assert.ok(widthIn(outside, '.avatar-ring {', 'base') > widthIn(outside, '.tub {', 'base'),
+    'the collapsed circle must outsize a tub, or it reads as a stray colour');
+  assert.ok(widthIn(coarse, '.avatar-ring {', 'touch') > widthIn(coarse, '.tub {', 'touch'),
+    'the circle must still outsize a tub on a touch screen');
+});

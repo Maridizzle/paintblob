@@ -230,39 +230,50 @@ button {
 
 /* --------------------------------------------------------------- avatar */
 
-/* Bottom-right is the one corner of #stage the zoom/compare pills and the
-   bottom-left toasts do not already occupy. */
+/* The last item in the tub row, not over the picture. */
 .avatar-widget {
-  position: absolute;
-  z-index: 15;
-  right: 10px;
-  bottom: 10px;
-  display: flex;
-  flex-direction: column-reverse;
-  align-items: center;
-  gap: 6px;
-  /* The container is transparent but still hit-tests, so its padding and the
-     gaps between its children would swallow taps meant for the cells beneath
-     it. Only the controls themselves take pointer events. */
-  pointer-events: none;
+  flex: 0 0 auto;
   -webkit-app-region: no-drag;
 }
-.avatar-widget .avatar-pill,
-.avatar-widget .ability-btn { pointer-events: auto; }
 
-/* Reuses the .bar/.bar > i progress primitive; only the width and placement
-   differ. Matches the pill's width so the two read as one control. */
-.xp-bar {
-  width: 46px;
-  margin-top: 0;
-  pointer-events: none;
+/* A conic gradient is not interpolable, so the sweep is animated through the
+   angle itself. Registering the property is what makes it a number the browser
+   can tween rather than an opaque token it can only swap. */
+@property --xp {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
 }
-.xp-bar > i { transition: width 240ms ease; }
 
+/* The XP bar, wrapped around the circle. A wrapper rather than a pseudo-element
+   on the pill itself: the pill crops its portrait with overflow:hidden, which
+   would cut the ring off. The pill's own opaque background covers the middle,
+   so only the 3px of padding shows.
+   `display: grid` and not the default block: a block box around an
+   inline-block button inherits the line box's descender and the ring comes out
+   an ellipse, four pixels taller than it is wide. */
+.avatar-ring {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  /* --xp is a bare number, never a percentage: `calc(37.5 * 1%)` is valid where
+     `calc(37.5% * 1%)` is not, and an invalid value here drops the whole
+     background and takes the ring with it. */
+  background: conic-gradient(var(--accent) calc(var(--xp, 0) * 1%),
+                             rgba(255, 255, 255, 0.14) 0);
+  transition: --xp 240ms ease;
+}
+
+/* The visible circle is the ring; the pill is inset by its 3px of XP sweep.
+   The ring is half again the size of a tub (38, or 48 on a touch screen), so
+   it reads as its own thing at the end of the row, not a stray colour. */
 .avatar-pill {
   position: relative;
-  width: 46px;
-  height: 46px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
   overflow: hidden;
   background: rgba(28, 25, 38, 0.9);
@@ -285,7 +296,7 @@ button {
   height: 300%;
   pointer-events: none;
 }
-.avatar-pill .level-badge {
+.avatar-ring .level-badge {
   position: absolute;
   right: -2px;
   bottom: -2px;
@@ -302,7 +313,28 @@ button {
   line-height: 1;
 }
 
-.ability-row { display: flex; flex-direction: column; gap: 5px; align-items: center; }
+/* Fans up over the bottom corner of the picture, and only while it is open.
+   Two columns so eight abilities are four rows rather than eight — a block,
+   not a ladder.
+   Placed against #tray rather than the circle itself: the circle rides at the
+   end of the tub row, so anchoring to it put the pop-up on top of the paints,
+   and which row it landed on moved with the palette. Sitting on the tray's top
+   edge clears the tubs at any palette size, and the picture is what it covers
+   — which is the trade that was agreed. */
+.ability-row {
+  position: absolute;
+  right: 10px;
+  bottom: calc(100% - 2px);
+  z-index: 30;
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 6px;
+  padding: 8px;
+  border-radius: 14px;
+  background: rgba(28, 25, 38, 0.94);
+  border: 1px solid var(--edge);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+}
 
 .ability-btn {
   position: relative;
@@ -391,8 +423,8 @@ button {
 .swatch:hover { transform: scale(1.12); border-color: rgba(255, 255, 255, 0.5); }
 
 @media (pointer: coarse) {
+  .avatar-ring { width: 60px; height: 60px; }
   .avatar-pill { width: 54px; height: 54px; }
-  .xp-bar { width: 54px; }
   .ability-btn { width: 36px; height: 36px; font-size: 15px; }
   .swatch { width: 32px; height: 32px; }
 }
@@ -400,6 +432,7 @@ button {
 /* ------------------------------------------------------------------- tubs */
 
 #tray {
+  position: relative;   /* the ability pop-up is placed against this, not the circle */
   flex: 0 0 auto;
   padding: 0 12px 13px;
 }
@@ -853,6 +886,11 @@ button {
   #bar { padding: 4px 6px; }
   #stage { padding: 6px; }
   .tub { width: 40px; height: 40px; }
+  .avatar-ring { width: 54px; height: 54px; }
+  .avatar-pill { width: 48px; height: 48px; }
+  /* Four columns, not two: the stage is only ~140px tall here, and a four-row
+     pop-up is taller than the picture it is supposed to be floating over. */
+  .ability-row { grid-template-columns: repeat(4, auto); }
   /* 300px of avatar leaves nothing for the tabs and rows underneath. */
   .avatar-stage.figure { height: 190px; }
 }

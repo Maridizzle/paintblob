@@ -392,6 +392,103 @@ if (offlineOk) {
 }
 await context.setOffline(false);
 
+/* ------------------------------------------------ the avatar circle and fan */
+// The circle replaced a column of up to eight ability buttons that used to
+// stand on the picture. What matters: it is off the canvas at rest, it
+// outsizes a tub so it does not read as a stray colour, and the abilities go
+// back over the artwork only while they are open — without being clipped.
+
+const dock = await page.evaluate(() => {
+  const pill = document.getElementById('avatarPill').getBoundingClientRect();
+  const tub = document.querySelector('#tubs .tub').getBoundingClientRect();
+  const board = document.getElementById('board').getBoundingClientRect();
+  return {
+    pill: pill.width,
+    tub: tub.width,
+    clearsBoard: pill.top >= board.bottom,
+    fanHidden: document.getElementById('abilityRow').classList.contains('hidden'),
+    expanded: document.getElementById('avatarPill').getAttribute('aria-expanded'),
+  };
+});
+check('the avatar circle sits below the picture, not on it', dock.clearsBoard);
+check('the avatar circle outsizes a paint tub', dock.pill > dock.tub,
+  `${Math.round(dock.pill)}px vs ${Math.round(dock.tub)}px`);
+check('the abilities stay collapsed until asked for',
+  dock.fanHidden && dock.expanded === 'false');
+
+const fanFlow = await page.evaluate(async () => {
+  const pill = document.getElementById('avatarPill');
+  const fan = document.getElementById('abilityRow');
+  const wait = () => new Promise((r) => setTimeout(r, 80));
+
+  pill.click();
+  await wait();
+  const app = () => document.getElementById('app').getBoundingClientRect();
+  const fits = () => {
+    const f = fan.getBoundingClientRect();
+    const a = app();
+    return f.top >= a.top && f.left >= a.left && f.right <= a.right;
+  };
+  const f = fan.getBoundingClientRect();
+  const opened = !fan.classList.contains('hidden') && f.height > 0;
+  // Upward, off the circle — the structural property, true whatever the
+  // player's level. How far it reaches over the picture depends on how many
+  // abilities are unlocked, so that is not something to assert here.
+  const fansUp = f.bottom <= pill.getBoundingClientRect().top;
+  const unlocked = fan.querySelectorAll('[data-ability]').length;
+
+  // The worst case a real player reaches is all eight abilities, which this
+  // save is nowhere near. #app is overflow:hidden, so a pop-up taller than
+  // the stage is guillotined rather than pushed back into view — stand in the
+  // missing buttons and check the tall version fits before shipping it.
+  const spare = [];
+  for (let i = unlocked; i < 8; i += 1) {
+    const b = document.createElement('button');
+    b.className = 'ability-btn';
+    b.textContent = '✦';
+    fan.append(b);
+    spare.push(b);
+  }
+  const fullFits = fits();
+  const fullHeight = fan.getBoundingClientRect().height;
+  spare.forEach((b) => b.remove());
+  const unclipped = fits() && fullFits;
+
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await wait();
+  const escClosed = fan.classList.contains('hidden');
+
+  pill.click();
+  await wait();
+  document.getElementById('board').dispatchEvent(
+    new PointerEvent('pointerdown', { bubbles: true }));
+  await wait();
+  const outsideClosed = fan.classList.contains('hidden');
+
+  pill.click();
+  await wait();
+  pill.click();
+  await new Promise((r) => setTimeout(r, 300));
+  const panel = document.getElementById('panelTitle').textContent;
+  const panelOpen = !document.getElementById('panel').classList.contains('hidden');
+  document.querySelector('[data-act="panel-close"]')?.click();
+  await wait();
+
+  return {
+    opened, unclipped, fansUp, unlocked, fullHeight,
+    escClosed, outsideClosed, panelOpen, panel,
+  };
+});
+check('the circle opens the abilities upward, off itself',
+  fanFlow.opened && fanFlow.fansUp, `${fanFlow.unlocked} unlocked`);
+check('the abilities fit the window even with all eight unlocked',
+  fanFlow.unclipped, `${Math.round(fanFlow.fullHeight)}px tall`);
+check('Escape collapses the abilities', fanFlow.escClosed);
+check('a tap elsewhere collapses the abilities', fanFlow.outsideClosed);
+check('a second click on the face opens the avatar panel',
+  fanFlow.panelOpen, fanFlow.panel);
+await page.screenshot({ path: path.join(OUT, 'avatar-dock.png') });
+
 /* -------------------------------------------------------------- landscape */
 
 await page.setViewportSize({ width: 851, height: 393 });
@@ -399,6 +496,37 @@ await page.waitForTimeout(400);
 await page.screenshot({ path: path.join(OUT, 'landscape.png') });
 check('landscape lays out without overflow',
   await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+
+// Landscape is the tight one: the stage is a couple of hundred pixels tall, so
+// the four-row portrait pop-up would be taller than the picture it floats over
+// and #app would guillotine it.
+const fanLandscape = await page.evaluate(async () => {
+  const pill = document.getElementById('avatarPill');
+  const fan = document.getElementById('abilityRow');
+  const spare = [];
+  for (let i = fan.querySelectorAll('[data-ability]').length; i < 8; i += 1) {
+    const b = document.createElement('button');
+    b.className = 'ability-btn';
+    b.textContent = '✦';
+    fan.append(b);
+    spare.push(b);
+  }
+  pill.click();
+  await new Promise((r) => setTimeout(r, 100));
+  const f = fan.getBoundingClientRect();
+  const a = document.getElementById('app').getBoundingClientRect();
+  const out = {
+    fits: f.top >= a.top && f.left >= a.left && f.right <= a.right,
+    size: [Math.round(f.width), Math.round(f.height)],
+  };
+  spare.forEach((b) => b.remove());
+  pill.click();
+  document.querySelector('[data-act="panel-close"]')?.click();
+  await new Promise((r) => setTimeout(r, 100));
+  return out;
+});
+check('the abilities fit a landscape window with all eight unlocked',
+  fanLandscape.fits, `${fanLandscape.size[0]}x${fanLandscape.size[1]}px`);
 
 /* --------------------------------------------------------- ways to add art */
 // Last, because these change the active puzzle. Paste and drag-drop are the
@@ -603,7 +731,16 @@ await page.evaluate(() => document.querySelector('[data-act="panel-close"]')?.cl
 const banding = await page.evaluate(async () => {
   const out = {};
   for (const panel of ['pictures', 'trophies', 'avatar', 'settings']) {
-    document.querySelector(`[data-act="${panel}"]`).click();
+    // The avatar has no button of its own in the title bar: it is the circle
+    // down in the tray, and reaching its panel now takes two clicks — one to
+    // open the abilities, one on the face itself.
+    if (panel === 'avatar') {
+      document.getElementById('avatarPill').click();
+      await new Promise((r) => setTimeout(r, 60));
+      document.getElementById('avatarPill').click();
+    } else {
+      document.querySelector(`[data-act="${panel}"]`).click();
+    }
     await new Promise((r) => setTimeout(r, 250));
     // Group by parent: the avatar panel nests its rows in .avatar-section
     // rather than directly under #panelBody, and each container bands alone.
