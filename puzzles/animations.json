@@ -15,6 +15,9 @@
     "",
     "Use `node tools/tag-animation.mjs <id>` to pick the cells by eye.",
     "",
+    "The subject raised while PAINTING is a separate tag with its own rules,",
+    "in lifts.json \u2014 the two are rarely the same cells. See that file.",
+    "",
     "Underscore-prefixed keys (like this one) are ignored."
   ],
   "aurora-over-ice": {

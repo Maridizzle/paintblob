@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
+import { SIDECAR_FILES } from './apply-animations.mjs';
 
 // Deliberately the *same* parser the game uses. Verifying with a second
 // implementation would only prove the two agree with each other.
@@ -110,11 +111,10 @@ function verify(file, writePng) {
 }
 
 const writePng = process.argv.includes('--write-png');
-// manifest.json is the index, animations.json the living-element sidecar —
-// neither is a puzzle, and both sit in the same directory.
-const NOT_A_PUZZLE = new Set(['manifest.json', 'animations.json']);
+// manifest.json is the index; the sidecars carry the animation and lift tags.
+// None is a puzzle, and all sit in the same directory.
 const files = fs.readdirSync(PUZZLE_DIR)
-  .filter((f) => f.endsWith('.json') && !NOT_A_PUZZLE.has(f))
+  .filter((f) => f.endsWith('.json') && !SIDECAR_FILES.has(f))
   .map((f) => path.join(PUZZLE_DIR, f));
 
 let allOk = true;

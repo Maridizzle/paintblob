@@ -92,16 +92,23 @@ pill in the corner (🖼 Photo / 🎨 Painting) shows up once a picture is
 finished and swaps the canvas between what you painted and the real photo it
 was mapped from — zoom and pan keep working on either.
 
-One element of a picture stands proud of it while you paint — the fish above
-the pond, the sun over the harbour. It is a parallax trick rather than any
-real geometry: the shadow stays on the surface where the element belongs while
-the element itself slides against your pointer, and that gap is what your eye
-reads as height. It uses the cells already tagged as the picture's living
-element, so there is one thing per picture singled out rather than two, and it
-belongs to painting alone — flipping to the photo hands the same element over
-to its animation and drops the lift entirely. An element covering more than a
-tenth of the frame is left flat: that much of a picture floating reads as the
-artwork delaminating rather than as an object above a surface.
+The subject of a picture stands proud of it while you paint — the koi above
+the pond, the whale in the water, the row of houses along the quay. It is a
+parallax trick rather than any real geometry: the shadow stays on the surface
+where the subject belongs while the subject itself slides against your
+pointer, and that gap is what your eye reads as height. It belongs to painting
+alone — flipping to the photo drops the lift and hands the picture over to its
+animation instead.
+
+Which cells make up the subject is its own tag, in `puzzles/lifts.json`. It
+was briefly borrowed from the living-element tag, on the theory that a picture
+has one thing worth singling out rather than two. That was wrong: the living
+tag names what *moves* in the photograph, which is rarely the whole subject
+and is sometimes a corner of it — the ripple on Humpback Whale sits on one
+pectoral fin, so the whale lay flat while its fin floated. The subject need
+not be a solid object: the aurora's lights, a nebula's clouds, a bed of
+anemones each rise as one and read fine. What matters is tagging the whole of
+it — an untagged picture simply stays flat.
 
 The Pictures panel shows each one as the line drawing you are about to paint —
 its own outlines, nothing filled in — so you can see what you are picking

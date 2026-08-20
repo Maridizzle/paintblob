@@ -150,23 +150,11 @@ effect that matches **what that thing physically does in reality**:
 - If two effects both seem fine, pick the calmer one. This runs every single
   time the player looks at the photo; it must not become irritating.
 
-**The tag now does two jobs.** The cells you pick are also the ones raised off
-the surface while the picture is being *painted* — a parallax lift that tracks
-the pointer, with a shadow under it (`drawLift` in `src/render.js`). You do not
-choose it and you cannot turn it off; it comes with the tag.
-
-That does not change how you pick, but it does raise the stakes on one rule
-already above: **pick an object, not a region.** A fish, a lantern, a boat, a
-bowl. Something that could plausibly stand off the page.
-
-If your element covers more than **10% of the picture**, it is not raised at
-all — a quarter of a picture floating does not read as an object above a
-surface, it reads as the artwork coming apart in layers. Nothing warns you and
-no test fails; the picture simply animates in photo view and stays flat while
-painting. That is a fine outcome for water or an aurora, which genuinely are
-most of the frame. It is a wasted opportunity for anything else, so if you find
-yourself tagging half the sky, check first that there is not a smaller, more
-object-like thing in the picture worth having instead.
+**The animation tag does one job.** It once did two — the same cells were also
+raised off the surface while painting — and that coupling produced exactly the
+failure it invites: Humpback Whale's ripple sits on one pectoral fin, so the
+whale lay flat while its fin floated. The raised subject is its own tag now;
+see §5a. Pick these cells for the *motion* alone.
 
 ---
 
@@ -211,6 +199,36 @@ Do not proceed to `--set` until the highlighted region is the element and only
 the element.
 
 ---
+
+## 5a. The lift tag — the picture's subject, raised while painting
+
+A second, separate tag: the cells raised off the surface with a shadow under
+them while the picture is being *painted* (`drawLift` in `src/render.js`).
+Stored in `puzzles/lifts.json` as a bare cell array per picture — no effect, no
+speed; a silhouette is the whole story.
+
+Author it with the same tool and the same selection flags, plus `--lift`:
+
+```bash
+node tools/tag-animation.mjs <id> --lift                      # render the map
+node tools/tag-animation.mjs <id> --lift --set x --cells 1,2  # commit
+```
+
+Two rules, different from the animation's:
+
+- **The whole object, not the moving part.** The animation wants the water; the
+  lift wants the boat. On an animal, tag the entire animal — body, fins, tail —
+  or the piece you leave out stays glued to the background while the rest
+  rises.
+- **The subject can be a region, if the region is the point of the picture.**
+  The aurora's lights, a nebula's clouds, the bed of anemones: each rises as
+  one mass and reads fine. A scattered set (three koi) does too. What does not
+  work is lifting scenery that is merely *around* the subject — and a picture
+  can be left untagged, in which case it simply stays flat.
+
+Past `LIFT_MAX_AREA` of the frame (see `src/render.js`) nothing is raised — a
+lift needs enough background to move against. The guard test tells you if a tag
+you wrote can never fire.
 
 ## 6. Commit the choice
 
@@ -307,8 +325,9 @@ get committed — that is correct, leave it alone.
 You do not need this to do the task, but it explains why the rules above are
 rules.
 
-**`puzzles/animations.json` is the source of truth.** The tags are not stored
-in the puzzle files, because those files get rewritten:
+**The sidecars are the source of truth** — `puzzles/animations.json` for the
+living element and `puzzles/lifts.json` for the raised subject. The tags are
+not stored in the puzzle files, because those files get rewritten:
 
 - The four **demo** pictures are rebuilt from code on every `npm run seed`,
   which CI runs on every push. Anything hand-written into their JSON is
@@ -319,8 +338,8 @@ in the puzzle files, because those files get rewritten:
   that bake has already happened, so a tag can only ever be written
   *afterwards* — and there is no second bake to inject it.
 
-Two opposite failure modes, so there are two mechanisms:
-`tools/mapify.mjs` injects the tag at bake time, and
+Two opposite failure modes, so there are two mechanisms — and both carry both
+tags: `tools/mapify.mjs` injects them at bake time, and
 `tools/apply-animations.mjs` syncs the sidecar into every puzzle file
 afterwards. `npm run seed` runs the second one last, and `npm test` fails if
 any puzzle file has drifted. Editing a puzzle file by hand defeats both.

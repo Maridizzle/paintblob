@@ -23,11 +23,39 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const PUZZLE_DIR = path.join(ROOT, 'puzzles');
 const SIDECAR = path.join(PUZZLE_DIR, 'animations.json');
+const LIFTS = path.join(PUZZLE_DIR, 'lifts.json');
+
+/**
+ * The tag sidecars: hand-edited inputs that mapify bakes into the puzzle
+ * files, so the client never fetches them and they must not ship.
+ */
+export const TAG_SIDECARS = new Set(['animations.json', 'lifts.json']);
+
+/**
+ * Everything in puzzles/ that is not a puzzle — the tag sidecars plus the
+ * index. One list, exported, because several scanners walk that directory and
+ * a file missing from any one of them is a different bug each time: a crash in
+ * the geometry verifier, or a "picture" with no cells.
+ *
+ * Not the same set the web build excludes — the manifest very much does ship.
+ */
+export const SIDECAR_FILES = new Set(['manifest.json', ...TAG_SIDECARS]);
 
 /** The tags, minus the underscore-prefixed readme keys. */
 export function readTags() {
-  if (!fs.existsSync(SIDECAR)) return {};
-  const raw = JSON.parse(fs.readFileSync(SIDECAR, 'utf8'));
+  return readSidecar(SIDECAR);
+}
+
+/** The lift tags — which picture raises which of its cells. Same shape of
+ *  file, separate from the animation tags because the two are chosen for
+ *  different reasons and change independently. */
+export function readLifts() {
+  return readSidecar(LIFTS);
+}
+
+function readSidecar(file) {
+  if (!fs.existsSync(file)) return {};
+  const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
   return Object.fromEntries(Object.entries(raw).filter(([id]) => !id.startsWith('_')));
 }
 
@@ -42,29 +70,37 @@ export function readTags() {
  */
 export function applyAnimations({ check = false } = {}) {
   const tags = readTags();
+  const lifts = readLifts();
   const changed = [];
-  const missing = Object.keys(tags).filter((id) => !fs.existsSync(path.join(PUZZLE_DIR, `${id}.json`)));
+  const missing = [...new Set([...Object.keys(tags), ...Object.keys(lifts)])]
+    .filter((id) => !fs.existsSync(path.join(PUZZLE_DIR, `${id}.json`)));
 
   const files = fs.readdirSync(PUZZLE_DIR)
-    .filter((f) => f.endsWith('.json') && f !== 'manifest.json' && f !== 'animations.json');
+    .filter((f) => f.endsWith('.json') && !SIDECAR_FILES.has(f));
 
   for (const file of files) {
     const full = path.join(PUZZLE_DIR, file);
     const puzzle = JSON.parse(fs.readFileSync(full, 'utf8'));
     const want = tags[puzzle.id] ?? null;
     const have = puzzle.animation ?? null;
-    if (JSON.stringify(want) === JSON.stringify(have)) continue;
+    const wantLift = lifts[puzzle.id] ?? null;
+    const haveLift = puzzle.lift ?? null;
+    if (JSON.stringify(want) === JSON.stringify(have)
+      && JSON.stringify(wantLift) === JSON.stringify(haveLift)) continue;
 
     changed.push(puzzle.id);
     if (check) continue;
 
     // Rebuilt rather than mutated so the key order stays exactly what
-    // writePuzzle() emits: everything, then animation, then the (huge)
-    // sourceImage last.
-    const { sourceImage, animation: _drop, ...rest } = puzzle;
+    // writePuzzle() emits: everything, then animation, then lift, then the
+    // (huge) sourceImage last. Both tags have to be named in the destructure —
+    // one left in `rest` would keep its old position and shuffle the file on
+    // every run.
+    const { sourceImage, animation: _drop, lift: _dropLift, ...rest } = puzzle;
     fs.writeFileSync(full, JSON.stringify({
       ...rest,
       ...(want ? { animation: want } : {}),
+      ...(wantLift ? { lift: wantLift } : {}),
       sourceImage,
     }));
   }
@@ -77,12 +113,12 @@ if (path.resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
   const { changed, missing } = applyAnimations({ check });
 
   for (const id of missing) {
-    console.error(`animations.json tags "${id}", which is not a puzzle — check the id`);
+    console.error(`a sidecar tags "${id}", which is not a puzzle — check the id`);
   }
   if (changed.length) {
     console.log(`${check ? 'would update' : 'updated'}: ${changed.join(', ')}`);
   } else {
-    console.log('every puzzle already matches animations.json');
+    console.log('every puzzle already matches the sidecars');
   }
   process.exit(missing.length || (check && changed.length) ? 1 : 0);
 }
