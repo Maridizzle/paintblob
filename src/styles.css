@@ -356,6 +356,21 @@ button {
 
 .avatar-tabs { margin: 2px 0 9px; }
 
+/* Everything in the room is selectable; the avatar inside it keeps her own
+   per-part cursor from the rule above, which is the finer of the two. */
+.avatar-stage svg [data-prop] { cursor: pointer; }
+.avatar-stage svg [data-prop]:hover { filter: brightness(1.09); }
+
+/* The current colour of one room part, shown on its row. Square rather than
+   round so it does not read as one of the palette swatches underneath. */
+.part-chip {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  flex: none;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+}
+
 .swatch-row { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 2px 2px; }
 .swatch {
   width: 26px;

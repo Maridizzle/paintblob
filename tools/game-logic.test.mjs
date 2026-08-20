@@ -689,8 +689,13 @@ test('the band tint is distinct from both the base row and the hover tint', () =
 
 /* ------------------------------------------------------------------- house */
 
-const { ROOMS, HOUSE_ITEMS, LIGHTING, PETS, PROP_SLOTS, defaultHouse, itemsFor, starterFor } =
-  await import('../src/house.js');
+const {
+  ROOMS, HOUSE_ITEMS, LIGHTING, PETS, PROP_SLOTS, defaultHouse, itemsFor, starterFor,
+  resolveColours, colourKey, colourablesIn, roomColourId, petColourId, buildRoomSVG,
+} = await import('../src/house.js');
+
+/** Every prop drawn at its own defaults, which is what an untouched save gets. */
+const atDefaults = (item) => item.draw(resolveColours(item.id, item.parts, {}));
 
 test('house catalogue ids are unique across every kind of thing', () => {
   const ids = [...ROOMS, ...HOUSE_ITEMS, ...LIGHTING, ...PETS].map((x) => x.id);
@@ -750,7 +755,91 @@ test('boot backfills the house, which neither backend deep-merges', () => {
 
 test('no prop draws data-slot, which would hijack avatar recolouring', () => {
   for (const item of HOUSE_ITEMS) {
-    assert.ok(!/data-slot/.test(item.draw()), `${item.id} emits data-slot`);
+    assert.ok(!/data-slot/.test(atDefaults(item)), `${item.id} emits data-slot`);
+  }
+});
+
+/* ------------------------------------------------------- recolourable parts */
+
+test('every part declares a unique key, a name and a real hex default', () => {
+  const owners = [
+    ...HOUSE_ITEMS.map((i) => [i.id, i.parts]),
+    ...PETS.map((p) => [petColourId(p.id), p.parts]),
+    ...ROOMS.map((r) => [roomColourId(r.id), r.parts]),
+  ];
+  for (const [id, parts] of owners) {
+    assert.ok(parts?.length, `${id} declares no recolourable parts`);
+    const keys = new Set();
+    for (const part of parts) {
+      assert.ok(!keys.has(part.key), `${id} declares "${part.key}" twice`);
+      keys.add(part.key);
+      assert.match(part.default, /^#[0-9a-f]{6}$/, `${id}.${part.key} default is not a hex colour`);
+      assert.ok(part.name?.length, `${id}.${part.key} has no label to show`);
+    }
+  }
+});
+
+test('every colour a prop draws with is one it declared', () => {
+  // A draw() reading c.somethingUndeclared puts the string "undefined" into an
+  // SVG fill, which paints black and is invisible in review.
+  for (const item of HOUSE_ITEMS) {
+    assert.ok(!/undefined|NaN/.test(atDefaults(item)), `${item.id} draws with an undeclared part`);
+  }
+  for (const room of ROOMS) {
+    for (const pet of PETS) {
+      const svg = buildRoomSVG({ ...defaultHouse(), room: room.id, pet: pet.id }, {});
+      assert.ok(!/undefined|NaN/.test(svg), `${room.id}/${pet.id} draws with an undeclared part`);
+    }
+  }
+});
+
+test('an override reaches the drawing, and only that part', () => {
+  const house = defaultHouse();
+  const bed = HOUSE_ITEMS.find((i) => i.id === 'bd-furn-bed');
+  const duvet = bed.parts.find((p) => p.key === 'duvet');
+  house.colours[colourKey(bed.id, 'duvet')] = '#123456';
+
+  const svg = buildRoomSVG(house, {});
+  assert.ok(svg.includes('#123456'), 'the override never reached the SVG');
+  assert.ok(!svg.includes(duvet.default), 'the default is still being drawn as well');
+  // The frame shares the bed but not the part, so it must be untouched.
+  assert.ok(svg.includes(bed.parts.find((p) => p.key === 'frame').default),
+    'overriding one part disturbed another');
+});
+
+test('a house with no colours map at all still renders', () => {
+  // Every save written before parts were recolourable is exactly this.
+  const house = defaultHouse();
+  delete house.colours;
+  const svg = buildRoomSVG(house, {});
+  assert.ok(!/undefined|NaN/.test(svg));
+  assert.ok(svg.startsWith('<svg'));
+});
+
+test('every data-prop in a scene is something the panel can offer', () => {
+  // colourablesIn drives the panel's list; a scene emitting an id it does not
+  // return would be selectable and then show no parts.
+  for (const room of ROOMS) {
+    for (const pet of PETS) {
+      const house = { ...defaultHouse(), room: room.id, pet: pet.id };
+      const offered = new Set(colourablesIn(house).map((o) => o.id));
+      const drawn = [...buildRoomSVG(house, {}).matchAll(/data-prop="([^"]+)"/g)].map((m) => m[1]);
+      assert.ok(drawn.length, `${room.id}/${pet.id} has nothing selectable`);
+      for (const id of drawn) {
+        assert.ok(offered.has(id), `${room.id}/${pet.id} draws "${id}", which the panel never lists`);
+      }
+    }
+  }
+});
+
+test('the lighting wash does not swallow taps meant for the room', () => {
+  // It is drawn last and covers the whole scene, so without pointer-events
+  // none of the props below it can be selected under anything but daylight.
+  for (const lighting of LIGHTING) {
+    const svg = buildRoomSVG({ ...defaultHouse(), lighting: lighting.id }, {});
+    const wash = svg.slice(svg.lastIndexOf('<g pointer-events="none">'));
+    assert.ok(wash.startsWith('<g pointer-events="none">'),
+      `${lighting.id} is not wrapped in a pointer-events:none group`);
   }
 });
 

@@ -19,7 +19,7 @@ import {
 import { WARDROBE_ITEMS } from './wardrobe.js';
 import {
   ROOMS, HOUSE_ITEMS, LIGHTING, PETS, PROP_SLOTS, SLOT_LABEL,
-  defaultHouse, itemsFor, starterFor, buildRoomSVG,
+  defaultHouse, itemsFor, starterFor, buildRoomSVG, colourablesIn, colourKey,
 } from './house.js';
 
 let api;
@@ -50,6 +50,8 @@ const S = {
   pending: new Set(), // cells with a burst already in flight, claimed but not yet filled
   avatarTab: 'customize', // UI-only, not persisted — resets to Customize each time the panel opens
   avatarSlot: null,       // which avatar part is currently being recoloured
+  roomProp: null,         // which thing in the room is selected — an id from colourablesIn()
+  roomPart: null,         // which of that thing's parts is being recoloured, as a colour key
 };
 
 // Read-only handle for the smoke test (electron/main.cjs) so it can click a
@@ -1039,6 +1041,47 @@ function wireAvatarPartClicks(stageEl) {
  * sits on the stage itself and survives innerHTML being replaced, so re-wiring
  * on each redraw stacked one more handler per recolour.
  */
+/**
+ * The colours on offer for any recolour: the paint from the picture currently
+ * open, falling back to a default set when there is none. Using the live
+ * palette is what ties a room to the pictures painted in it — you decorate in
+ * the colours you have just been working with.
+ */
+function paintPalette() {
+  return S.puzzle?.palette?.map((p) => p.hex) ?? DEFAULT_PALETTE;
+}
+
+function swatchRow(hexes, onPick) {
+  const swatches = document.createElement('div');
+  swatches.className = 'swatch-row';
+  for (const hex of hexes) {
+    const sw = document.createElement('button');
+    sw.className = 'swatch';
+    sw.style.background = hex;
+    sw.title = hex;
+    sw.addEventListener('click', () => onPick(hex));
+    swatches.append(sw);
+  }
+  return swatches;
+}
+
+/**
+ * Selecting a thing in the room. Deliberately coarser than the avatar's
+ * [data-slot]: this picks an OBJECT and its parts are then chosen from a list,
+ * because a drawer handle is three pixels wide and the shading washes sit on
+ * top of the parts they shade.
+ */
+function wireRoomPropClicks(stageEl) {
+  stageEl.addEventListener('click', (e) => {
+    const prop = e.target.closest('[data-prop]');
+    if (!prop) return;
+    S.roomProp = prop.dataset.prop;
+    S.roomPart = null;
+    S.avatarTab = 'room';
+    renderAvatarPanel($('panelBody'));
+  });
+}
+
 function paintStage(stage) {
   const bare = S.avatarTab === 'customize' || S.avatarTab === 'outfits';
   stage.classList.toggle('figure', bare);
@@ -1048,6 +1091,7 @@ function paintStage(stage) {
   if (!stage.dataset.wired) {
     stage.dataset.wired = '1';
     wireAvatarPartClicks(stage);
+    wireRoomPropClicks(stage);
   }
 }
 
@@ -1182,22 +1226,7 @@ function renderAvatarCustomize(section, stage) {
 
   const target = S.avatarSlot && customize[S.avatarSlot];
   if (target && 'colour' in target) {
-    const swatchRow = (hexes) => {
-      const swatches = document.createElement('div');
-      swatches.className = 'swatch-row';
-      for (const hex of hexes) {
-        const sw = document.createElement('button');
-        sw.className = 'swatch';
-        sw.style.background = hex;
-        sw.title = hex;
-        sw.addEventListener('click', () => {
-          target.colour = hex;
-          redraw();
-        });
-        swatches.append(sw);
-      }
-      return swatches;
-    };
+    const set = (hex) => { target.colour = hex; redraw(); };
     // Skin gets its race's own tones offered first — green is a long way
     // from anything a landscape's palette will hand you — but the paint
     // from the current picture stays right below it, unchanged.
@@ -1206,9 +1235,9 @@ function renderAvatarCustomize(section, stage) {
       label.className = 'empty';
       label.style.padding = '2px 4px 0';
       label.textContent = `${RACE_PROFILE[customize.race]?.label ?? 'Human'} skin tones`;
-      section.append(label, swatchRow(raceSkinPalette(customize.race)));
+      section.append(label, swatchRow(raceSkinPalette(customize.race), set));
     }
-    section.append(swatchRow(S.puzzle?.palette?.map((p) => p.hex) ?? DEFAULT_PALETTE));
+    section.append(swatchRow(paintPalette(), set));
   }
 }
 
@@ -1359,6 +1388,8 @@ function renderAvatarRoom(section) {
     }
   };
 
+  renderRoomColours(section, house, redraw);
+
   pickerRow('Room', ROOMS, (r) => r.id === house.room, (r) => { house.room = r.id; },
     '🏠', (r, { gated }) => (gated ? `unlocks at level ${r.unlockLevel}` : 'tap to move in'));
 
@@ -1375,6 +1406,98 @@ function renderAvatarRoom(section) {
 
   pickerRow('Pet', PETS, (pet) => pet.id === house.pet, (pet) => { house.pet = pet.id; },
     '🐾', (pet, { has }) => (has ? 'tap to invite in' : `${pet.price}🪙`));
+}
+
+/**
+ * The colours of whatever is selected in the scene above.
+ *
+ * Two steps, not one: tapping the room picks an object, and its parts are then
+ * chosen from this list. Parts are not clickable targets themselves — a drawer
+ * handle is three pixels wide, and half of what is on screen is a translucent
+ * wash lying over the thing it shades, so a tap would land on the wash.
+ *
+ * Nothing here costs anything. The props were the purchase; what colour you
+ * paint them is not a second one.
+ */
+function renderRoomColours(section, house, redraw) {
+  const colourables = colourablesIn(house);
+  // A selection made before the room or a prop changed may no longer be on
+  // screen. Fall back to the room itself rather than to nothing.
+  const target = colourables.find((o) => o.id === S.roomProp) ?? colourables[0];
+  S.roomProp = target.id;
+
+  const head = document.createElement('div');
+  head.className = 'empty';
+  head.style.padding = '2px 4px 7px';
+  head.textContent = `${target.name} — tap the room above to pick something else`;
+  section.append(head);
+
+  for (const part of target.parts) {
+    const key = colourKey(target.id, part.key);
+    const changed = key in house.colours;
+    const on = S.roomPart === key;
+    const el = row('clickable');
+    if (on) el.classList.add('on');
+
+    const chip = document.createElement('span');
+    chip.className = 'part-chip';
+    chip.style.background = house.colours[key] ?? part.default;
+    el.append(chip);
+
+    const text = document.createElement('div');
+    text.className = 'grow';
+    text.innerHTML = '<div class="label"></div><div class="sub"></div>';
+    text.querySelector('.label').textContent = part.name;
+    text.querySelector('.sub').textContent = on
+      ? 'pick a colour below'
+      : changed ? 'changed · tap to edit' : 'tap to recolour';
+    el.append(text);
+    el.addEventListener('click', () => {
+      S.roomPart = on ? null : key;
+      renderAvatarPanel($('panelBody'));
+    });
+
+    if (changed) {
+      const reset = document.createElement('button');
+      reset.textContent = '↺';
+      reset.title = `Back to ${part.default}`;
+      reset.addEventListener('click', (e) => {
+        e.stopPropagation();
+        delete house.colours[key];
+        redraw();
+      });
+      el.append(reset);
+    }
+    section.append(el);
+  }
+
+  if (S.roomPart) {
+    section.append(swatchRow(paintPalette(), (hex) => {
+      house.colours[S.roomPart] = hex;
+      redraw();
+    }));
+  }
+
+  // Every key belonging to anything currently in this room. Without a way back
+  // out, one bad palette is only undoable by wiping the save.
+  const roomKeys = colourables.flatMap((o) => o.parts.map((part) => colourKey(o.id, part.key)))
+    .filter((key) => key in house.colours);
+  if (roomKeys.length) {
+    const el = row('clickable');
+    const text = document.createElement('div');
+    text.className = 'grow';
+    text.innerHTML = '<div class="label"></div><div class="sub"></div>';
+    text.querySelector('.label').textContent = 'Reset this room';
+    text.querySelector('.sub').textContent =
+      `${roomKeys.length} colour${roomKeys.length === 1 ? '' : 's'} changed`;
+    el.append(text);
+    el.addEventListener('click', () => {
+      for (const key of roomKeys) delete house.colours[key];
+      S.roomPart = null;
+      redraw();
+    });
+    section.append(el);
+  }
 }
 
 function renderAvatarAbilities(section) {
@@ -1786,6 +1909,10 @@ async function boot() {
   S.save.avatar.house.unlocked ??= freshHouse.unlocked;
   if (!('pet' in S.save.avatar.house)) S.save.avatar.house.pet = freshHouse.pet;
   S.save.avatar.house.props ??= {};
+  // Same reason as `pet` above: a save written before parts were recolourable
+  // has no map at all, and an absent one has to mean "everything at default"
+  // rather than throwing on the first lookup.
+  S.save.avatar.house.colours ??= {};
   // Rooms added in a later version have no entry yet, and a slot whose prop id
   // no longer exists falls back to that room's starter rather than rendering
   // an empty corner.
