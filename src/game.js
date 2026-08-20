@@ -55,6 +55,10 @@ const S = {
   history: [],
   avatarTab: 'customize', // UI-only, not persisted — resets to Customize each time the panel opens
   abilityFan: false,      // is the ability pop-up up? Also UI-only: always starts down
+  // How the Pictures list is filtered. UI-only, like the two above: it resets
+  // to "show everything, A–Z" every time the panel opens, so the list you land
+  // on is always the whole list.
+  picFilter: { q: '', status: 'all', source: 'all', size: 'all', sort: 'az' },
   avatarSlot: null,       // which avatar part is currently being recoloured
   previewId: null,        // picture whose large preview is open or pending
   previewTimer: 0,
@@ -837,6 +841,7 @@ async function openPanel(kind) {
     // picture mapified while the app was open shows up without a restart.
     S.manifest = await api.listPuzzles();
     if (S.panel !== kind) return; // closed again while we were waiting
+    S.picFilter = { q: '', status: 'all', source: 'all', size: 'all', sort: 'az' };
     renderPictures(body);
   } else if (kind === 'trophies') {
     renderTrophies(body);
@@ -1015,6 +1020,14 @@ function renderPictures(body) {
     return;
   }
 
+  const bar = buildPicFilterBar();
+  const list = document.createElement('div');
+  list.className = 'pic-list';
+  const empty = document.createElement('div');
+  empty.className = 'empty pic-empty hidden';
+  empty.textContent = 'No pictures match.';
+  body.append(bar, list, empty);
+
   for (const p of S.manifest) {
     const progress = S.save.progress[p.id];
     const done = progress?.done;
@@ -1092,9 +1105,144 @@ function renderPictures(body) {
       closePanel();
       await loadPuzzle(p.id);
     });
-    body.append(el);
+    // Everything the filter needs, read once here rather than re-derived on
+    // every keystroke. `label` is what is on screen — for an unsolved mystery
+    // that is "Mystery picture", never its real title, so a search can never
+    // surface one by name.
+    el._pic = {
+      label: (hidden ? 'Mystery picture' : p.title).toLowerCase(),
+      title: p.title,
+      imported: !!p.imported,
+      cells: p.cells,
+      status: done ? 'done' : painted > 0 ? 'started' : 'todo',
+      added: p.added ?? 0,
+      idx: list.childElementCount, // manifest order, for restoring the default sort
+    };
+    list.append(el);
   }
-  band(body);
+  applyPicFilter();
+}
+
+/** Stripes only the rows currently on screen, so hiding some for a filter
+ *  keeps the alternating background unbroken. */
+function bandVisible(list) {
+  let i = 0;
+  for (const el of list.querySelectorAll(':scope > .row')) {
+    if (el.classList.contains('hidden')) continue;
+    el.classList.toggle('alt', i % 2 === 1);
+    i += 1;
+  }
+}
+
+function segGroup(axis, current, options, onPick) {
+  const seg = document.createElement('div');
+  // The connected (bordered) variant, not `.wrap`: each axis has to read as one
+  // control, or two adjacent groups with a selection each look like a single
+  // group with two things lit. `.pic-chips` wraps between whole groups instead.
+  seg.className = 'segmented';
+  seg.dataset.axis = axis; // several groups repeat "All"; this keeps them apart
+  for (const [value, text] of options) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = text;
+    b.className = value === current ? 'on' : '';
+    b.addEventListener('click', () => {
+      [...seg.children].forEach((c) => c.classList.toggle('on', c === b));
+      onPick(value);
+    });
+    seg.append(b);
+  }
+  return seg;
+}
+
+function buildPicFilterBar() {
+  const f = S.picFilter;
+  const bar = document.createElement('div');
+  bar.className = 'pic-filter';
+
+  // Search. Matches the visible label, so mysteries stay hidden by name.
+  const search = document.createElement('div');
+  search.className = 'pic-search';
+  const input = document.createElement('input');
+  input.type = 'search';
+  input.placeholder = 'Search pictures';
+  input.value = f.q;
+  input.addEventListener('input', () => {
+    f.q = input.value.trim().toLowerCase();
+    clear.classList.toggle('hidden', !input.value);
+    applyPicFilter();
+  });
+  const clear = document.createElement('button');
+  clear.type = 'button';
+  clear.className = `pic-search-clear${f.q ? '' : ' hidden'}`;
+  clear.textContent = '✕';
+  clear.title = 'Clear search';
+  clear.addEventListener('click', () => {
+    input.value = '';
+    f.q = '';
+    clear.classList.add('hidden');
+    applyPicFilter();
+    input.focus();
+  });
+  search.append(input, clear);
+
+  const chips = document.createElement('div');
+  chips.className = 'pic-chips';
+  chips.append(segGroup('status', f.status, [
+    ['all', 'All'], ['todo', 'To do'], ['started', 'Started'], ['done', 'Done'],
+  ], (v) => { f.status = v; applyPicFilter(); }));
+  // Source only earns its space once there is something of your own to sort
+  // from the built-in set.
+  if (S.manifest.some((p) => p.imported)) {
+    chips.append(segGroup('source', f.source, [
+      ['all', 'All'], ['bundled', 'Built-in'], ['yours', 'Yours'],
+    ], (v) => { f.source = v; applyPicFilter(); }));
+  }
+  chips.append(segGroup('size', f.size, [
+    ['all', 'Any size'], ['quick', 'Quick'], ['full', 'Full'],
+  ], (v) => { f.size = v; applyPicFilter(); }));
+  chips.append(segGroup('sort', f.sort, [
+    ['az', 'A–Z'], ['recent', 'Recent'],
+  ], (v) => { f.sort = v; applyPicFilter(); }));
+
+  bar.append(search, chips);
+  return bar;
+}
+
+function applyPicFilter() {
+  const list = $('panelBody')?.querySelector('.pic-list');
+  if (!list) return;
+  const f = S.picFilter;
+  const rows = [...list.querySelectorAll(':scope > .row')];
+
+  let shown = 0;
+  for (const el of rows) {
+    const p = el._pic;
+    const ok = (!f.q || p.label.includes(f.q))
+      && (f.status === 'all' || p.status === f.status)
+      && (f.source === 'all' || (f.source === 'yours') === p.imported)
+      && (f.size === 'all' || (f.size === 'quick') === (p.cells < 100));
+    el.classList.toggle('hidden', !ok);
+    if (ok) shown += 1;
+  }
+
+  // `recent` floats your imports to the top, newest by their save stamp; both
+  // sorts fall back to the manifest's own order (bundled A–Z, imports last),
+  // which is what the default `az` restores exactly.
+  const order = rows.slice().sort((a, b) => {
+    if (f.sort === 'recent' && a._pic.imported !== b._pic.imported) {
+      return a._pic.imported ? -1 : 1;
+    }
+    if (f.sort === 'recent' && a._pic.imported && b._pic.imported) {
+      return b._pic.added - a._pic.added;
+    }
+    return a._pic.idx - b._pic.idx;
+  });
+  for (const el of order) list.append(el);
+
+  bandVisible(list);
+  const empty = $('panelBody').querySelector('.pic-empty');
+  if (empty) empty.classList.toggle('hidden', shown > 0);
 }
 
 /* ------------------------------------------------------------------ import */

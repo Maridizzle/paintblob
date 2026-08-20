@@ -118,6 +118,12 @@ smallest cells rather than drawing all five hundred into a grey block, and a
 blind pack shows nothing at all: its shapes give it away every bit as fast as
 its title would.
 
+A filter bar across the top of the panel searches by name and narrows the list
+by progress (to do / started / done), by size, and — once you have imported any
+of your own — by whether a picture is built-in or yours, with a sort that floats
+your newest imports to the top. Searching only ever matches the titles you can
+see, so a still-hidden mystery never surfaces by its real name.
+
 Scroll wheel or two-finger pinch to zoom in on a picture, up to 6×; drag (or
 one-finger pan on a touchscreen) to move around once zoomed. A pill in the
 corner shows the current zoom level and doubles as the reset button. The same

@@ -201,6 +201,10 @@ export async function importImages(files, { detail = 'normal', taken = new Set()
         colours: puzzle.palette.length,
         thumb: puzzle.palette.slice(0, 5).map((p) => p.hex),
         photoLike: puzzle.photoLike,
+        // When you added it, so the Pictures list can sort your own imports
+        // newest-first. Bundled pictures have no equivalent — they arrive
+        // pre-sorted by title and carry no date — so only imports set this.
+        added: Date.now(),
         ...(file.blind ? { blind: true } : {}),
       };
 
