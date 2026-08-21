@@ -1642,27 +1642,78 @@ function renderAvatarPanel(body) {
   band(section);
 
   if (scene) {
-    // A bottom sheet: a grab handle, the coin count, the tabs, then the list.
-    // Tapping the handle slides it down to a peek so the room is unobstructed,
-    // and up again to work. Its open state is remembered across re-renders.
+    // A bottom sheet you can drag down to a peek so the room is unobstructed,
+    // and back up to work. A tap on the grab bar toggles it too. Its open state
+    // is remembered across re-renders.
     const tray = document.createElement('div');
     tray.className = wasScene ? 'room-tray' : 'room-tray enter';
     const open = S.roomTrayOpen !== false;
     body.classList.toggle('tray-collapsed', !open);
 
-    const handle = document.createElement('button');
-    handle.className = 'tray-handle';
-    handle.setAttribute('aria-label', open ? 'Hide room controls' : 'Show room controls');
-    handle.addEventListener('click', () => {
-      S.roomTrayOpen = !(S.roomTrayOpen !== false);
-      body.classList.toggle('tray-collapsed', S.roomTrayOpen === false);
+    const setOpen = (isOpen) => {
+      S.roomTrayOpen = isOpen;
+      body.classList.toggle('tray-collapsed', !isOpen);
+      const hint = grip.querySelector('.tray-hint');
+      if (hint) hint.textContent = isOpen ? 'drag down for the room' : 'drag up for controls';
+      grip.setAttribute('aria-label', isOpen ? 'Slide the controls down' : 'Slide the controls up');
+    };
+
+    // A generous grab area — a chunky pill plus a caption, the whole strip
+    // draggable — because a 5px bar is far too easy to miss on a phone.
+    const grip = document.createElement('button');
+    grip.className = 'tray-grip';
+    grip.setAttribute('aria-label', open ? 'Slide the controls down' : 'Slide the controls up');
+    grip.innerHTML = '<span class="tray-bar"></span>'
+      + `<span class="tray-hint">${open ? 'drag down for the room' : 'drag up for controls'}</span>`;
+
+    // Drag: follow the finger between fully open (0) and the peek offset, then
+    // snap to whichever is nearer on release. PEEK mirrors the CSS.
+    const PEEK = 112;
+    let startY = null;
+    let startOffset = 0;
+    let maxOffset = 0;
+    let moved = false;
+    let suppressClick = false;
+    grip.addEventListener('pointerdown', (e) => {
+      maxOffset = Math.max(0, tray.offsetHeight - PEEK);
+      startOffset = S.roomTrayOpen === false ? maxOffset : 0;
+      startY = e.clientY;
+      moved = false;
+      tray.style.transition = 'none';
+      grip.setPointerCapture?.(e.pointerId);
+    });
+    grip.addEventListener('pointermove', (e) => {
+      if (startY === null) return;
+      const dy = e.clientY - startY;
+      if (Math.abs(dy) > 3) moved = true;
+      const off = Math.min(maxOffset, Math.max(0, startOffset + dy));
+      tray.style.transform = `translateY(${off}px)`;
+    });
+    const endDrag = (e) => {
+      if (startY === null) return;
+      const dy = e.clientY - startY;
+      const off = Math.min(maxOffset, Math.max(0, startOffset + dy));
+      startY = null;
+      tray.style.transition = '';
+      tray.style.transform = '';
+      if (moved) {
+        suppressClick = true;
+        setOpen(off < maxOffset * 0.5);
+      }
+    };
+    grip.addEventListener('pointerup', endDrag);
+    grip.addEventListener('pointercancel', endDrag);
+    // Tap and keyboard still toggle; a drag's trailing click is swallowed.
+    grip.addEventListener('click', () => {
+      if (suppressClick) { suppressClick = false; return; }
+      setOpen(S.roomTrayOpen === false);
     });
 
     const coins = document.createElement('div');
     coins.className = 'tray-coins';
     coins.textContent = `Level ${level} · ${S.save.stats.points ?? 0}🪙 to spend`;
 
-    tray.append(handle, coins, tabs, section);
+    tray.append(grip, coins, tabs, section);
     body.append(tray);
   } else {
     body.append(tabs, section);

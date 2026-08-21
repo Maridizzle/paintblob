@@ -442,19 +442,37 @@ button {
 /* Collapsed: slid down to a peek that still shows the handle, coins and tabs. */
 .panel-body.tray-collapsed .room-tray { transform: translateY(calc(100% - 112px)); }
 
-.tray-handle {
+/* The whole strip is the grab target — a chunky pill and a caption, tall
+   enough to hit on a phone. touch-action:none so a drag slides the sheet
+   instead of scrolling the page. */
+.tray-grip {
   flex: 0 0 auto;
-  width: 46px; height: 5px;
-  margin: 4px auto 3px;
-  /* A slim visible bar with a fat invisible tap target around it. */
-  padding: 11px 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 9px 0 7px;
   border: none;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.3);
-  background-clip: content-box;
-  cursor: pointer;
+  background: none;
+  cursor: grab;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
 }
-.tray-handle:hover { background: rgba(255, 255, 255, 0.48); background-clip: content-box; }
+.tray-grip:active { cursor: grabbing; }
+.tray-bar {
+  width: 52px; height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.34);
+  transition: background 120ms;
+}
+.tray-grip:hover .tray-bar { background: rgba(255, 255, 255, 0.5); }
+.tray-hint {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.01em;
+}
 .tray-coins {
   flex: 0 0 auto;
   text-align: center;
