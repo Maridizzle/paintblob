@@ -1584,12 +1584,12 @@ function renderAvatarPanel(body) {
   body.textContent = '';
   const level = levelForPoints(S.save.stats.pointsEarned);
   const { into, span } = pointsIntoLevel(S.save.stats.pointsEarned);
-  // The room and pet tabs are about the scene, so they get the whole panel as a
-  // stage with the controls riding up from the bottom in a tray. The list tabs
-  // (customize/outfits/abilities) keep the plain stacked layout.
+  // The room and pet tabs are about the scene, so the room fills the panel and
+  // the controls ride in from a collapsible side panel on the left. The list
+  // tabs (customize/outfits/abilities) keep the plain stacked layout.
   const scene = S.avatarTab === 'room' || S.avatarTab === 'pet';
   // Was the panel already showing a scene? If so this is an in-tab redraw (a
-  // care tap, a recolour) and the tray must not replay its slide-in.
+  // care tap, a recolour) and the side panel must not replay its slide-in.
   const wasScene = body.classList.contains('scene');
   body.classList.toggle('scene', scene);
 
@@ -1611,9 +1611,9 @@ function renderAvatarPanel(body) {
   fill.style.width = `${span ? (into / span) * 100 : 100}%`;
   bar.append(fill);
   levelbar.append(label, bar);
-  // In scene mode the level/coins read moves into the tray to free the stage.
+  // In scene mode the level/coins read moves into the side panel to free the
+  // stage; the head itself is appended per-layout below.
   if (!scene) head.append(levelbar);
-  body.append(head);
 
   const tabs = document.createElement('div');
   // Five tabs no longer fit on one line, and .segmented is overflow:hidden
@@ -1642,81 +1642,49 @@ function renderAvatarPanel(body) {
   band(section);
 
   if (scene) {
-    // A bottom sheet you can drag down to a peek so the room is unobstructed,
-    // and back up to work. A tap on the grab bar toggles it too. Its open state
-    // is remembered across re-renders.
-    const tray = document.createElement('div');
-    tray.className = wasScene ? 'room-tray' : 'room-tray enter';
-    const open = S.roomTrayOpen !== false;
-    body.classList.toggle('tray-collapsed', !open);
+    // Tabs across the top, the room filling the rest, and the controls in a
+    // side panel that slides in from the left. It is either fully open or
+    // fully closed — no half state — so a change can be made and then the
+    // panel tucked away to see the whole room. Open state is remembered.
+    const panelOpen = S.roomPanelOpen !== false;
+    body.classList.toggle('panel-open', panelOpen);
 
-    const setOpen = (isOpen) => {
-      S.roomTrayOpen = isOpen;
-      body.classList.toggle('tray-collapsed', !isOpen);
-      const hint = grip.querySelector('.tray-hint');
-      if (hint) hint.textContent = isOpen ? 'drag down for the room' : 'drag up for controls';
-      grip.setAttribute('aria-label', isOpen ? 'Slide the controls down' : 'Slide the controls up');
-    };
-
-    // A generous grab area — a chunky pill plus a caption, the whole strip
-    // draggable — because a 5px bar is far too easy to miss on a phone.
-    const grip = document.createElement('button');
-    grip.className = 'tray-grip';
-    grip.setAttribute('aria-label', open ? 'Slide the controls down' : 'Slide the controls up');
-    grip.innerHTML = '<span class="tray-bar"></span>'
-      + `<span class="tray-hint">${open ? 'drag down for the room' : 'drag up for controls'}</span>`;
-
-    // Drag: follow the finger between fully open (0) and the peek offset, then
-    // snap to whichever is nearer on release. PEEK mirrors the CSS.
-    const PEEK = 112;
-    let startY = null;
-    let startOffset = 0;
-    let maxOffset = 0;
-    let moved = false;
-    let suppressClick = false;
-    grip.addEventListener('pointerdown', (e) => {
-      maxOffset = Math.max(0, tray.offsetHeight - PEEK);
-      startOffset = S.roomTrayOpen === false ? maxOffset : 0;
-      startY = e.clientY;
-      moved = false;
-      tray.style.transition = 'none';
-      grip.setPointerCapture?.(e.pointerId);
-    });
-    grip.addEventListener('pointermove', (e) => {
-      if (startY === null) return;
-      const dy = e.clientY - startY;
-      if (Math.abs(dy) > 3) moved = true;
-      const off = Math.min(maxOffset, Math.max(0, startOffset + dy));
-      tray.style.transform = `translateY(${off}px)`;
-    });
-    const endDrag = (e) => {
-      if (startY === null) return;
-      const dy = e.clientY - startY;
-      const off = Math.min(maxOffset, Math.max(0, startOffset + dy));
-      startY = null;
-      tray.style.transition = '';
-      tray.style.transform = '';
-      if (moved) {
-        suppressClick = true;
-        setOpen(off < maxOffset * 0.5);
-      }
-    };
-    grip.addEventListener('pointerup', endDrag);
-    grip.addEventListener('pointercancel', endDrag);
-    // Tap and keyboard still toggle; a drag's trailing click is swallowed.
-    grip.addEventListener('click', () => {
-      if (suppressClick) { suppressClick = false; return; }
-      setOpen(S.roomTrayOpen === false);
-    });
+    const panel = document.createElement('div');
+    // Slide-in flourish only when arriving on the tab with the panel open, not
+    // on every in-tab redraw and not when it is meant to start closed.
+    panel.className = (!wasScene && panelOpen) ? 'room-panel enter' : 'room-panel';
 
     const coins = document.createElement('div');
-    coins.className = 'tray-coins';
+    coins.className = 'panel-coins';
     coins.textContent = `Level ${level} · ${S.save.stats.points ?? 0}🪙 to spend`;
+    panel.append(coins, section);
 
-    tray.append(grip, coins, tabs, section);
-    body.append(tray);
+    // The edge tab lives outside the panel so it stays reachable when the panel
+    // has slid off-screen; CSS parks it at the screen edge when closed and at
+    // the panel's edge when open.
+    const toggle = document.createElement('button');
+    toggle.className = 'room-panel-toggle';
+    const syncToggle = (isOpen) => {
+      toggle.textContent = isOpen ? '‹' : '›';
+      toggle.setAttribute('aria-label', isOpen ? 'Hide room controls' : 'Show room controls');
+    };
+    syncToggle(panelOpen);
+    toggle.addEventListener('click', () => {
+      const next = !(S.roomPanelOpen !== false);
+      S.roomPanelOpen = next;
+      body.classList.toggle('panel-open', next);
+      syncToggle(next);
+    });
+
+    // The room, the panel and its edge tab share one positioned box below the
+    // tabs, so the panel starts under the tab strip however many rows it wraps
+    // to rather than under a hard-coded offset.
+    const sceneStage = document.createElement('div');
+    sceneStage.className = 'scene-stage';
+    sceneStage.append(head, panel, toggle);
+    body.append(tabs, sceneStage);
   } else {
-    body.append(tabs, section);
+    body.append(head, tabs, section);
   }
 }
 

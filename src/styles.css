@@ -402,78 +402,62 @@ button {
 .avatar-stage svg [data-prop] { cursor: pointer; }
 .avatar-stage svg [data-prop]:hover { filter: brightness(1.09); }
 
-/* -------- scene mode: the room fills the panel, controls ride a bottom tray -------- */
+/* -------- scene mode: the room fills the panel, controls in a left side panel -------- */
 .panel-body.scene {
   padding: 0;
   gap: 0;
   overflow: hidden;
   position: relative;
 }
+.panel-body.scene .avatar-tabs { flex: 0 0 auto; margin: 10px 12px 6px; }
+
+/* The room, its side panel and the edge tab share one positioned box so the
+   panel sits under the tabs however many rows they wrap to. */
+.scene-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .panel-body.scene .avatar-head {
   flex: 1 1 auto;
   min-height: 0;
   justify-content: flex-start;
-  padding: 16px 12px 0;
+  padding: 8px 12px 12px;
   margin: 0;
   border-bottom: none;
+  transition: padding-left 260ms cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 /* Much bigger than the 208px it gets in the list tabs — the room is the point
    here, so let it take most of the width up to a sensible cap. */
-.panel-body.scene .avatar-stage { width: min(96%, 540px); }
+.panel-body.scene .avatar-stage { width: min(94%, 520px); }
 
-.room-tray {
+/* The left drawer: small, full-height within the stage box, either fully in or
+   fully out — no half state. */
+.room-panel {
   position: absolute;
-  left: 0; right: 0; bottom: 0;
+  left: 0; top: 0; bottom: 0;
+  width: min(300px, 82%);
   display: flex;
   flex-direction: column;
-  max-height: 70%;
-  padding: 0 12px 12px;
+  padding: 11px 11px 14px;
+  overflow-y: auto;
   background: var(--card-solid);
-  border-top: 1px solid var(--edge);
-  border-radius: 18px 18px 0 0;
-  box-shadow: 0 -14px 34px rgba(0, 0, 0, 0.45);
+  border-right: 1px solid var(--edge);
+  border-radius: 0 16px 16px 0;
+  box-shadow: 10px 0 30px rgba(0, 0, 0, 0.42);
   transition: transform 260ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  z-index: 3;
 }
-/* Only when first entering the room/pet tab, not on every in-tab re-render —
-   and with no fill mode, so a finished slide-in never pins the transform and
-   blocks the collapse below it. */
-.room-tray.enter { animation: trayUp 300ms cubic-bezier(0.22, 0.61, 0.36, 1); }
-@keyframes trayUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-/* Collapsed: slid down to a peek that still shows the handle, coins and tabs. */
-.panel-body.tray-collapsed .room-tray { transform: translateY(calc(100% - 112px)); }
+/* Closed: parked off the left edge. */
+.panel-body.scene:not(.panel-open) .room-panel { transform: translateX(-101%); }
+/* Slide-in only on fresh entry (no fill mode, so it never pins the transform). */
+.room-panel.enter { animation: panelIn 280ms cubic-bezier(0.22, 0.61, 0.36, 1); }
+@keyframes panelIn { from { transform: translateX(-101%); } to { transform: translateX(0); } }
 
-/* The whole strip is the grab target — a chunky pill and a caption, tall
-   enough to hit on a phone. touch-action:none so a drag slides the sheet
-   instead of scrolling the page. */
-.tray-grip {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  width: 100%;
-  padding: 9px 0 7px;
-  border: none;
-  background: none;
-  cursor: grab;
-  touch-action: none;
-  -webkit-tap-highlight-color: transparent;
-}
-.tray-grip:active { cursor: grabbing; }
-.tray-bar {
-  width: 52px; height: 6px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.34);
-  transition: background 120ms;
-}
-.tray-grip:hover .tray-bar { background: rgba(255, 255, 255, 0.5); }
-.tray-hint {
-  font-size: 10.5px;
-  font-weight: 600;
-  color: var(--muted);
-  letter-spacing: 0.01em;
-}
-.tray-coins {
+.panel-coins {
   flex: 0 0 auto;
   text-align: center;
   font-size: 11.5px;
@@ -481,15 +465,43 @@ button {
   color: var(--accent);
   margin-bottom: 9px;
 }
-.room-tray .avatar-tabs { flex: 0 0 auto; margin: 0 0 9px; }
-/* The list scrolls inside the tray, so the stage above it never does. */
-.room-tray .avatar-section {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
+.room-panel .avatar-section { flex: 0 0 auto; }
+.room-panel::-webkit-scrollbar { width: 8px; }
+.room-panel::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 4px; }
+
+/* The edge tab that opens/closes the panel — parked at the stage edge when
+   closed, at the panel's edge when open, so it is always reachable. */
+.room-panel-toggle {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--edge);
+  border-left: none;
+  border-radius: 0 10px 10px 0;
+  background: var(--card-solid);
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 4;
+  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.32);
+  transition: left 260ms cubic-bezier(0.22, 0.61, 0.36, 1);
 }
-.room-tray .avatar-section::-webkit-scrollbar { width: 8px; }
-.room-tray .avatar-section::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 4px; }
+.room-panel-toggle:hover { background: rgba(255, 255, 255, 0.09); }
+.panel-body.scene.panel-open .room-panel-toggle { left: min(300px, 82%); }
+
+/* On a wide screen, slide the room to the right of the open panel so both are
+   visible at once; on a narrow one the panel overlays and is closed to reveal
+   the room. */
+@media (min-width: 641px) {
+  .panel-body.scene.panel-open .avatar-head { padding-left: 320px; }
+}
 
 /* The current colour of one room part, shown on its row. Square rather than
    round so it does not read as one of the palette swatches underneath. */
