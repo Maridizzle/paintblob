@@ -239,8 +239,55 @@ function nextTub() {
 
 /* -------------------------------------------------------------------- puzzle */
 
+/** Turns a #rrggbb string into { h, s, l } (hue 0..360, sat/lightness 0..1). */
+function hexToHsl(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  const l = (max + min) / 510;
+  const denom = 255 - Math.abs(max + min - 255);
+  const s = d === 0 || denom === 0 ? 0 : d / denom;
+  let h = 0;
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h = (h * 60 + 360) % 360;
+  }
+  return { h, s, l };
+}
+
+/**
+ * Re-orders a puzzle's palette into shade order: grouped by colour family
+ * (hue), then dark-to-light within each family, with neutral greys pulled
+ * together at the end. The tub number, the number printed in each cell, and
+ * the stored palette index are one and the same, so every cell's colour index
+ * is remapped in lockstep — the picture is unchanged, only the numbering.
+ * Runs once per load on the freshly-fetched puzzle and mutates it in place;
+ * idempotent, so a puzzle already in this order (or re-loaded) is untouched.
+ */
+function sortPaletteByShade(puzzle) {
+  const CHROMA = 0.15; // below this saturation a colour counts as a neutral grey
+  const order = puzzle.palette
+    .map((paint, i) => ({ i, ...hexToHsl(paint.hex) }))
+    .sort((a, b) => {
+      const aC = a.s >= CHROMA, bC = b.s >= CHROMA;
+      if (aC !== bC) return aC ? -1 : 1;              // colours before greys
+      if (aC && Math.abs(a.h - b.h) > 0.5) return a.h - b.h; // by hue family
+      return a.l - b.l;                                // then dark -> light
+    })
+    .map((e) => e.i);
+
+  if (order.every((from, to) => from === to)) return; // already sorted
+
+  const remap = new Map(order.map((from, to) => [from, to]));
+  puzzle.palette = order.map((i) => puzzle.palette[i]);
+  for (const cell of puzzle.cells) cell.c = remap.get(cell.c);
+}
+
 async function loadPuzzle(id) {
   const puzzle = await api.loadPuzzle(id);
+  sortPaletteByShade(puzzle);
   const saved = S.save.progress[id] || { filled: [], done: false, seconds: 0 };
 
   S.puzzle = puzzle;
@@ -447,7 +494,12 @@ function tryPaint(clientX, clientY, pointerType) {
     // are fiddly with a mouse and much worse under a fingertip, which covers
     // several at once. Steady Hand widens this further on request.
     const steady = isAbilityActive(S.save.avatar.abilities, 'steady-hand', Date.now()) ? 1.6 : 1;
-    const slack = ((pointerType === 'touch' ? 18 : 7) * steady) / board.scale;
+    // slack is divided by board.scale, so zooming in actually *shrinks* the
+    // picture-space forgiveness. In the browser, where a mouse has to land on
+    // small cells, give a little of that back once zoomed so a near-miss on a
+    // magnified cell still counts. The desktop app and 100% zoom are unchanged.
+    const zoomHelp = (!api.isDesktop && board.zoom > 1) ? 1.4 : 1;
+    const slack = ((pointerType === 'touch' ? 18 : 7) * steady * zoomHelp) / board.scale;
     const spokenFor = S.pending.size ? new Set([...S.filled, ...S.pending]) : S.filled;
     target = cellNear(S.cells, point.x, point.y, {
       colour: S.selected,
