@@ -126,6 +126,15 @@ export class Board {
     return this.fitScale * this.zoom;
   }
 
+  /** Extra alpha added to the selected-colour highlight once the user has
+   *  zoomed in. The wash is deliberately faint at 100%, but at high zoom —
+   *  where a phone user usually is — it becomes hard to see which cells still
+   *  want the held paint. Zero at 100%, ramps gently, capped so the highlight
+   *  never turns into a solid fill. */
+  get highlightBoost() {
+    return Math.min(0.12, Math.max(0, (this.zoom - 1) * 0.08));
+  }
+
   /** Picture's on-screen top-left corner, CSS px, incorporating pan.
    *  Safe with no puzzle loaded yet — toPuzzle() gets called on every
    *  pointerdown regardless of whether one has, same as the fields these
@@ -387,6 +396,24 @@ export class Board {
     ctx.setTransform(k, 0, 0, k, (this.offsetX + shakeX) * this.dpr, (this.offsetY + shakeY) * this.dpr);
   }
 
+  /**
+   * Transform for the decorative blob layer: a constant on-screen scale
+   * (fitScale, i.e. as if zoom were 1) with `origin` pinned to the exact pixel
+   * it occupies under the full transform. So the splat still reads as coming
+   * from the tapped cell, but it never grows with zoom — a satisfying blob at
+   * 100% shouldn't become a screen-filling explosion once you've pinched in,
+   * which was especially rough on a phone. drawFill() stays on the full
+   * transform: it becomes the cell's permanent colour and must fill the real,
+   * zoomed cell. At zoom==1 this is byte-identical to applyTransform().
+   */
+  applyBlobTransform(ctx, origin, shakeX = 0, shakeY = 0) {
+    const k = this.fitScale * this.dpr;
+    const spread = this.scale - this.fitScale; // fitScale * (zoom - 1)
+    const tx = (this.offsetX + shakeX + origin.x * spread) * this.dpr;
+    const ty = (this.offsetY + shakeY + origin.y * spread) * this.dpr;
+    ctx.setTransform(k, 0, 0, k, tx, ty);
+  }
+
   hexOf(colourIndex) {
     return this.puzzle.palette[colourIndex].hex;
   }
@@ -462,11 +489,13 @@ export class Board {
         ctx.fill(cell.path);
         continue;
       } else if (cell.colour === this.selected) {
-        // Faint wash of the actual paint so it is obvious where it goes.
+        // Faint wash of the actual paint so it is obvious where it goes —
+        // firmed up a little once zoomed in, where the subtle version washes
+        // out.
         ctx.fillStyle = BLANK;
         ctx.fill(cell.path);
         ctx.save();
-        ctx.globalAlpha = 0.16;
+        ctx.globalAlpha = 0.16 + this.highlightBoost;
         ctx.fillStyle = this.hexOf(cell.colour);
         ctx.fill(cell.path);
         ctx.restore();
@@ -557,7 +586,7 @@ export class Board {
 
     // Pulsing wash over every cell that takes the selected paint.
     if (this.selected >= 0 && this.reveal < 1) {
-      const pulse = 0.06 + 0.05 * (0.5 + 0.5 * Math.sin(timeMs / 380));
+      const pulse = 0.06 + this.highlightBoost + 0.05 * (0.5 + 0.5 * Math.sin(timeMs / 380));
       ctx.save();
       ctx.globalAlpha = pulse;
       ctx.fillStyle = this.hexOf(this.selected);
@@ -671,7 +700,13 @@ export class Board {
       ctx.rect(0, 0, this.puzzle.width, this.puzzle.height);
       ctx.clip();
       for (const burst of bursts) {
+        // The flood that becomes the cell's colour is drawn in picture space,
+        // so it scales with zoom and fills the real cell. The flying splat is
+        // drawn at a constant on-screen size (pinned to its own origin), so it
+        // stays uniform no matter how far in you've zoomed.
+        this.applyTransform(ctx, sx, sy);
         burst.drawFill(ctx);
+        this.applyBlobTransform(ctx, burst.origin, sx, sy);
         burst.drawBlobs(ctx);
       }
       ctx.restore();

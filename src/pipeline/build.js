@@ -240,23 +240,28 @@ export function buildPuzzle(rgba, srcW, srcH, opts = {}) {
     });
   }
 
-  // Renumber the palette so tub 1 is the most vibrant colour, not whichever
-  // happens to cover the most area — a huge flat wall of shadow or rock
-  // shouldn't win first pick just because it's big. Vibrancy is saturation
-  // discounted by distance from mid-lightness, so neither a near-black nor
-  // a near-white tub can out-rank one with real, visible hue.
+  // Renumber the palette into shade order: grouped by colour family (hue),
+  // dark-to-light within each family, with neutral greys pulled together at
+  // the end — so the tubs read as a natural gradient rather than a scramble.
+  // Kept in sync with sortPaletteByShade() in game.js, which re-applies the
+  // same order at load time (so older, pre-baked puzzles get it too).
   const usage = palette.map(() => 0);
   for (const cell of cells) usage[cell.c]++;
 
-  const vibrancy = palette.map(([r, g, b]) => {
-    const [, s, l] = rgbToHsl(r, g, b);
-    return s * (1 - Math.abs(l - 0.5) * 2);
-  });
+  const CHROMA = 0.15; // below this saturation a colour counts as a neutral grey
+  const hsl = palette.map(([r, g, b]) => rgbToHsl(r, g, b));
 
   const order = palette
     .map((_, i) => i)
     .filter((i) => usage[i] > 0)
-    .sort((a, b) => vibrancy[b] - vibrancy[a]);
+    .sort((a, b) => {
+      const [ha, sa, la] = hsl[a];
+      const [hb, sb, lb] = hsl[b];
+      const aC = sa >= CHROMA, bC = sb >= CHROMA;
+      if (aC !== bC) return aC ? -1 : 1;               // colours before greys
+      if (aC && Math.abs(ha - hb) > 0.002) return ha - hb; // by hue family
+      return la - lb;                                   // then dark -> light
+    });
 
   const remap = new Map(order.map((from, to) => [from, to]));
   for (const cell of cells) cell.c = remap.get(cell.c);
