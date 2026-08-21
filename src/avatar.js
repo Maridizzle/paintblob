@@ -687,12 +687,15 @@ function placket(M, topY, botY) {
 const RIB_STYLES = new Set(['hoodie', 'sweater']);
 
 function shirtMarkup(M, style) {
-  const hemY = style === 'hoodie' ? M.hipY + 12 : style === 'sweater' ? M.hipY + 9 : M.hipY + 6;
+  const hemY = style === 'hoodie' ? M.hipY + 12 : style === 'sweater' ? M.hipY + 9
+    : style === 'crop' ? M.hipY - 2 : M.hipY + 6;
   const puff = style === 'hoodie' ? 3.4 : style === 'sweater' ? 3 : style === 'tank' ? 1.4 : 2;
   const inset = style === 'tank' ? M.shoulderHalf * 0.36 : 0;
-  const neckDip = style === 'vneck' ? M.headRx * 0.85 : style === 'polo' ? 5 : 4;
+  const neckDip = style === 'vneck' ? M.headRx * 0.85 : style === 'polo' ? 5
+    : style === 'turtleneck' ? 2 : 4;
   const body = shell(M, { puff, topY: M.shoulderY, hemY, neckDip, inset });
-  const longSleeve = style === 'hoodie' || style === 'sweater' || style === 'buttonup';
+  const longSleeve = style === 'hoodie' || style === 'sweater' || style === 'buttonup'
+    || style === 'turtleneck';
   const sleeveHemY = longSleeve ? M.wristY - 2 : M.elbowY - 2;
   const out = [`<path d="${body}"/>`];
 
@@ -716,6 +719,16 @@ function shirtMarkup(M, style) {
       `fill="rgba(0,0,0,0.12)"/>`));
     out.push(pair((d) => seamLight(`M${n(CX)},${n(M.shoulderY + 2)} ` +
       `L${n(CX + d * sh * 0.34)},${n(M.shoulderY - 1)} L${n(CX + d * sh * 0.28)},${n(M.shoulderY + 8)}`, 0.7, 0.16)));
+  } else if (style === 'turtleneck') {
+    // A rolled knit collar covering the neck up to the chin.
+    const nw = M.headRx * 0.62;
+    const colTop = M.chinY - 1;
+    out.push(`<rect x="${n(CX - nw)}" y="${n(colTop)}" width="${n(nw * 2)}" ` +
+      `height="${n(M.shoulderY + 5 - colTop)}" rx="${n(nw * 0.7)}"/>`);
+    out.push([-0.6, 0, 0.6].map((f) => seam(`M${n(CX + f * nw)},${n(colTop + 2)} ` +
+      `L${n(CX + f * nw)},${n(M.shoulderY + 3)}`, 0.8, 0.14)).join(''));
+    out.push(shade(`M${n(CX - nw)},${n(colTop + 2)} Q${n(CX)},${n(colTop + 5)} ${n(CX + nw)},${n(colTop + 2)} ` +
+      `L${n(CX + nw)},${n(colTop + 6)} Q${n(CX)},${n(colTop + 9)} ${n(CX - nw)},${n(colTop + 6)} Z`, 0.14));
   } else {
     // crew collar, double-stitched
     out.push(seam(`M${n(CX - sh * 0.42)},${n(M.shoulderY + 1)} ` +
@@ -887,15 +900,18 @@ const DRESS = {
   sundress: { hem: 0.5, flare: 13, folds: 4 },
   flowy: { hem: 0.72, flare: 21, folds: 5 },
   gown: { hem: 0.98, flare: 30, folds: 6 },
+  wrap: { hem: 0.56, flare: 12, folds: 4 },
+  pinafore: { hem: 0.5, flare: 10, folds: 4 },
 };
 
 function dressMarkup(M, style) {
   const D = DRESS[style] ?? DRESS.basic;
   const hemY = M.hipY + M.legLen * D.hem;
   const puff = 1.6;
-  const sleeveless = style === 'sundress';
-  // A sundress has a wide scooped neck; a gown a deep one.
-  const neckDip = sleeveless ? M.headRx * 0.7 : style === 'gown' ? M.headRx * 0.75 : 4;
+  const sleeveless = style === 'sundress' || style === 'pinafore';
+  // A sundress has a wide scooped neck; a gown a deep one; a wrap a soft V.
+  const neckDip = sleeveless ? M.headRx * 0.7 : style === 'gown' ? M.headRx * 0.75
+    : style === 'wrap' ? M.headRx * 0.7 : 4;
   const inset = sleeveless ? M.shoulderHalf * 0.34 : 0;
   const body = shell(M, { puff, topY: M.shoulderY, hemY, neckDip, flare: D.flare, inset });
   const out = [`<path d="${body}"/>`];
@@ -915,6 +931,24 @@ function dressMarkup(M, style) {
     `Q${n(CX + d * M.waistHalf * 0.75)},${n(M.chestY)} ${n(CX + d * M.waistHalf * 0.6)},${n(M.waistY)}`, 1, 0.12)));
   out.push(`<rect x="${n(CX - M.waistHalf - puff)}" y="${n(M.waistY - 2)}" ` +
     `width="${n((M.waistHalf + puff) * 2)}" height="4" rx="1.4" fill="rgba(0,0,0,0.18)"/>`);
+  if (style === 'wrap') {
+    // The crossed-over front: one diagonal edge from shoulder to the waist knot,
+    // its overlap shaded, and a little tie at the side.
+    out.push(seam(`M${n(CX + M.shoulderHalf * 0.42)},${n(M.shoulderY + neckDip)} ` +
+      `L${n(CX - M.waistHalf * 0.7)},${n(M.waistY - 1)}`, 1.8, 0.2));
+    out.push(shade(`M${n(CX + M.shoulderHalf * 0.42)},${n(M.shoulderY + neckDip)} ` +
+      `L${n(CX - M.waistHalf * 0.7)},${n(M.waistY - 1)} L${n(CX - M.waistHalf - puff)},${n(M.waistY - 1)} ` +
+      `L${n(CX - M.shoulderHalf * 0.2)},${n(M.armpitY)} Z`, 0.1));
+    out.push(seam(`M${n(CX - M.waistHalf * 0.7)},${n(M.waistY)} q-6,3 -10,1`, 1.6, 0.22));
+  }
+  if (style === 'pinafore') {
+    // A square bib panel across the chest, outlined so it reads as a pinafore
+    // over the (implied) top.
+    const bw = M.shoulderHalf * 0.46;
+    out.push(seam(`M${n(CX - bw)},${n(M.shoulderY + 5)} L${n(CX - bw)},${n(M.waistY - 2)} ` +
+      `L${n(CX + bw)},${n(M.waistY - 2)} L${n(CX + bw)},${n(M.shoulderY + 5)}`, 1.4, 0.18));
+    out.push(pair((d) => `<circle cx="${n(CX + d * bw * 0.7)}" cy="${n(M.shoulderY + 6)}" r="1.1" fill="rgba(255,255,255,0.4)"/>`));
+  }
   // skirt folds radiating from the waist
   const hemHalf = M.hipHalf + puff + D.flare;
   for (let i = 1; i < D.folds; i++) {
@@ -954,7 +988,7 @@ function dressMarkup(M, style) {
   return out.join('');
 }
 
-const SOCK_TOP = { ankle: 0.06, basic: 0.22, tall: 0.62 };
+const SOCK_TOP = { ankle: 0.06, basic: 0.22, tall: 0.62, knee: 0.46 };
 
 function socksMarkup(M, style) {
   const topY = M.ankleY - M.legLen * (SOCK_TOP[style] ?? SOCK_TOP.basic);
@@ -997,6 +1031,19 @@ function shoesMarkup(M, style) {
       out.push(`<path d="M${n(cx - an * 0.7)},${n(solY - 8.4)} L${n(cx + toe * 0.6)},${n(solY - 4)} ` +
         `L${n(cx + toe * 0.5)},${n(solY - 2.4)} L${n(cx - an * 0.55)},${n(solY - 6.8)} Z"/>`);
       out.push(seam(`M${n(cx - an)},${n(solY - 2.2)} L${n(cx + toe)},${n(solY - 2.2)}`, 1, 0.12));
+      return out.join('');
+    }
+    if (style === 'loafers') {
+      // A low slip-on with a saddle band across the top.
+      out.push(`<path d="M${n(cx - an)},${n(solY - 3)} ` +
+        `C${n(cx - an)},${n(solY + 1)} ${n(cx + toe)},${n(solY + 1)} ${n(cx + toe)},${n(solY - 3)} ` +
+        `C${n(cx + toe - 1)},${n(solY - 6.5)} ${n(cx + an * 0.4)},${n(solY - 8)} ${n(cx - an * 0.2)},${n(solY - 7.5)} ` +
+        `C${n(cx - an * 0.7)},${n(solY - 7)} ${n(cx - an)},${n(solY - 5)} ${n(cx - an)},${n(solY - 3)} Z"/>`);
+      out.push(`<rect x="${n(cx - an * 0.12)}" y="${n(solY - 7.8)}" width="${n(an * 0.7)}" height="3" rx="1" fill="rgba(0,0,0,0.24)"/>`);
+      out.push(`<path d="M${n(cx - an)},${n(solY - 2)} C${n(cx - an)},${n(solY + 1.5)} ${n(cx + toe)},${n(solY + 1.5)} ` +
+        `${n(cx + toe)},${n(solY - 2)} L${n(cx + toe)},${n(solY - 0.5)} C${n(cx + toe)},${n(solY + 2.5)} ` +
+        `${n(cx - an)},${n(solY + 2.5)} ${n(cx - an)},${n(solY - 0.5)} Z" fill="rgba(0,0,0,0.24)"/>`);
+      out.push(seam(`M${n(cx - an * 0.2)},${n(solY - 6.8)} Q${n(cx + an * 0.7)},${n(solY - 5.2)} ${n(cx + toe * 0.9)},${n(solY - 3.4)}`, 1, 0.14));
       return out.join('');
     }
     if (style === 'flats' || style === 'maryjane') {
