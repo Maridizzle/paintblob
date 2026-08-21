@@ -107,6 +107,10 @@ export const ROOMS = [
     id: 'library', name: 'Library', unlockLevel: 7,
     wall: '#7c6552', floor: '#6d4f3a', skirting: '#5f4c3d',
   },
+  {
+    id: 'livingroom', name: 'Living Room', unlockLevel: 5,
+    wall: '#c39a8f', floor: '#bd925f', skirting: '#a97f72',
+  },
 ].map(withRoomParts);
 
 const ROOM_BY_ID = new Map(ROOMS.map((r) => [r.id, r]));
@@ -230,6 +234,10 @@ export const LIGHTING = [
   { id: 'golden', name: 'Golden Hour', price: 260, source: 'store' },
   { id: 'moonlight', name: 'Moonlight', price: 320, source: 'store' },
   { id: 'candlelit', name: 'Candlelit', price: 420, source: 'store' },
+  { id: 'sunset', name: 'Sunset', price: 300, source: 'store' },
+  { id: 'overcast', name: 'Overcast', price: 220, source: 'store' },
+  { id: 'aurora', name: 'Aurora', price: 480, source: 'store' },
+  { id: 'rosy', name: 'Rosy Glow', price: 360, source: 'store' },
 ];
 
 function lightingOverlay(id) {
@@ -246,6 +254,26 @@ function lightingOverlay(id) {
     // Warm at the centre, falling away hard at the edges.
     return `<rect x="0" y="0" width="${W}" height="${H}" fill="rgba(60,32,10,0.44)"/>` +
       `<rect x="0" y="0" width="${W}" height="${H}" fill="url(#candleGlow)"/>`;
+  }
+  if (id === 'sunset') {
+    // A hot band low on the sky cooling to magenta up top.
+    return `<rect x="0" y="0" width="${W}" height="${H}" fill="url(#sunsetFade)"/>` +
+      fill(`M0,0 L110,0 L58,${H} L0,${H} Z`, 'rgba(255,196,120,0.16)');
+  }
+  if (id === 'overcast') {
+    // Flat, cool and low-contrast, like a grey afternoon through the window.
+    return `<rect x="0" y="0" width="${W}" height="${H}" fill="rgba(120,132,150,0.30)"/>` +
+      `<rect x="0" y="0" width="${W}" height="${FLOOR_Y}" fill="rgba(210,220,235,0.05)"/>`;
+  }
+  if (id === 'aurora') {
+    // Deep night with a green-to-violet shimmer washing down the back wall.
+    return `<rect x="0" y="0" width="${W}" height="${H}" fill="rgba(16,26,40,0.46)"/>` +
+      `<rect x="0" y="0" width="${W}" height="${H}" fill="url(#auroraGlow)"/>`;
+  }
+  if (id === 'rosy') {
+    // A soft, flattering pink — warm without the orange of golden hour.
+    return `<rect x="0" y="0" width="${W}" height="${H}" fill="rgba(255,140,168,0.18)"/>` +
+      fill(`M0,0 L100,0 L54,${H} L0,${H} Z`, 'rgba(255,226,234,0.14)');
   }
   return ''; // daylight adds nothing
 }
@@ -283,6 +311,38 @@ export const PETS = [
       { key: 'wing', name: 'Wing', default: '#3f8cbd' },
       { key: 'beak', name: 'Beak & feet', default: '#f0a83c' },
       { key: 'perch', name: 'Perch', default: '#8a7256' },
+    ],
+  },
+  {
+    id: 'fox', name: 'Fox', price: 420, source: 'store',
+    parts: [
+      { key: 'body', name: 'Coat', default: '#d1762f' },
+      { key: 'belly', name: 'Face & chest', default: '#f4ecdd' },
+      { key: 'eyes', name: 'Eyes & nose', default: '#2c2620' },
+    ],
+  },
+  {
+    id: 'hamster', name: 'Hamster', price: 300, source: 'store',
+    parts: [
+      { key: 'body', name: 'Fur', default: '#e0b268' },
+      { key: 'belly', name: 'Belly & cheeks', default: '#f6ecd6' },
+      { key: 'eyes', name: 'Eyes', default: '#2c2620' },
+    ],
+  },
+  {
+    id: 'frog', name: 'Frog', price: 320, source: 'store',
+    parts: [
+      { key: 'body', name: 'Skin', default: '#6fae4e' },
+      { key: 'belly', name: 'Belly', default: '#d8e6a4' },
+      { key: 'eyes', name: 'Eyes', default: '#2c2620' },
+    ],
+  },
+  {
+    id: 'tortoise', name: 'Tortoise', price: 440, source: 'store',
+    parts: [
+      { key: 'shell', name: 'Shell', default: '#8a6b3e' },
+      { key: 'body', name: 'Skin', default: '#7fa25a' },
+      { key: 'eyes', name: 'Eyes', default: '#2c2620' },
     ],
   },
 ];
@@ -450,6 +510,94 @@ function petMarkup(id, c) {
       fill(`M${PET_X - 3},${py - 14} q-7,6 -2,12 q4,-6 4,-11 Z`, c.wing) +
       `<path d="M${PET_X - 1},${py - 2} l-2,7 M${PET_X + 3},${py - 2} l2,7" stroke="${c.beak}" stroke-width="2" stroke-linecap="round" fill="none"/>` +
       light(`M${PET_X - 3},${py - 26} q6,-4 11,2 q-6,-2 -11,-2 Z`, 0.16);
+  }
+
+  if (id === 'fox') {
+    const body = c.body;
+    const belly = c.belly;
+    return contact(PET_X, 15) +
+      // Bushy tail curling round the front, tipped white.
+      `<path d="M${PET_X + 9},${STAND_Y} q17,1 15,-15" fill="none" stroke="${body}" stroke-width="9" stroke-linecap="round"/>` +
+      circle(PET_X + 22, STAND_Y - 15, 5, belly) +
+      fill(`M${PET_X - 11},${STAND_Y} q-2,-17 12,-17 q14,0 12,17 Z`, body) +
+      // White chest.
+      fill(`M${PET_X - 4},${STAND_Y} q-3,-12 4,-14 q7,2 4,14 Z`, belly) +
+      circle(PET_X, STAND_Y - 23, 9, body) +
+      // Tall pointed ears with dark inners.
+      fill(`M${PET_X - 8},${STAND_Y - 28} l-2,-12 l9,7 Z`, body) +
+      fill(`M${PET_X + 8},${STAND_Y - 28} l2,-12 l-9,7 Z`, body) +
+      fill(`M${PET_X - 7},${STAND_Y - 29} l-0.6,-6 l4,3 Z`, 'rgba(40,30,26,0.5)') +
+      fill(`M${PET_X + 7},${STAND_Y - 29} l0.6,-6 l-4,3 Z`, 'rgba(40,30,26,0.5)') +
+      // White muzzle mask.
+      fill(`M${PET_X},${STAND_Y - 14.5} q-6.5,-1 -6.5,-8 q6.5,-4 6.5,-4 q6.5,0 6.5,4 q0,7 -6.5,8 Z`, belly) +
+      ellipse(PET_X - 3.7, STAND_Y - 24, 1.5, 1.9, c.eyes) +
+      ellipse(PET_X + 3.7, STAND_Y - 24, 1.5, 1.9, c.eyes) +
+      fill(`M${PET_X - 1.6},${STAND_Y - 17} l3.2,0 l-1.6,2.6 Z`, c.eyes) +
+      light(`M${PET_X - 7},${STAND_Y - 26} q7,-4 14,0 q-7,-3 -14,0 Z`, 0.1);
+  }
+
+  if (id === 'hamster') {
+    const body = c.body;
+    const belly = c.belly;
+    return contact(PET_X, 12) +
+      // Almost all head — a round little loaf with tiny ears and fat cheeks.
+      fill(`M${PET_X - 12},${STAND_Y} q-2,-20 12,-20 q14,0 12,20 Z`, body) +
+      circle(PET_X - 9, STAND_Y - 18, 3.5, body) +
+      circle(PET_X + 9, STAND_Y - 18, 3.5, body) +
+      // Cream belly and cheek patches.
+      ellipse(PET_X, STAND_Y - 5, 8, 8, belly) +
+      circle(PET_X - 6, STAND_Y - 11, 3.5, belly) +
+      circle(PET_X + 6, STAND_Y - 11, 3.5, belly) +
+      ellipse(PET_X - 3.2, STAND_Y - 14, 1.5, 1.9, c.eyes) +
+      ellipse(PET_X + 3.2, STAND_Y - 14, 1.5, 1.9, c.eyes) +
+      circle(PET_X, STAND_Y - 10.5, 1.1, 'rgba(210,140,150,0.9)') +
+      // Little front paws.
+      ellipse(PET_X - 3, STAND_Y - 1, 2, 1.6, belly) +
+      ellipse(PET_X + 3, STAND_Y - 1, 2, 1.6, belly) +
+      light(`M${PET_X - 7},${STAND_Y - 20} q7,-5 14,0 q-7,-3 -14,0 Z`, 0.12);
+  }
+
+  if (id === 'frog') {
+    const body = c.body;
+    const belly = c.belly;
+    return contact(PET_X, 15) +
+      // Splayed back feet either side.
+      ellipse(PET_X - 12, STAND_Y - 1, 5, 3, body) +
+      ellipse(PET_X + 12, STAND_Y - 1, 5, 3, body) +
+      // Wide low body.
+      fill(`M${PET_X - 15},${STAND_Y} q-1,-15 15,-15 q16,0 15,15 Z`, body) +
+      ellipse(PET_X, STAND_Y - 3, 9, 6, belly) +
+      // Eyes bulging off the top of the head.
+      circle(PET_X - 7, STAND_Y - 17, 5, body) +
+      circle(PET_X + 7, STAND_Y - 17, 5, body) +
+      circle(PET_X - 7, STAND_Y - 18, 2.4, belly) +
+      circle(PET_X + 7, STAND_Y - 18, 2.4, belly) +
+      circle(PET_X - 7, STAND_Y - 18, 1.4, c.eyes) +
+      circle(PET_X + 7, STAND_Y - 18, 1.4, c.eyes) +
+      // A wide friendly mouth.
+      `<path d="M${PET_X - 8},${STAND_Y - 8} q8,5 16,0" fill="none" stroke="${c.eyes}" stroke-width="1.4" stroke-linecap="round"/>` +
+      light(`M${PET_X - 9},${STAND_Y - 12} q9,-4 18,0 q-9,-2 -18,0 Z`, 0.1);
+  }
+
+  if (id === 'tortoise') {
+    const shell = c.shell;
+    const body = c.body;
+    return contact(PET_X, 16) +
+      // Stubby legs under the shell.
+      ellipse(PET_X - 12, STAND_Y - 1, 4, 3, body) +
+      ellipse(PET_X + 12, STAND_Y - 1, 4, 3, body) +
+      // Head poking out to the right on a little neck.
+      box(PET_X + 12, STAND_Y - 12, 7, 6, body, 2) +
+      circle(PET_X + 20, STAND_Y - 13, 5, body) +
+      circle(PET_X + 21, STAND_Y - 14, 1.3, c.eyes) +
+      // Domed shell.
+      fill(`M${PET_X - 16},${STAND_Y - 2} q0,-20 16,-20 q16,0 16,20 Z`, shell) +
+      // Shell plates, drawn as seams so the shell colour still shows through.
+      seam(`M${PET_X},${STAND_Y - 22} L${PET_X},${STAND_Y - 2}`, 1.2, 0.16) +
+      seam(`M${PET_X - 9},${STAND_Y - 18} L${PET_X - 12},${STAND_Y - 2}`, 1.2, 0.16) +
+      seam(`M${PET_X + 9},${STAND_Y - 18} L${PET_X + 12},${STAND_Y - 2}`, 1.2, 0.16) +
+      seam(`M${PET_X - 15},${STAND_Y - 6} q15,-6 30,0`, 1.2, 0.14) +
+      light(`M${PET_X - 10},${STAND_Y - 18} q10,-6 20,0 q-10,-3 -20,0 Z`, 0.12);
   }
   return '';
 }
@@ -1202,6 +1350,219 @@ function libraryCandelabra(c) {
     [-16, 0, 16].map((dx, i) => box(cx + dx - 4, armY - 4, 8, 5, c.cups, 1.5) + candle(dx, i === 1 ? 20 : 15)).join('');
 }
 
+/* -- living room --------------------------------------------------------- */
+
+function lrSofa(c) {
+  const x = FURN_X;
+  const y = STAND_Y;
+  const L = x - 40;
+  const W = 84;
+  return contact(x + 2, 46, 0.2) +
+    box(L + 6, y - 7, 7, 7, c.legs) +
+    box(L + W - 13, y - 7, 7, 7, c.legs) +
+    box(L, y - 24, W, 20, c.body, 4) +
+    box(L, y - 52, W, 32, c.body, 7) +
+    box(L - 3, y - 42, 12, 38, c.body, 5) +
+    box(L + W - 9, y - 42, 12, 38, c.body, 5) +
+    box(L + 9, y - 49, 31, 25, c.cushions, 5) +
+    box(L + 44, y - 49, 31, 25, c.cushions, 5) +
+    box(L + 9, y - 27, 31, 11, c.cushions, 3) +
+    box(L + 44, y - 27, 31, 11, c.cushions, 3) +
+    boxShade(L, y - 7, W, 3, 0.14) +
+    boxLight(L + 9, y - 49, 31, 5, 0.14) +
+    boxLight(L + 44, y - 49, 31, 5, 0.14);
+}
+
+function lrTv(c) {
+  const x = FURN_X;
+  const y = STAND_Y;
+  const L = x - 42;
+  const W = 86;
+  const sT = y - 68;
+  return contact(x + 2, 46, 0.2) +
+    box(L, y - 22, W, 20, c.cabinet, 3) +
+    box(L + 5, y - 18, 24, 12, c.cabinet, 2) +
+    box(L + 33, y - 18, 24, 12, c.cabinet, 2) +
+    boxShade(L, y - 4, W, 3, 0.16) +
+    boxLight(L, y - 22, W, 3, 0.1) +
+    box(x - 30, sT, 60, 42, '#2a2e33', 2) +
+    box(x - 26, sT + 4, 52, 34, c.screen, 1) +
+    box(x - 26, sT + 24, 52, 14, c.screenImage) +
+    circle(x + 12, sT + 13, 4, 'rgba(255,240,180,0.85)') +
+    box(x - 2, y - 26, 4, 4, '#2a2e33') +
+    light(`M${x - 26},${sT + 4} l24,0 l-9,34 l-15,0 Z`, 0.06);
+}
+
+function lrArmchair(c) {
+  const x = FURN_X;
+  const y = STAND_Y;
+  const L = x - 26;
+  const W = 56;
+  return contact(x, 32, 0.2) +
+    box(L + 4, y - 7, 6, 7, c.legs) +
+    box(L + W - 10, y - 7, 6, 7, c.legs) +
+    box(L, y - 22, W, 18, c.body, 4) +
+    box(L, y - 50, W, 30, c.body, 7) +
+    box(L - 3, y - 40, 11, 36, c.body, 5) +
+    box(L + W - 8, y - 40, 11, 36, c.body, 5) +
+    box(L + 8, y - 47, W - 16, 24, c.cushion, 5) +
+    box(L + 8, y - 25, W - 16, 11, c.cushion, 3) +
+    boxShade(L, y - 7, W, 3, 0.14) +
+    boxLight(L + 8, y - 47, W - 16, 5, 0.14);
+}
+
+function lrCanvas(c) {
+  const cx = WALL_CX;
+  const top = 28;
+  const w = 76;
+  const h = 54;
+  const L = cx - w / 2;
+  return box(L - 3, top - 3, w + 6, h + 6, c.frame, 2) +
+    box(L, top, w, h, c.sky) +
+    fill(`M${L},${top + h} l0,-20 q${w / 2},-15 ${w},0 l0,20 Z`, c.hills) +
+    circle(L + w - 18, top + 15, 8, c.sun) +
+    boxShade(L, top, w, 4, 0.1) +
+    `<rect x="${L - 3}" y="${top - 3}" width="${w + 6}" height="${h + 6}" fill="none" stroke="rgba(0,0,0,0.12)" stroke-width="1"/>`;
+}
+
+function lrShelf(c) {
+  const cx = WALL_CX;
+  const y = 74;
+  const L = cx - 40;
+  const W = 80;
+  return box(L, y, W, 6, c.shelf, 1) +
+    boxShade(L, y + 6, W, 3, 0.12) +
+    box(L + 6, y - 22, 5, 22, c.books) +
+    box(L + 12, y - 26, 5, 26, c.books) +
+    box(L + 18, y - 20, 5, 20, c.books) +
+    fill(`M${L + 26},${y} l0,-16 l6,0 l4,16 Z`, c.books) +
+    fill(`M${cx + 8},${y} q-5,-4 -3,-14 q1,-5 6,-5 q5,0 6,5 q2,10 -3,14 Z`, c.vase) +
+    fill(`M${cx + 11},${y - 16} q-2,-11 -6,-13 q6,1 6,11 Z`, c.plant) +
+    fill(`M${cx + 11},${y - 16} q2,-12 7,-14 q-7,2 -7,12 Z`, c.plant);
+}
+
+function lrClock(c) {
+  const cx = WALL_CX;
+  const cy = 54;
+  const r = 14;
+  let rays = '';
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    const x1 = cx + Math.cos(a) * (r + 4);
+    const y1 = cy + Math.sin(a) * (r + 4);
+    const x2 = cx + Math.cos(a) * (r + 13);
+    const y2 = cy + Math.sin(a) * (r + 13);
+    rays += `<line x1="${n(x1)}" y1="${n(y1)}" x2="${n(x2)}" y2="${n(y2)}" stroke="${c.rays}" stroke-width="2.4" stroke-linecap="round"/>`;
+  }
+  return rays +
+    circle(cx, cy, r, c.face) +
+    `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(0,0,0,0.12)" stroke-width="1"/>` +
+    `<path d="M${cx},${cy} l0,-8 M${cx},${cy} l6,3" stroke="${c.hands}" stroke-width="1.7" stroke-linecap="round" fill="none"/>` +
+    circle(cx, cy, 1.7, c.hands);
+}
+
+function lrTable(c) {
+  const x = ACC_X;
+  const y = STAND_Y + 6;
+  const L = x - 30;
+  const W = 60;
+  return contact(x, 34, 0.2) +
+    box(L + 3, y - 14, 5, 14, c.legs) +
+    box(L + W - 8, y - 14, 5, 14, c.legs) +
+    box(L, y - 20, W, 8, c.top, 2) +
+    boxLight(L, y - 20, W, 3, 0.16) +
+    boxShade(L, y - 12, W, 2, 0.14) +
+    box(L + 8, y - 24, 18, 4, c.item, 1) +
+    fill(`M${L + W - 16},${y - 21} q0,-6 6,-6 q6,0 6,6 Z`, c.item) +
+    `<path d="M${L + W - 4},${y - 25} q4,0 4,3 q0,3 -4,3" fill="none" stroke="${c.item}" stroke-width="1.4"/>`;
+}
+
+function lrPlant(c) {
+  const x = ACC_X;
+  const y = STAND_Y;
+  return contact(x, 16, 0.2) +
+    fill(`M${x - 12},${y} l3,-22 l18,0 l3,22 Z`, c.pot) +
+    box(x - 15, y - 24, 30, 5, c.rim, 1) +
+    `<path d="M${x},${y - 22} q-3,-24 -14,-34" fill="none" stroke="${c.stem}" stroke-width="2.5"/>` +
+    `<path d="M${x},${y - 22} q3,-28 16,-40" fill="none" stroke="${c.stem}" stroke-width="2.5"/>` +
+    `<path d="M${x},${y - 22} q0,-22 2,-30" fill="none" stroke="${c.stem}" stroke-width="2.5"/>` +
+    ellipse(x - 15, y - 56, 11, 8, c.leaves) +
+    ellipse(x + 16, y - 62, 12, 9, c.leaves) +
+    ellipse(x + 2, y - 54, 10, 8, c.leaves) +
+    seam(`M${x - 15},${y - 60} l0,8`, 1.1, 0.14) +
+    seam(`M${x + 16},${y - 66} l0,9`, 1.1, 0.14) +
+    light(`M${x + 10},${y - 66} q6,-3 11,3 q-6,-2 -11,-3 Z`, 0.1);
+}
+
+function lrPouffe(c) {
+  const x = ACC_X;
+  const y = STAND_Y + 4;
+  return contact(x, 22, 0.2) +
+    ellipse(x, y - 2, 20, 8, c.body) +
+    box(x - 20, y - 14, 40, 12, c.body) +
+    ellipse(x, y - 14, 20, 7, c.top) +
+    `<ellipse cx="${x}" cy="${y - 14}" rx="20" ry="7" fill="none" stroke="rgba(0,0,0,0.1)" stroke-width="1"/>` +
+    seam(`M${x - 9},${y - 16} l0,11`, 1, 0.12) +
+    seam(`M${x + 9},${y - 16} l0,11`, 1, 0.12) +
+    boxShade(x - 20, y - 4, 40, 3, 0.12);
+}
+
+/* -- extra accents for the original rooms -------------------------------- */
+
+function bedBeanbag(c) {
+  const x = ACC_X;
+  const y = STAND_Y + 2;
+  return contact(x, 26, 0.22) +
+    ellipse(x, y - 8, 26, 18, c.body) +
+    ellipse(x, y - 20, 16, 9, c.top) +
+    light(`M${x - 12},${y - 24} q12,-5 22,2 q-11,-3 -22,-2 Z`, 0.12) +
+    seam(`M${x - 16},${y - 6} q16,7 30,-2`, 1.1, 0.12);
+}
+
+function studioPaintCans(c) {
+  const x = ACC_X;
+  const y = STAND_Y;
+  return contact(x, 20, 0.2) +
+    box(x - 16, y - 16, 32, 16, c.can1, 2) +
+    ellipse(x, y - 16, 16, 4, c.can1) +
+    box(x - 4, y - 30, 26, 14, c.can2, 2) +
+    ellipse(x + 9, y - 30, 13, 3.5, c.can2) +
+    fill(`M${x - 16},${y - 10} q-4,6 0,12 q4,-6 3,-12 Z`, c.drip) +
+    boxShade(x - 16, y - 2, 32, 3, 0.12) +
+    boxLight(x - 16, y - 16, 32, 3, 0.12) +
+    boxLight(x - 4, y - 30, 26, 3, 0.12);
+}
+
+function kitchenStool(c) {
+  const x = ACC_X;
+  const y = STAND_Y;
+  return contact(x, 18, 0.2) +
+    box(x - 13, y - 15, 5, 15, c.legs) +
+    box(x + 8, y - 15, 5, 15, c.legs) +
+    box(x - 11, y - 8, 22, 3, c.legs) +
+    box(x - 16, y - 22, 32, 7, c.seat, 2) +
+    boxLight(x - 16, y - 22, 32, 2.5, 0.16) +
+    boxShade(x - 16, y - 16, 32, 2, 0.12);
+}
+
+function libraryFern(c) {
+  const x = ACC_X;
+  const baseY = STAND_Y - 20;
+  const frond = (dx, dy, bend) => `<path d="M${x},${baseY} q${bend},${dy * 0.5} ${dx},${dy}" ` +
+    `fill="none" stroke="${c.fronds}" stroke-width="2.6" stroke-linecap="round"/>`;
+  return contact(x, 16, 0.2) +
+    fill(`M${x - 11},${STAND_Y} l2,-18 l18,0 l2,18 Z`, c.pot) +
+    box(x - 13, baseY - 4, 26, 5, c.rim, 1) +
+    frond(-20, -30, -14) +
+    frond(-11, -40, -6) +
+    frond(0, -44, 0) +
+    frond(11, -40, 6) +
+    frond(20, -30, 14) +
+    frond(-16, -20, -10) +
+    frond(16, -20, 10) +
+    light(`M${x - 3},${baseY - 40} q4,-2 7,2 q-4,-2 -7,-2 Z`, 0.12);
+}
+
 /* ---------------------------------------------------------------- catalogue */
 
 // One starter per slot per room, so a room is furnished the moment it opens;
@@ -1461,6 +1822,85 @@ export const HOUSE_ITEMS = [
       ['cups', 'Candle cups', '#a9803f'], ['candles', 'Candles', '#f0e8d2'],
       ['flames', 'Flames', '#ffcf6a']),
   },
+
+  /* -- extra accents for the original rooms ----------------------------- */
+  {
+    id: 'bd-acc-beanbag', roomId: 'bedroom', slot: 'accent', name: 'Bean Bag',
+    price: 260, source: 'store', draw: bedBeanbag,
+    parts: parts(['body', 'Body', '#c2708a'], ['top', 'Top panel', '#d98fa4']),
+  },
+  {
+    id: 'st-acc-paintcans', roomId: 'studio', slot: 'accent', name: 'Paint Tins',
+    price: 200, source: 'store', draw: studioPaintCans,
+    parts: parts(['can1', 'Lower tin', '#5f86bd'], ['can2', 'Upper tin', '#d0604f'],
+      ['drip', 'Drip', '#e0b34a']),
+  },
+  {
+    id: 'kt-acc-stool', roomId: 'kitchen', slot: 'accent', name: 'Step Stool',
+    price: 220, source: 'store', draw: kitchenStool,
+    parts: parts(['seat', 'Seat', '#c2b089'], ['legs', 'Legs', '#8a7a5c']),
+  },
+  {
+    id: 'lb-acc-fern', roomId: 'library', slot: 'accent', name: 'Potted Fern',
+    price: 240, source: 'store', draw: libraryFern,
+    parts: parts(['pot', 'Pot', '#a9683f'], ['rim', 'Pot rim', '#bd7c4e'],
+      ['fronds', 'Fronds', '#5f8c4a']),
+  },
+
+  /* -- living room ------------------------------------------------------ */
+  {
+    id: 'lr-wall-canvas', roomId: 'livingroom', slot: 'wall', name: 'Landscape Canvas',
+    price: 0, source: 'starter', draw: lrCanvas,
+    parts: parts(['frame', 'Frame', '#e6dcc8'], ['sky', 'Sky', '#bcd6e2'],
+      ['hills', 'Hills', '#8fb083'], ['sun', 'Sun', '#f2ce6a']),
+  },
+  {
+    id: 'lr-furn-sofa', roomId: 'livingroom', slot: 'furniture', name: 'Sofa',
+    price: 0, source: 'starter', draw: lrSofa,
+    parts: parts(['body', 'Frame', '#6f8fa6'], ['cushions', 'Cushions', '#8fb0c4'],
+      ['legs', 'Legs', '#5a4432']),
+  },
+  {
+    id: 'lr-acc-table', roomId: 'livingroom', slot: 'accent', name: 'Coffee Table',
+    price: 0, source: 'starter', draw: lrTable,
+    parts: parts(['top', 'Top', '#9c7048'], ['legs', 'Legs', '#7a5636'],
+      ['item', 'Books & mug', '#c86f5e']),
+  },
+  {
+    id: 'lr-wall-shelf', roomId: 'livingroom', slot: 'wall', name: 'Floating Shelf',
+    price: 240, source: 'store', draw: lrShelf,
+    parts: parts(['shelf', 'Shelf', '#9c7048'], ['books', 'Books', '#c07a52'],
+      ['vase', 'Vase', '#7fa2b8'], ['plant', 'Sprig', '#6f9c5a']),
+  },
+  {
+    id: 'lr-wall-clock', roomId: 'livingroom', slot: 'wall', name: 'Sunburst Clock',
+    price: 280, source: 'store', draw: lrClock,
+    parts: parts(['rays', 'Rays', '#c9a253'], ['face', 'Face', '#f2ece0'],
+      ['hands', 'Hands', '#3a2f24']),
+  },
+  {
+    id: 'lr-furn-tv', roomId: 'livingroom', slot: 'furniture', name: 'TV & Console',
+    price: 520, source: 'store', draw: lrTv,
+    parts: parts(['cabinet', 'Cabinet', '#8a6a4e'], ['screen', 'Screen', '#3c6a86'],
+      ['screenImage', 'On screen', '#7fae7a']),
+  },
+  {
+    id: 'lr-furn-armchair', roomId: 'livingroom', slot: 'furniture', name: 'Armchair',
+    price: 460, source: 'store', draw: lrArmchair,
+    parts: parts(['body', 'Frame', '#b06a58'], ['cushion', 'Cushion', '#d0917c'],
+      ['legs', 'Legs', '#5a4432']),
+  },
+  {
+    id: 'lr-acc-plant', roomId: 'livingroom', slot: 'accent', name: 'Monstera',
+    price: 220, source: 'store', draw: lrPlant,
+    parts: parts(['pot', 'Pot', '#c88a5a'], ['rim', 'Pot rim', '#d69c6a'],
+      ['stem', 'Stems', '#5f8c4a'], ['leaves', 'Leaves', '#5f9455']),
+  },
+  {
+    id: 'lr-acc-pouffe', roomId: 'livingroom', slot: 'accent', name: 'Round Pouffe',
+    price: 200, source: 'store', draw: lrPouffe,
+    parts: parts(['body', 'Sides', '#c28a6a'], ['top', 'Top', '#d6a082']),
+  },
 ];
 
 const ITEM_BY_ID = new Map(HOUSE_ITEMS.map((i) => [i.id, i]));
@@ -1541,6 +1981,18 @@ const DEFS =
   '<stop offset="0" stop-color="rgba(255,196,110,0.42)"/>' +
   '<stop offset="1" stop-color="rgba(255,196,110,0)"/>' +
   '</radialGradient>' +
+  // Sunset lighting: magenta up high, hot amber low.
+  '<linearGradient id="sunsetFade" x1="0" y1="0" x2="0" y2="1">' +
+  '<stop offset="0" stop-color="rgba(196,74,132,0.34)"/>' +
+  '<stop offset="0.55" stop-color="rgba(255,120,80,0.20)"/>' +
+  '<stop offset="1" stop-color="rgba(255,180,110,0.12)"/>' +
+  '</linearGradient>' +
+  // Aurora lighting: a green-to-violet shimmer strongest across the back wall.
+  '<linearGradient id="auroraGlow" x1="0" y1="0" x2="0.3" y2="1">' +
+  '<stop offset="0" stop-color="rgba(92,224,168,0.26)"/>' +
+  '<stop offset="0.5" stop-color="rgba(96,176,220,0.14)"/>' +
+  '<stop offset="1" stop-color="rgba(150,110,220,0.18)"/>' +
+  '</linearGradient>' +
   // Floor darkens toward the back wall (ambient occlusion in the crease) and
   // toward the two side walls, so the plane reads as receding rather than flat.
   `<linearGradient id="floorDepth" x1="0" y1="${FLOOR_Y}" x2="0" y2="${H}" gradientUnits="userSpaceOnUse">` +

@@ -38,6 +38,14 @@ export const WARDROBE_ITEMS = [
   { id: 'shoes-flats', slot: 'shoes', style: 'flats', name: 'Ballet Flats', price: 200, source: 'store' },
   { id: 'shoes-maryjane', slot: 'shoes', style: 'maryjane', name: 'Mary Janes', price: 260, source: 'store' },
 
+  // A second wave — new silhouettes, same recolour-wash treatment.
+  { id: 'shirt-turtleneck', slot: 'shirt', style: 'turtleneck', name: 'Turtleneck', price: 300, source: 'store' },
+  { id: 'shirt-crop', slot: 'shirt', style: 'crop', name: 'Fitted Tee', price: 210, source: 'store' },
+  { id: 'dress-wrap', slot: 'dress', style: 'wrap', name: 'Wrap Dress', price: 440, source: 'store' },
+  { id: 'dress-pinafore', slot: 'dress', style: 'pinafore', name: 'Pinafore', price: 380, source: 'store' },
+  { id: 'socks-knee', slot: 'socks', style: 'knee', name: 'Knee Socks', price: 160, source: 'store' },
+  { id: 'shoes-loafers', slot: 'shoes', style: 'loafers', name: 'Loafers', price: 280, source: 'store' },
+
   { id: 'dress-flowy', slot: 'dress', style: 'flowy', name: 'Flowy Dress', price: 500, source: 'achievement' },
   { id: 'shoes-boots', slot: 'shoes', style: 'boots', name: 'Sturdy Boots', price: 500, source: 'achievement' },
   { id: 'dress-gown', slot: 'dress', style: 'gown', name: 'Evening Gown', price: 1500, source: 'achievement' },
