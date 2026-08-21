@@ -21,6 +21,7 @@ import { outlineSVG, outlineWeight } from './thumbnail.js';
 import {
   ROOMS, HOUSE_ITEMS, LIGHTING, PETS, PROP_SLOTS, SLOT_LABEL,
   defaultHouse, itemsFor, starterFor, buildRoomSVG, colourablesIn, colourKey,
+  PET_NEEDS, defaultPetStats, applyPetDecay, carePet, petMood,
 } from './house.js';
 
 let api;
@@ -1581,15 +1582,23 @@ function paintStage(stage) {
 
 function renderAvatarPanel(body) {
   body.textContent = '';
-  const customize = S.save.avatar.customize;
   const level = levelForPoints(S.save.stats.pointsEarned);
   const { into, span } = pointsIntoLevel(S.save.stats.pointsEarned);
+  // The room and pet tabs are about the scene, so they get the whole panel as a
+  // stage with the controls riding up from the bottom in a tray. The list tabs
+  // (customize/outfits/abilities) keep the plain stacked layout.
+  const scene = S.avatarTab === 'room' || S.avatarTab === 'pet';
+  // Was the panel already showing a scene? If so this is an in-tab redraw (a
+  // care tap, a recolour) and the tray must not replay its slide-in.
+  const wasScene = body.classList.contains('scene');
+  body.classList.toggle('scene', scene);
 
   const head = document.createElement('div');
   head.className = 'avatar-head';
   const stage = document.createElement('div');
   stage.className = 'avatar-stage';
   paintStage(stage);
+  head.append(stage);
 
   const levelbar = document.createElement('div');
   levelbar.className = 'avatar-levelbar';
@@ -1602,14 +1611,15 @@ function renderAvatarPanel(body) {
   fill.style.width = `${span ? (into / span) * 100 : 100}%`;
   bar.append(fill);
   levelbar.append(label, bar);
-  head.append(stage, levelbar);
+  // In scene mode the level/coins read moves into the tray to free the stage.
+  if (!scene) head.append(levelbar);
   body.append(head);
 
   const tabs = document.createElement('div');
-  // Four tabs no longer fit on one line, and .segmented is overflow:hidden
+  // Five tabs no longer fit on one line, and .segmented is overflow:hidden
   // with no wrap — without `wrap` the last one is silently clipped off.
   tabs.className = 'segmented avatar-tabs wrap';
-  for (const key of ['customize', 'outfits', 'abilities', 'room']) {
+  for (const key of ['customize', 'outfits', 'abilities', 'room', 'pet']) {
     const btn = document.createElement('button');
     btn.textContent = key[0].toUpperCase() + key.slice(1);
     btn.className = S.avatarTab === key ? 'on' : '';
@@ -1619,18 +1629,44 @@ function renderAvatarPanel(body) {
     });
     tabs.append(btn);
   }
-  body.append(tabs);
 
   const section = document.createElement('div');
   section.className = 'avatar-section';
-  body.append(section);
 
   if (S.avatarTab === 'outfits') renderAvatarOutfits(section, stage);
   else if (S.avatarTab === 'abilities') renderAvatarAbilities(section);
   else if (S.avatarTab === 'room') renderAvatarRoom(section);
+  else if (S.avatarTab === 'pet') renderAvatarPet(section);
   else renderAvatarCustomize(section, stage);
-  // One call covers all three tabs: they append synchronously into `section`.
+  // One call covers all tabs: they append synchronously into `section`.
   band(section);
+
+  if (scene) {
+    // A bottom sheet: a grab handle, the coin count, the tabs, then the list.
+    // Tapping the handle slides it down to a peek so the room is unobstructed,
+    // and up again to work. Its open state is remembered across re-renders.
+    const tray = document.createElement('div');
+    tray.className = wasScene ? 'room-tray' : 'room-tray enter';
+    const open = S.roomTrayOpen !== false;
+    body.classList.toggle('tray-collapsed', !open);
+
+    const handle = document.createElement('button');
+    handle.className = 'tray-handle';
+    handle.setAttribute('aria-label', open ? 'Hide room controls' : 'Show room controls');
+    handle.addEventListener('click', () => {
+      S.roomTrayOpen = !(S.roomTrayOpen !== false);
+      body.classList.toggle('tray-collapsed', S.roomTrayOpen === false);
+    });
+
+    const coins = document.createElement('div');
+    coins.className = 'tray-coins';
+    coins.textContent = `Level ${level} · ${S.save.stats.points ?? 0}🪙 to spend`;
+
+    tray.append(handle, coins, tabs, section);
+    body.append(tray);
+  } else {
+    body.append(tabs, section);
+  }
 }
 
 function renderAvatarCustomize(section, stage) {
@@ -1877,6 +1913,19 @@ function renderAvatarRoom(section) {
   pickerRow('Room', ROOMS, (r) => r.id === house.room, (r) => { house.room = r.id; },
     '🏠', (r, { gated }) => (gated ? `unlocks at level ${r.unlockLevel}` : 'tap to move in'));
 
+  // Scene toggle: keep the character in the room, or hand the whole scene to
+  // the pet and the furniture. Same one-tap row shape as everything else here.
+  const showChar = row('clickable');
+  showChar.innerHTML = '<div class="grow"><div class="label">Character</div><div class="sub"></div></div>';
+  showChar.querySelector('.sub').textContent = house.hideAvatar
+    ? 'hidden — tap to show her' : 'in the room — tap to hide';
+  const showGlyph = document.createElement('span');
+  showGlyph.className = 'glyph';
+  showGlyph.textContent = house.hideAvatar ? '🚫' : '✓';
+  showChar.append(showGlyph);
+  showChar.addEventListener('click', () => { house.hideAvatar = !house.hideAvatar; redraw(); });
+  section.append(showChar);
+
   for (const slot of PROP_SLOTS) {
     pickerRow(SLOT_LABEL[slot], itemsFor(house.room, slot),
       (it) => house.props[house.room]?.[slot] === it.id,
@@ -1890,6 +1939,107 @@ function renderAvatarRoom(section) {
 
   pickerRow('Pet', PETS, (pet) => pet.id === house.pet, (pet) => { house.pet = pet.id; },
     '🐾', (pet, { has }) => (has ? 'tap to invite in' : `${pet.price}🪙`));
+}
+
+/**
+ * The pet's own tab: name it, read its mood, and tend its four needs.
+ *
+ * Deliberately gentle — see PET_NEEDS. Opening the tab first ages the meters by
+ * however long you have been away (applyPetDecay), so they reflect real time
+ * without any background timer running; then a care tap fills one back up. There
+ * is no failure state to reach, so nothing here scolds.
+ */
+function renderAvatarPet(section) {
+  const house = S.save.avatar.house;
+  house.petStats ??= defaultPetStats();
+  // Catch the meters up to now before we draw them, and save that so the next
+  // open decays from here rather than double-counting the same idle time.
+  applyPetDecay(house.petStats);
+  persist();
+
+  const pet = PETS.find((p) => p.id === house.pet);
+  const displayName = (house.petName || '').trim() || (pet ? pet.name : 'your pet');
+  const mood = petMood(house.petStats);
+
+  const redraw = () => {
+    persist();
+    renderAvatarPanel($('panelBody'));
+  };
+
+  // Header: a name field and a one-line mood read.
+  const head = row('pet-header');
+  const grow = document.createElement('div');
+  grow.className = 'grow';
+  const nameInput = document.createElement('input');
+  nameInput.className = 'pet-name';
+  nameInput.value = house.petName || '';
+  nameInput.placeholder = pet ? pet.name : 'Name your pet';
+  nameInput.maxLength = 20;
+  nameInput.setAttribute('aria-label', 'Pet name');
+  // Save on the way out or on Enter, not per keystroke, so a re-render never
+  // yanks the field out from under the cursor mid-word.
+  const moodText = (name) => (pet
+    ? `${name} the ${pet.name.toLowerCase()} is feeling ${mood.label}`
+    : 'invite a pet in from the Room tab');
+  const commitName = () => {
+    const next = nameInput.value.trim();
+    if (next === (house.petName || '')) return;
+    house.petName = next;
+    persist();
+    // Refresh the read-out in place rather than re-rendering — the field has
+    // just blurred, so there is no cursor to disturb.
+    moodLine.textContent = moodText(next || (pet ? pet.name : 'your pet'));
+  };
+  nameInput.addEventListener('change', commitName);
+  nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') nameInput.blur(); });
+  const moodLine = document.createElement('div');
+  moodLine.className = 'sub';
+  moodLine.textContent = moodText(displayName);
+  grow.append(nameInput, moodLine);
+  head.append(grow);
+  section.append(head);
+
+  if (!pet) { band(section); return; }
+
+  // One meter + care button per need.
+  for (const need of PET_NEEDS) {
+    const value = Math.round(house.petStats[need.key] ?? 0);
+    const el = row('pet-meter');
+
+    const info = document.createElement('div');
+    info.className = 'grow';
+    const label = document.createElement('div');
+    label.className = 'label';
+    label.textContent = `${need.icon} ${need.label}`;
+    const track = document.createElement('div');
+    track.className = 'meter';
+    const fillBar = document.createElement('i');
+    fillBar.style.width = `${value}%`;
+    // Warm when topped up, cooling toward attention-needed. Purely a hint —
+    // even an empty meter is only a nudge, never a penalty.
+    fillBar.classList.toggle('low', value < 35);
+    track.append(fillBar);
+    info.append(label, track);
+
+    const btn = document.createElement('button');
+    btn.className = 'primary pet-care';
+    btn.textContent = need.action;
+    btn.addEventListener('click', () => {
+      carePet(house.petStats, need.key);
+      sfx.play('pick');
+      redraw();
+    });
+
+    el.append(info, btn);
+    section.append(el);
+  }
+
+  const note = row('pet-note');
+  note.innerHTML = '<div class="sub grow">Needs drift down while you’re away and perk '
+    + 'right back up when you visit. Nothing bad ever happens — it’s just nice to be missed.</div>';
+  section.append(note);
+
+  band(section);
 }
 
 /**
@@ -2454,6 +2604,12 @@ async function boot() {
   S.save.avatar.house.lighting ??= freshHouse.lighting;
   S.save.avatar.house.unlocked ??= freshHouse.unlocked;
   if (!('pet' in S.save.avatar.house)) S.save.avatar.house.pet = freshHouse.pet;
+  // Scene toggle and pet care, both added after the house shipped, so a save
+  // from before them has neither. hideAvatar defaults off (she stays in the
+  // room); petStats starts fresh and contented; petName is blank until named.
+  S.save.avatar.house.hideAvatar ??= false;
+  S.save.avatar.house.petName ??= '';
+  S.save.avatar.house.petStats ??= defaultPetStats();
   S.save.avatar.house.props ??= {};
   // Same reason as `pet` above: a save written before parts were recolourable
   // has no map at all, and an absent one has to mean "everything at default"
