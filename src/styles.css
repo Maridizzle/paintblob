@@ -402,6 +402,77 @@ button {
 .avatar-stage svg [data-prop] { cursor: pointer; }
 .avatar-stage svg [data-prop]:hover { filter: brightness(1.09); }
 
+/* -------- scene mode: the room fills the panel, controls ride a bottom tray -------- */
+.panel-body.scene {
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  position: relative;
+}
+.panel-body.scene .avatar-head {
+  flex: 1 1 auto;
+  min-height: 0;
+  justify-content: flex-start;
+  padding: 16px 12px 0;
+  margin: 0;
+  border-bottom: none;
+}
+/* Much bigger than the 208px it gets in the list tabs — the room is the point
+   here, so let it take most of the width up to a sensible cap. */
+.panel-body.scene .avatar-stage { width: min(96%, 540px); }
+
+.room-tray {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 70%;
+  padding: 0 12px 12px;
+  background: var(--card-solid);
+  border-top: 1px solid var(--edge);
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -14px 34px rgba(0, 0, 0, 0.45);
+  transition: transform 260ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+/* Only when first entering the room/pet tab, not on every in-tab re-render —
+   and with no fill mode, so a finished slide-in never pins the transform and
+   blocks the collapse below it. */
+.room-tray.enter { animation: trayUp 300ms cubic-bezier(0.22, 0.61, 0.36, 1); }
+@keyframes trayUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+/* Collapsed: slid down to a peek that still shows the handle, coins and tabs. */
+.panel-body.tray-collapsed .room-tray { transform: translateY(calc(100% - 112px)); }
+
+.tray-handle {
+  flex: 0 0 auto;
+  width: 46px; height: 5px;
+  margin: 4px auto 3px;
+  /* A slim visible bar with a fat invisible tap target around it. */
+  padding: 11px 22px;
+  border: none;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.3);
+  background-clip: content-box;
+  cursor: pointer;
+}
+.tray-handle:hover { background: rgba(255, 255, 255, 0.48); background-clip: content-box; }
+.tray-coins {
+  flex: 0 0 auto;
+  text-align: center;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 9px;
+}
+.room-tray .avatar-tabs { flex: 0 0 auto; margin: 0 0 9px; }
+/* The list scrolls inside the tray, so the stage above it never does. */
+.room-tray .avatar-section {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.room-tray .avatar-section::-webkit-scrollbar { width: 8px; }
+.room-tray .avatar-section::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 4px; }
+
 /* The current colour of one room part, shown on its row. Square rather than
    round so it does not read as one of the palette swatches underneath. */
 .part-chip {
@@ -701,6 +772,45 @@ button {
   overflow: hidden;
 }
 .bar > i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+
+/* -------- pet tab: name field, wellbeing meters, care buttons -------- */
+.pet-header { align-items: center; }
+.pet-name {
+  width: 100%;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+.pet-name::placeholder { color: var(--muted); font-weight: 600; }
+.pet-name:focus { outline: none; border-color: var(--accent); background: rgba(255, 255, 255, 0.09); }
+
+.pet-meter { gap: 11px; }
+/* A chunkier bar than the level bar's hairline — this is the thing you act on. */
+.meter {
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.09);
+  overflow: hidden;
+}
+.meter > i {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+  /* Warm and full by default; a low meter cools to a quiet blue so it reads as
+     "could use a visit" without ever looking like an alarm. */
+  background: linear-gradient(90deg, #ffc46e, #ff9d5c);
+  transition: width 260ms ease;
+}
+.meter > i.low { background: linear-gradient(90deg, #7fb0d6, #6f97c4); }
+.pet-care { flex: 0 0 auto; padding: 8px 14px; font-size: 12.5px; }
+.pet-note { background: none; padding-top: 4px; }
+.pet-note .sub { margin-top: 0; line-height: 1.45; }
 
 .field { display: flex; align-items: center; gap: 11px; }
 .field input[type="range"] { flex: 1; accent-color: var(--accent); }

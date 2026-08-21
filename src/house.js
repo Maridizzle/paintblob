@@ -14,9 +14,19 @@ import { AVATAR_FRAME, avatarInner, shade, light, seam } from './avatar.js';
 
 // Wide enough for furniture either side of her without shrinking her much.
 const W = 260;
-const H = 216;
+const H = 232;         // a little taller than the old 216 — extra floor in front
 const FLOOR_Y = 150;   // where the back wall meets the floor
 const STAND_Y = 200;   // the line every figure, prop and pet has its base on
+
+// The room is now a shallow open-topped box seen head-on, Paper-Mario style: a
+// back wall inset from the frame, two side walls raking forward to the corners,
+// a sliver of ceiling and a floor that widens toward the viewer. SIDE is how
+// far in the back wall sits (and so how much side wall shows); CEIL_Y is how
+// far the back wall's top sits below the frame. Every prop keeps its old
+// x-slot — they all fall comfortably inside the back wall / floor footprint —
+// so the walls are new scenery around unchanged furniture, not a reflow.
+const SIDE = 30;
+const CEIL_Y = 12;
 
 // Where everything lives, left to right. Keeping these apart is what stops the
 // scene from stacking on itself: at full height she covered whatever was hung
@@ -30,7 +40,7 @@ const ACC_X = 208;    // centre of the accent footprint, front right
 // She is drawn at four-fifths height. At 1:1 she filled the frame from floor to
 // ceiling and the room read as a doll's house built around her; this leaves
 // enough wall above her head for the room to be the subject too.
-const AVATAR_SCALE = 0.8;
+const AVATAR_SCALE = 0.74;
 
 // Derived from the avatar's own frame rather than hard-coded, so if the figure
 // ever grows she stays standing on the floor instead of sinking through it.
@@ -55,6 +65,12 @@ const circle = (cx, cy, r, colour) =>
   `<circle cx="${n(cx)}" cy="${n(cy)}" r="${n(r)}" fill="${colour}"/>`;
 const ellipse = (cx, cy, rx, ry, colour) =>
   `<ellipse cx="${n(cx)}" cy="${n(cy)}" rx="${n(rx)}" ry="${n(ry)}" fill="${colour}"/>`;
+// Rooms are drawn out of angled planes now, so a straight-sided polygon is the
+// workhorse the box is built from. Points come in as [x, y] pairs.
+const poly = (pts, colour) =>
+  `<polygon points="${pts.map(([x, y]) => `${n(x)},${n(y)}`).join(' ')}" fill="${colour}"/>`;
+const polyShade = (pts, a = 0.12) => poly(pts, `rgba(0,0,0,${a})`);
+const polyLight = (pts, a = 0.12) => poly(pts, `rgba(255,255,255,${a})`);
 
 /** The soft dark ellipse under anything resting on the floor. Without it
  *  props look pasted on rather than standing in the room. */
@@ -128,32 +144,79 @@ export function resolveColours(ownerId, parts, overrides) {
 
 /* --------------------------------------------------------------- the shell */
 
-/** Back wall, skirting board and floor. Everything else stands on top. */
+// The corners of the open-topped box, named once so the walls, skirting and
+// floor all agree on where they meet.
+const BX0 = SIDE;          // back wall, left edge
+const BX1 = W - SIDE;      // back wall, right edge
+// How far into the floor a point at depth y sits, 0 at the back wall to 1 at
+// the very front — used to slide the side-wall skirting down its rake.
+const floorEdgeX = (y, side) => {
+  const t = (y - FLOOR_Y) / (H - FLOOR_Y);
+  return side === 'left' ? BX0 * (1 - t) : W - SIDE * (1 - t);
+};
+
+/** The room as a shallow box: ceiling sliver, back wall, two raking side walls,
+ *  skirting round the base and a floor that widens toward the viewer. Everything
+ *  else stands on top. */
 function roomShell(room, c) {
   const out = [
-    box(0, 0, W, FLOOR_Y, c.wall),
-    // The wall is lighter towards the top, which reads as light falling from
-    // above and stops a big flat rectangle looking like a colour swatch.
-    `<rect x="0" y="0" width="${W}" height="${FLOOR_Y}" fill="url(#wallFade)"/>`,
-    box(0, FLOOR_Y, W, H - FLOOR_Y, c.floor),
-    box(0, FLOOR_Y - 6, W, 6, c.skirting),
-    boxShade(0, FLOOR_Y, W, 4, 0.16),
+    // --- ceiling: a thin band, kept in shadow so the eye reads it as overhead.
+    poly([[0, 0], [W, 0], [BX1, CEIL_Y], [BX0, CEIL_Y]], c.wall),
+    polyShade([[0, 0], [W, 0], [BX1, CEIL_Y], [BX0, CEIL_Y]], 0.2),
+
+    // --- left side wall: catches the light coming from the upper left.
+    poly([[0, 0], [BX0, CEIL_Y], [BX0, FLOOR_Y], [0, H]], c.wall),
+    poly([[0, 0], [BX0, CEIL_Y], [BX0, FLOOR_Y], [0, H]], 'url(#sideFade)'),
+    polyLight([[0, 0], [BX0, CEIL_Y], [BX0, FLOOR_Y], [0, H]], 0.05),
+
+    // --- right side wall: turned away from the light, so a touch darker.
+    poly([[W, 0], [BX1, CEIL_Y], [BX1, FLOOR_Y], [W, H]], c.wall),
+    poly([[W, 0], [BX1, CEIL_Y], [BX1, FLOOR_Y], [W, H]], 'url(#sideFade)'),
+    polyShade([[W, 0], [BX1, CEIL_Y], [BX1, FLOOR_Y], [W, H]], 0.08),
+
+    // --- back wall, with the same top-light fade the room has always had.
+    box(BX0, CEIL_Y, BX1 - BX0, FLOOR_Y - CEIL_Y, c.wall),
+    `<rect x="${BX0}" y="${CEIL_Y}" width="${BX1 - BX0}" height="${FLOOR_Y - CEIL_Y}" fill="url(#wallFade)"/>`,
+
+    // --- floor, its boards fanning to the viewer, darkened into the back crease.
+    poly([[BX0, FLOOR_Y], [BX1, FLOOR_Y], [W, H], [0, H]], c.floor),
   ];
 
+  // Floor markings, clipped to the floor so they can be drawn as simple lines.
+  const marks = [];
   if (room.tiled) {
-    // Kitchen floor: a grid, converging slightly so it reads as receding.
+    // Kitchen: a grid receding to the back wall.
     for (let i = 0; i <= 8; i++) {
-      const x = (i / 8) * W;
-      out.push(seam(`M${n(W / 2 + (x - W / 2) * 0.55)},${FLOOR_Y} L${n(x)},${H}`, 1, 0.1));
+      const backX = BX0 + ((BX1 - BX0) * i) / 8;
+      const frontX = (W * i) / 8;
+      marks.push(seam(`M${n(backX)},${FLOOR_Y} L${n(frontX)},${H}`, 1, 0.1));
     }
-    for (const y of [158, 170, 186, H - 4]) out.push(seam(`M0,${y} L${W},${y}`, 1, 0.09));
+    for (const y of [162, 178, 198, 222]) {
+      marks.push(seam(`M${n(floorEdgeX(y, 'left'))},${y} L${n(floorEdgeX(y, 'right'))},${y}`, 1, 0.09));
+    }
   } else {
-    // Floorboards running away from the viewer.
+    // Floorboards running away from the viewer, fanning out as they near us.
     for (let i = 0; i <= 7; i++) {
-      const x = (i / 7) * W;
-      out.push(seam(`M${n(W / 2 + (x - W / 2) * 0.5)},${FLOOR_Y} L${n(x)},${H}`, 1.1, 0.13));
+      const backX = BX0 + ((BX1 - BX0) * i) / 7;
+      const frontX = (W * i) / 7;
+      marks.push(seam(`M${n(backX)},${FLOOR_Y} L${n(frontX)},${H}`, 1.1, 0.13));
     }
   }
+  out.push(`<g clip-path="url(#floorClip)">${marks.join('')}` +
+    `<polygon points="${BX0},${FLOOR_Y} ${BX1},${FLOOR_Y} ${W},${H} 0,${H}" fill="url(#floorDepth)"/></g>`);
+
+  // Skirting board round all three walls, tying them to the floor.
+  out.push(
+    box(BX0, FLOOR_Y - 6, BX1 - BX0, 6, c.skirting),
+    poly([[0, H - 6], [BX0, FLOOR_Y - 6], [BX0, FLOOR_Y], [0, H]], c.skirting),
+    poly([[W, H - 6], [BX1, FLOOR_Y - 6], [BX1, FLOOR_Y], [W, H]], c.skirting),
+    // A soft occlusion line in the crease where each wall meets the floor.
+    boxShade(BX0, FLOOR_Y, BX1 - BX0, 4, 0.16),
+    // Corner seams where the side walls fold away from the back wall.
+    seam(`M${BX0},${CEIL_Y} L${BX0},${FLOOR_Y}`, 1.1, 0.12),
+    seam(`M${BX1},${CEIL_Y} L${BX1},${FLOOR_Y}`, 1.1, 0.12),
+  );
+
   return out.join('');
 }
 
@@ -223,6 +286,97 @@ export const PETS = [
     ],
   },
 ];
+
+/* ------------------------------------------------------------- pet wellbeing */
+
+// The pet has four needs you keep topped up. Deliberately NOT health — nothing
+// here punishes you. A need only ever droops toward zero and a bit of care
+// fills it back up; a neglected pet just looks a little wistful and perks up
+// the moment you tend to it. Every meter reads the same way: full is happy.
+//
+// `label` is the friendly bar name (full = good), `key` is stored under
+// house.petStats, `action`/`did` label the care button and its toast, `perDay`
+// is how many points the meter sheds over a full day away, and `care` is how
+// much one tap gives back. `bonusLove` lets tending any need warm the pet to
+// you a little, so attention itself is affection.
+export const PET_NEEDS = [
+  { key: 'hunger', label: 'Fed', icon: '🍖', action: 'Feed', did: 'Fed', perDay: 42, care: 36, mood: 'hungry' },
+  { key: 'cleanliness', label: 'Clean', icon: '🧼', action: 'Groom', did: 'Groomed', perDay: 24, care: 40, mood: 'grubby' },
+  { key: 'boredom', label: 'Fun', icon: '🧶', action: 'Play', did: 'Played with', perDay: 34, care: 34, mood: 'bored' },
+  { key: 'love', label: 'Loved', icon: '❤️', action: 'Cuddle', did: 'Cuddled', perDay: 28, care: 32, mood: 'lonely' },
+];
+
+const PET_NEED_BY_KEY = new Map(PET_NEEDS.map((need) => [need.key, need]));
+const clamp01to100 = (v) => Math.max(0, Math.min(100, v));
+const DAY_MS = 86400000;
+
+/** A fresh, contented-but-not-perfect pet, so there is always a little to do. */
+export function defaultPetStats(now = Date.now()) {
+  return { hunger: 72, cleanliness: 78, boredom: 64, love: 58, lastTick: now };
+}
+
+/** Age a pet's needs by the real time elapsed since they were last touched.
+ *  Pure and idempotent-ish: it advances lastTick, so calling it twice in a row
+ *  decays almost nothing the second time. Mutates and returns the same object. */
+export function applyPetDecay(petStats, now = Date.now()) {
+  if (!petStats) return petStats;
+  const last = petStats.lastTick ?? now;
+  const days = (now - last) / DAY_MS;
+  if (days > 0) {
+    for (const need of PET_NEEDS) {
+      petStats[need.key] = clamp01to100((petStats[need.key] ?? 60) - need.perDay * days);
+    }
+  }
+  petStats.lastTick = now;
+  return petStats;
+}
+
+/** Give one need a care top-up, and let the attention warm the pet to you.
+ *  Returns the new value of the tended need so the caller can react. */
+export function carePet(petStats, key, now = Date.now()) {
+  const need = PET_NEED_BY_KEY.get(key);
+  if (!need || !petStats) return null;
+  petStats[key] = clamp01to100((petStats[key] ?? 0) + need.care);
+  // Tending anything but love still earns a little love — being paid attention
+  // to is its own affection. The love action itself is already the big hit.
+  if (key !== 'love') petStats.love = clamp01to100((petStats.love ?? 0) + 8);
+  petStats.lastTick = now;
+  return petStats[key];
+}
+
+/** A one-word read on how the pet is doing, from the average of its needs, plus
+ *  the neediest need so the UI can nudge you toward it. Never grim. */
+export function petMood(petStats) {
+  const vals = PET_NEEDS.map((need) => petStats?.[need.key] ?? 60);
+  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const min = Math.min(...vals);
+  const neediest = PET_NEEDS[vals.indexOf(min)];
+  let label = 'content';
+  if (avg < 40) label = 'wistful';
+  else if (avg < 65) label = 'okay';
+  else if (avg >= 85) label = 'blissful';
+  return { avg, min, neediest, label };
+}
+
+/** A little thought bubble over the pet: the neediest need's icon when it wants
+ *  something, a heart when it is thoroughly loved, nothing when it is just fine.
+ *  Keeps the wellbeing legible in the scene itself, not only in the menu. */
+function petEmote(petStats) {
+  if (!petStats) return '';
+  const mood = petMood(petStats);
+  let emoji = '';
+  if (mood.min < 35) emoji = mood.neediest.icon;
+  else if ((petStats.love ?? 0) >= 88 && mood.avg >= 80) emoji = '❤️';
+  if (!emoji) return '';
+  const cx = PET_X + 20;
+  const cy = STAND_Y - 48;
+  return '<g pointer-events="none">' +
+    ellipse(cx, cy, 12, 11, 'rgba(255,255,255,0.94)') +
+    circle(cx - 9, cy + 10, 2.4, 'rgba(255,255,255,0.9)') +
+    circle(cx - 13, cy + 15, 1.5, 'rgba(255,255,255,0.82)') +
+    `<text x="${n(cx)}" y="${n(cy + 5)}" font-size="14" text-anchor="middle">${emoji}</text>` +
+    '</g>';
+}
 
 // All four sit at PET_X on the floor line, at roughly the same visual weight,
 // so swapping one for another doesn't change the balance of the scene.
@@ -1332,6 +1486,14 @@ export function defaultHouse() {
     room: ROOMS[0].id,
     lighting: 'daylight',
     pet: 'cat',
+    // Whether the figure is drawn in the scene at all — some players want the
+    // room and pet to be the whole picture.
+    hideAvatar: false,
+    // A name the player gives whichever pet is currently keeping them company.
+    petName: '',
+    // The four wellbeing meters (see PET_NEEDS). Kept here with the rest of the
+    // scene state so it saves and migrates on the same path as everything else.
+    petStats: defaultPetStats(),
     props,
     // Sparse on purpose: only parts actually changed are stored, so a player
     // who never touched the bed keeps following its default and a later change
@@ -1379,6 +1541,20 @@ const DEFS =
   '<stop offset="0" stop-color="rgba(255,196,110,0.42)"/>' +
   '<stop offset="1" stop-color="rgba(255,196,110,0)"/>' +
   '</radialGradient>' +
+  // Floor darkens toward the back wall (ambient occlusion in the crease) and
+  // toward the two side walls, so the plane reads as receding rather than flat.
+  `<linearGradient id="floorDepth" x1="0" y1="${FLOOR_Y}" x2="0" y2="${H}" gradientUnits="userSpaceOnUse">` +
+  '<stop offset="0" stop-color="rgba(0,0,0,0.22)"/>' +
+  '<stop offset="0.35" stop-color="rgba(0,0,0,0.04)"/>' +
+  '<stop offset="1" stop-color="rgba(255,255,255,0.05)"/>' +
+  '</linearGradient>' +
+  // A soft top-down sheen for the side walls, brighter where they meet the
+  // ceiling and falling into shadow at the floor.
+  `<linearGradient id="sideFade" x1="0" y1="${CEIL_Y}" x2="0" y2="${FLOOR_Y}" gradientUnits="userSpaceOnUse">` +
+  '<stop offset="0" stop-color="rgba(255,255,255,0.10)"/>' +
+  '<stop offset="1" stop-color="rgba(0,0,0,0.16)"/>' +
+  '</linearGradient>' +
+  `<clipPath id="floorClip"><polygon points="${SIDE},${FLOOR_Y} ${W - SIDE},${FLOOR_Y} ${W},${H} 0,${H}"/></clipPath>` +
   '</defs>';
 
 /**
@@ -1417,11 +1593,15 @@ export function buildRoomSVG(house, customize) {
       roomShell(room, resolveColours(roomColourId(room.id), room.parts, overrides)) + '</g>',
     prop('wall'),
     prop('furniture'),
-    `<g transform="${AVATAR_TRANSFORM}">${avatarInner(customize)}</g>`,
+    // The avatar can step out of the scene entirely — some players want the
+    // room and pet as the subject, not the figure. Mirrors the pet's own
+    // always-optional treatment just below.
+    h.hideAvatar ? '' : `<g transform="${AVATAR_TRANSFORM}">${avatarInner(customize)}</g>`,
     pet
       ? `<g data-prop="${petColourId(pet.id)}">` +
         petMarkup(pet.id, resolveColours(petColourId(pet.id), pet.parts, overrides)) + '</g>'
       : '',
+    pet ? petEmote(h.petStats) : '',
     prop('accent'),
     // Last, and over everything — so it must not swallow the taps meant for
     // what is underneath it.
