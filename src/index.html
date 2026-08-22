@@ -6,7 +6,7 @@
        insets in the stylesheet keep content clear of it. -->
   <meta name="viewport"
         content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-  <meta name="theme-color" content="#17151f" />
+  <meta name="theme-color" content="#121216" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- connect-src covers fetching bundled puzzles when served over http;
@@ -24,6 +24,9 @@
       <span class="title">paintblob</span>
       <span class="subtitle" id="barSubtitle"></span>
       <span class="spacer"></span>
+      <!-- A stamped catalogue mark filling the wide title bar on desktop; hidden
+           on web/touch where the bar is tight and there is no dead space. -->
+      <span class="bar-seal desktop-only" aria-hidden="true">№&nbsp;07</span>
       <button class="icon" data-act="pictures" title="Pictures — add your own">▦</button>
       <button class="icon hint-btn empty" data-act="hint" title="Use a hint — flashes an unfinished cell">✦<span class="badge">0</span></button>
       <button class="icon" data-act="trophies" title="Achievements">★</button>

@@ -3,14 +3,46 @@
    outside its radius is genuinely see-through desktop. */
 
 :root {
-  --card: rgba(23, 21, 31, 0.94);
-  --card-solid: #17151f;
-  --edge: rgba(255, 255, 255, 0.10);
-  --text: #ece9f3;
-  --muted: #948da8;
-  --accent: #ffb35c;
-  --danger: #ff6b6b;
-  --radius: 16px;
+  /* Ink-black vinyl base + paper-grey secondary surface — a monochrome duotone,
+     de-purpled from the old warm-dark scheme. */
+  --ink: #0b0b0d;
+  --vinyl: #121216;
+  --card: rgba(15, 15, 19, 0.94);
+  --card-solid: #131317;
+  --paper: #cdc9bd;
+  --paper-ink: #14140f;
+  --edge: rgba(255, 255, 255, 0.09);
+  --edge-strong: rgba(255, 255, 255, 0.16);
+  --text: #edecf0;
+  --muted: #8f8d99;
+
+  /* Two primary accents fracture the monochrome; orange is the rare violent hit.
+     Interactive state is cyan; the green is the second voice (XP, meters, done);
+     --hot appears only as the brightest sparks (see the "rare orange" rules). */
+  --accent: #35e9ff;        /* electric cyan — primary interactive */
+  --accent2: #4dff91;       /* neon green   — secondary */
+  --hot: #ff6a1f;           /* neon orange  — rare, violent */
+  --danger: #ff5d5d;
+  --on-accent: #041318;     /* dark ink stamped onto a bright accent slab */
+
+  --glow-cyan: 0 0 14px rgba(53, 233, 255, 0.5);
+  --glow-green: 0 0 14px rgba(77, 255, 145, 0.45);
+  --glow-hot: 0 0 12px rgba(255, 106, 31, 0.6);
+  /* A knife-edge: a hair of light on the top lip, a hard shadow beneath. */
+  --cut: 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 24px rgba(0, 0, 0, 0.5);
+  --radius: 13px;
+
+  /* --- texture primitives: all data-URI SVG so nothing leaves the bundle --- */
+  /* Matte vinyl grain: desaturated fractal noise, baked faint, layered over a
+     solid surface as a background image (no pseudo, no z-index games). */
+  --tx-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+  /* Stitched thread line for seams: light dashes with a small cyan knot,
+     tiled along a 2px-tall strip so it costs no flow height. */
+  --tx-stitch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='3'%3E%3Crect x='0' y='1' width='8' height='1' fill='%23ffffff' opacity='0.20'/%3E%3Ccircle cx='11.5' cy='1.5' r='0.9' fill='%2335e9ff' opacity='0.55'/%3E%3C/svg%3E");
+  /* Rubber-stamp insignia — concentric rings, dashed inner ring, radial ticks,
+     a center dot. One cyan (faint ghost) and one orange (the rare mat seal). */
+  --stamp-cyan: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='70' height='70' viewBox='0 0 70 70' fill='none' stroke='%2335e9ff' stroke-width='1.3'%3E%3Ccircle cx='35' cy='35' r='30'/%3E%3Ccircle cx='35' cy='35' r='22' stroke-dasharray='2 3.5'/%3E%3Ccircle cx='35' cy='35' r='2.4' fill='%2335e9ff' stroke='none'/%3E%3Cpath d='M35 5v6M35 59v6M5 35h6M59 35h6'/%3E%3C/svg%3E");
+  --stamp-hot: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='70' height='70' viewBox='0 0 70 70' fill='none' stroke='%23ff6a1f' stroke-width='1.5'%3E%3Ccircle cx='35' cy='35' r='30'/%3E%3Ccircle cx='35' cy='35' r='21' stroke-dasharray='1.5 4'/%3E%3Cpath d='M35 18l3.6 11.1h11.6l-9.4 6.8 3.6 11.1-9.4-6.8-9.4 6.8 3.6-11.1-9.4-6.8h11.6z' stroke-width='1.2'/%3E%3C/svg%3E");
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -36,10 +68,12 @@ html, body {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--card);
+  /* Grain over vinyl: the matte-vinyl base of the whole card. */
+  background: var(--tx-grain), var(--card);
   border: 1px solid var(--edge);
   border-radius: var(--radius);
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5),
+              inset 0 1px 0 rgba(255, 255, 255, 0.04);
   overflow: hidden;
   backdrop-filter: blur(18px);
 }
@@ -50,34 +84,75 @@ html, body {
 .opaque-window #app {
   border-radius: 0;
   border: none;
-  background: var(--card-solid);
+  background: var(--tx-grain), var(--vinyl);
   backdrop-filter: none;
 }
 
 /* ------------------------------------------------------------------- title */
 
 #bar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 8px 8px 8px 13px;
   flex: 0 0 auto;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  /* A single narrow vinyl-gloss band raked across the bar. */
+  background: linear-gradient(105deg,
+              transparent 0 34%,
+              rgba(255, 255, 255, 0.045) 40%,
+              rgba(255, 255, 255, 0.01) 44%,
+              transparent 50%);
   -webkit-app-region: drag;
+}
+/* The bottom seam is a stitched thread line, not a plain rule — 2px pseudo, so
+   it never adds to the bar's height. */
+#bar::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 3px;
+  background: var(--tx-stitch) repeat-x left center;
+  pointer-events: none;
 }
 
 #bar .dot {
   width: 9px; height: 9px;
   border-radius: 50%;
-  background: var(--accent);
+  /* The one live rivet flaring like a spark — the app's rare orange. */
+  background: var(--hot);
   box-shadow: 0 0 10px currentColor;
-  color: var(--accent);
+  color: var(--hot);
   transition: background 240ms, color 240ms;
 }
 
-#bar .title { font-size: 12.5px; font-weight: 650; letter-spacing: 0.2px; }
+#bar .title {
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  /* Embossed wordmark: a hair of light above, ink below. */
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), 0 -1px 0 rgba(0, 0, 0, 0.4);
+}
 #bar .subtitle { font-size: 11.5px; color: var(--muted); }
 #bar .spacer { flex: 1; }
+
+/* Rubber-stamped catalogue number pressed into the bar's dead space — a faint
+   insignia + serial, the "label-tag" note, only where the desktop bar is wide. */
+#bar .bar-seal {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 4px;
+  padding-left: 22px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  color: var(--muted);
+  opacity: 0.5;
+  background: var(--stamp-cyan) no-repeat left center / 16px 16px;
+}
 
 button {
   font: inherit;
@@ -93,14 +168,25 @@ button {
   width: 25px; height: 25px;
   display: grid;
   place-items: center;
-  border-radius: 7px;
+  border-radius: 6px;
   font-size: 12px;
   color: var(--muted);
-  transition: background 120ms, color 120ms;
+  border: 1px solid transparent;
+  transition: background 120ms, color 120ms, border-color 120ms, box-shadow 120ms;
 }
-.icon:hover { background: rgba(255, 255, 255, 0.09); color: var(--text); }
-.icon.danger:hover { background: rgba(255, 107, 107, 0.2); color: var(--danger); }
-.icon.on { color: var(--accent); }
+.icon:hover {
+  background: rgba(53, 233, 255, 0.1);
+  color: var(--text);
+  border-color: rgba(53, 233, 255, 0.28);
+  box-shadow: var(--glow-cyan);
+}
+.icon.danger:hover {
+  background: rgba(255, 93, 93, 0.16);
+  color: var(--danger);
+  border-color: rgba(255, 93, 93, 0.32);
+  box-shadow: 0 0 12px rgba(255, 93, 93, 0.4);
+}
+.icon.on { color: var(--accent); text-shadow: var(--glow-cyan); }
 
 .icon .badge {
   position: absolute;
@@ -109,12 +195,13 @@ button {
   padding: 0 3px;
   border-radius: 7px;
   background: var(--accent);
-  color: #221803;
+  color: var(--on-accent);
   font-size: 8.5px;
   font-weight: 700;
   display: grid;
   place-items: center;
   line-height: 1;
+  box-shadow: var(--glow-cyan);
 }
 .icon.hint-btn.empty { opacity: 0.55; }
 .icon.hint-btn.empty .badge {
@@ -138,6 +225,12 @@ button {
   display: block;
   border-radius: 9px;
   cursor: crosshair;
+  /* A mounted plate: a knife-edge hairline of light on the rim and a hard drop
+     beneath, so the picture reads as pressed into the vinyl rather than laid on
+     it. box-shadow only — it never intercepts a paint stroke. */
+  box-shadow: 0 0 0 1px var(--edge),
+              inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+              0 8px 22px rgba(0, 0, 0, 0.45);
   /* The canvas owns its gestures completely — no scroll, no pinch-zoom (the
      app implements its own, in game.js, so it can share it with painting). */
   touch-action: none;
@@ -152,16 +245,17 @@ button {
   -webkit-app-region: no-drag;
   padding: 5px 11px;
   border-radius: 20px;
-  background: rgba(28, 25, 38, 0.9);
+  background: rgba(16, 16, 20, 0.9);
   border: 1px solid var(--edge);
   font-size: 11px;
   font-weight: 650;
   color: var(--text);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-  transition: background 120ms, transform 120ms;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  transition: background 120ms, transform 120ms, border-color 120ms;
 }
 .zoom-pill:hover, .compare-pill:hover, .undo-pill:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(53, 233, 255, 0.14);
+  border-color: rgba(53, 233, 255, 0.34);
   transform: translateY(-1px);
 }
 .zoom-pill { top: 10px; right: 10px; }
@@ -174,7 +268,7 @@ button {
    the compare pill starts, so the two are never on screen together. Kept as
    see-through as the points HUD, for the same reason — unlike the zoom and
    compare pills, this one is up while you are painting rather than after. */
-.undo-pill { top: 10px; left: 10px; background: rgba(28, 25, 38, 0.68); }
+.undo-pill { top: 10px; left: 10px; background: rgba(16, 16, 20, 0.68); }
 
 /* Top-center is the one corner of #stage nothing else claims. Deliberately
    more transparent than the zoom/compare pills (0.68 vs their 0.9) — this
@@ -190,7 +284,7 @@ button {
   gap: 5px;
   padding: 5px 12px;
   border-radius: 20px;
-  background: rgba(28, 25, 38, 0.68);
+  background: rgba(16, 16, 20, 0.68);
   border: 1px solid var(--edge);
   font-size: 12.5px;
   font-weight: 700;
@@ -262,7 +356,7 @@ button {
   /* --xp is a bare number, never a percentage: `calc(37.5 * 1%)` is valid where
      `calc(37.5% * 1%)` is not, and an invalid value here drops the whole
      background and takes the ring with it. */
-  background: conic-gradient(var(--accent) calc(var(--xp, 0) * 1%),
+  background: conic-gradient(var(--accent2) calc(var(--xp, 0) * 1%),
                              rgba(255, 255, 255, 0.14) 0);
   transition: --xp 240ms ease;
 }
@@ -276,9 +370,9 @@ button {
   height: 52px;
   border-radius: 50%;
   overflow: hidden;
-  background: rgba(28, 25, 38, 0.9);
-  border: 1px solid var(--edge);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  background: rgba(16, 16, 20, 0.9);
+  border: 1px solid var(--edge-strong);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4), var(--glow-green);
   transition: transform 120ms;
 }
 .avatar-pill:hover { transform: translateY(-1px); }
@@ -304,8 +398,8 @@ button {
   height: 15px;
   padding: 0 3px;
   border-radius: 8px;
-  background: var(--accent);
-  color: #221803;
+  background: var(--accent2);
+  color: var(--on-accent);
   font-size: 9px;
   font-weight: 700;
   display: grid;
@@ -331,9 +425,9 @@ button {
   gap: 6px;
   padding: 8px;
   border-radius: 14px;
-  background: rgba(28, 25, 38, 0.94);
+  background: rgba(16, 16, 20, 0.94);
   border: 1px solid var(--edge);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
 }
 
 .ability-btn {
@@ -341,12 +435,12 @@ button {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: rgba(28, 25, 38, 0.9);
+  background: rgba(16, 16, 20, 0.9);
   border: 1px solid var(--edge);
   font-size: 13px;
   display: grid;
   place-items: center;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
   transition: transform 120ms, opacity 160ms;
 }
 .ability-btn:hover { transform: translateY(-1px); }
@@ -595,6 +689,16 @@ button {
   flex: 0 0 auto;
   padding: 0 12px 13px;
 }
+/* Stitched seam where the tray meets the stage — a 3px pseudo, no flow height,
+   so the board/tray split the mobile gate checks is untouched. */
+#tray::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  height: 3px;
+  background: var(--tx-stitch) repeat-x left center;
+  pointer-events: none;
+}
 
 .progress {
   height: 3px;
@@ -607,7 +711,9 @@ button {
   height: 100%;
   width: 0;
   border-radius: 2px;
-  background: linear-gradient(90deg, var(--accent), #ff8fb1);
+  /* Cyan igniting into green as it fills. */
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  box-shadow: 0 0 8px rgba(53, 233, 255, 0.4);
   transition: width 420ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -643,8 +749,9 @@ button {
 .tub:hover { transform: translateY(-3px); }
 .tub.selected {
   transform: translateY(-5px) scale(1.09);
-  border-color: #fff;
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.16), 0 7px 16px rgba(0, 0, 0, 0.45);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(53, 233, 255, 0.9), var(--glow-cyan),
+              0 7px 16px rgba(0, 0, 0, 0.5);
 }
 .tub.spent { opacity: 0.26; pointer-events: none; transform: none; }
 
@@ -680,7 +787,7 @@ button {
   inset: 12px;
   display: grid;
   place-items: center;
-  background: rgba(16, 14, 22, 0.72);
+  background: rgba(9, 9, 12, 0.74);
   border-radius: 9px;
   backdrop-filter: blur(3px);
   animation: fade 380ms ease both;
@@ -689,21 +796,37 @@ button {
 
 .finish-card { position: relative; text-align: center; padding: 20px; }
 .finish-close { position: absolute; top: -4px; right: -4px; }
-.finish-title { font-size: 11px; letter-spacing: 2.4px; text-transform: uppercase; color: var(--accent); }
+/* The "FINISHED" eyebrow — one of the sanctioned rare-orange sparks. */
+.finish-title {
+  font-size: 11px;
+  letter-spacing: 2.4px;
+  text-transform: uppercase;
+  color: var(--hot);
+  text-shadow: var(--glow-hot);
+}
 .finish-name { font-size: 21px; font-weight: 700; margin: 7px 0 5px; }
 .finish-stats { font-size: 12px; color: var(--muted); margin-bottom: 17px; }
 
 .primary {
   -webkit-app-region: no-drag;
   padding: 9px 19px;
-  border-radius: 9px;
-  background: var(--accent);
-  color: #221803;
+  border-radius: 8px;
+  /* A glossy vinyl slab: a sheen skimming the top lip over solid cyan, dark ink
+     pressed into it, a knife-edge shadow beneath. */
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0) 44%),
+              var(--accent);
+  color: var(--on-accent);
   font-size: 12.5px;
   font-weight: 700;
-  transition: transform 120ms, filter 120ms;
+  letter-spacing: 0.2px;
+  box-shadow: var(--cut), var(--glow-cyan);
+  transition: transform 120ms, filter 120ms, box-shadow 120ms;
 }
-.primary:hover { transform: translateY(-1px); filter: brightness(1.08); }
+.primary:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+  box-shadow: var(--cut), 0 0 18px rgba(53, 233, 255, 0.6);
+}
 /* A store row you can't afford yet: the button shows the price greyed out and
    doesn't react, so "dimmed" reads as "not enough coins" rather than the whole
    row looking unavailable. */
@@ -732,16 +855,16 @@ button {
   gap: 10px;
   padding: 8px 13px 8px 9px;
   border-radius: 11px;
-  background: rgba(28, 25, 38, 0.96);
-  border: 1px solid rgba(255, 179, 92, 0.4);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4);
+  background: rgba(16, 16, 20, 0.97);
+  border: 1px solid rgba(53, 233, 255, 0.32);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
   animation: toast-in 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 .toast.out { animation: toast-out 300ms ease both; }
 /* #toasts is click-through so status toasts never block the board — an
    achievement waits for a click to go away, so it alone opts back in. */
 .toast.sticky { pointer-events: auto; cursor: pointer; }
-.toast.sticky:hover { border-color: rgba(255, 179, 92, 0.75); }
+.toast.sticky:hover { border-color: rgba(53, 233, 255, 0.7); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45), var(--glow-cyan); }
 @keyframes toast-in { from { opacity: 0; transform: translateX(-24px) scale(0.94); } }
 @keyframes toast-out { to { opacity: 0; transform: translateY(9px); } }
 
@@ -756,30 +879,60 @@ button {
   inset: 0;
   display: flex;
   flex-direction: column;
-  background: rgba(19, 17, 26, 0.985);
+  background: var(--tx-grain), rgba(16, 16, 20, 0.99);
   animation: fade 180ms ease both;
   z-index: 10;
+}
+/* A layered stamp ghost pressed into the panel's dead corner — faint, so it
+   reads as depth, not decoration. Pointer-events off; sits behind the list. */
+.panel::after {
+  content: '';
+  position: absolute;
+  right: 14px; bottom: 16px;
+  width: 88px; height: 88px;
+  background: var(--stamp-cyan) no-repeat center / contain;
+  opacity: 0.05;
+  transform: rotate(-8deg);
+  pointer-events: none;
 }
 .hidden { display: none !important; }
 
 .panel-bar {
+  position: relative;
   display: flex;
   align-items: center;
   padding: 11px 9px 11px 15px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   font-size: 12.5px;
-  font-weight: 650;
+  font-weight: 700;
+  letter-spacing: 0.6px;
   -webkit-app-region: drag;
+}
+/* Stitched seam under the panel title, matching the main bar. */
+.panel-bar::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 3px;
+  background: var(--tx-stitch) repeat-x left center;
+  pointer-events: none;
 }
 .panel-bar span { flex: 1; }
 
 .panel-body {
+  position: relative;
+  z-index: 1;
   flex: 1;
   overflow-y: auto;
   padding: 11px;
   display: flex;
   flex-direction: column;
   gap: 7px;
+}
+/* On a wide desktop window the single-column list otherwise strands big empty
+   side margins; centre it so the surrounding textured vinyl frames the content
+   deliberately instead of reading as dead space. */
+@media (min-width: 641px) {
+  .panel-body { width: min(100%, 580px); margin-inline: auto; }
 }
 .panel-body::-webkit-scrollbar { width: 8px; }
 .panel-body::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 4px; }
@@ -800,17 +953,17 @@ button {
 .row.alt { background: rgba(255, 255, 255, 0.075); }
 .row.clickable { cursor: pointer; transition: background 120ms, border-color 120ms; }
 /* Clears the band tint above it, so hover reads on either stripe. */
-.row.clickable:hover { background: rgba(255, 255, 255, 0.11); border-color: var(--edge); }
-.row.current { border-color: var(--accent); }
+.row.clickable:hover { background: rgba(53, 233, 255, 0.08); border-color: rgba(53, 233, 255, 0.3); }
+.row.current { border-color: var(--accent); box-shadow: inset 0 0 0 1px rgba(53, 233, 255, 0.25), var(--glow-cyan); }
 .row .grow { flex: 1; min-width: 0; }
 .row .label { font-size: 12.5px; font-weight: 600; }
 .row .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
-.row .reward { flex: 0 0 auto; font-size: 10.5px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+.row .reward { flex: 0 0 auto; font-size: 10.5px; font-weight: 700; color: var(--accent2); white-space: nowrap; }
 .row.locked { opacity: 0.46; }
 /* A purchasable-but-unowned store row: full strength, since the Buy button is
    the actionable thing here — only truly gated rows get the dimmed treatment. */
 .row.buyable { opacity: 1; }
-.row.earned { background: rgba(255, 179, 92, 0.10); border-color: rgba(255, 179, 92, 0.26); }
+.row.earned { background: rgba(77, 255, 145, 0.09); border-color: rgba(77, 255, 145, 0.26); }
 
 /* The unpainted picture, as a line drawing. Paper-coloured so it reads as the
    page you are about to paint rather than as another dark panel; the outline
@@ -821,8 +974,8 @@ button {
   flex: none;
   border-radius: 5px;
   overflow: hidden;
-  background: #f2efe6;
-  color: #1b1a24;
+  background: var(--paper);
+  color: var(--paper-ink);
   display: grid;
   place-items: center;
 }
@@ -849,8 +1002,8 @@ button {
   pointer-events: none; /* a look, not a target — the row underneath keeps its taps */
 }
 .pic-preview .sheet {
-  background: #f2efe6;
-  color: #1b1a24;
+  background: var(--paper);
+  color: var(--paper-ink);
   border-radius: 9px;
   padding: 7px;
   box-shadow: 0 20px 54px rgba(0, 0, 0, 0.55);
@@ -903,9 +1056,9 @@ button {
   display: block;
   height: 100%;
   border-radius: 5px;
-  /* Warm and full by default; a low meter cools to a quiet blue so it reads as
+  /* Full and green by default; a low meter cools to a quiet blue so it reads as
      "could use a visit" without ever looking like an alarm. */
-  background: linear-gradient(90deg, #ffc46e, #ff9d5c);
+  background: linear-gradient(90deg, var(--accent2), #38d67c);
   transition: width 260ms ease;
 }
 .meter > i.low { background: linear-gradient(90deg, #7fb0d6, #6f97c4); }
@@ -1008,7 +1161,7 @@ button {
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23948da8' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%238f8d99' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 9px center;
 }
@@ -1053,8 +1206,14 @@ button {
   transition: background 120ms, color 120ms;
 }
 .segmented button + button { border-left: 1px solid var(--edge); }
-.segmented button:hover { background: rgba(255, 255, 255, 0.09); color: var(--text); }
-.segmented button.on { background: var(--accent); color: #221803; }
+.segmented button:hover { background: rgba(53, 233, 255, 0.1); color: var(--text); }
+/* The selected chip reads like an ink-stamp pressed onto the tag strip. */
+.segmented button.on {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0) 46%),
+              var(--accent);
+  color: var(--on-accent);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
 
 /* For option sets too long for one row (the six fantasy races). The base
    .segmented is overflow:hidden with no wrap, which would silently clip
