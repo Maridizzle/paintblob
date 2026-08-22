@@ -704,6 +704,16 @@ button {
   transition: transform 120ms, filter 120ms;
 }
 .primary:hover { transform: translateY(-1px); filter: brightness(1.08); }
+/* A store row you can't afford yet: the button shows the price greyed out and
+   doesn't react, so "dimmed" reads as "not enough coins" rather than the whole
+   row looking unavailable. */
+.primary:disabled {
+  background: var(--card-solid);
+  color: var(--muted);
+  border: 1px solid var(--edge);
+  cursor: not-allowed;
+}
+.primary:disabled:hover { transform: none; filter: none; }
 
 /* ------------------------------------------------------------------ toasts */
 
@@ -797,6 +807,9 @@ button {
 .row .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
 .row .reward { flex: 0 0 auto; font-size: 10.5px; font-weight: 700; color: var(--accent); white-space: nowrap; }
 .row.locked { opacity: 0.46; }
+/* A purchasable-but-unowned store row: full strength, since the Buy button is
+   the actionable thing here — only truly gated rows get the dimmed treatment. */
+.row.buyable { opacity: 1; }
 .row.earned { background: rgba(255, 179, 92, 0.10); border-color: rgba(255, 179, 92, 0.26); }
 
 /* The unpainted picture, as a line drawing. Paper-coloured so it reads as the

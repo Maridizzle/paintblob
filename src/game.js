@@ -883,6 +883,11 @@ async function openPanel(kind) {
   S.panel = kind;
   const body = $('panelBody');
   body.textContent = '';
+  // Only the avatar panel's room/pet tabs run in scene mode; every other panel
+  // is a plain scrolling list. The scene classes carry `overflow: hidden`, so
+  // leaving them on after switching to Pictures/Trophies/Settings silently
+  // locks that list from scrolling. renderAvatarPanel re-adds them when needed.
+  body.classList.remove('scene', 'panel-open');
   $('panelTitle').textContent = kind === 'pictures' ? 'Pictures'
     : kind === 'trophies' ? 'Achievements'
     : kind === 'avatar' ? 'Avatar'
@@ -1618,6 +1623,10 @@ function buildSceneStats() {
 }
 
 function renderAvatarPanel(body) {
+  // A room change (buy, recolour, place) rebuilds the whole panel, which would
+  // otherwise snap the scrollable side panel back to the top and yank you away
+  // from the row you just acted on. Remember where it was and restore it below.
+  const prevPanelScroll = body.querySelector('.room-panel')?.scrollTop ?? 0;
   body.textContent = '';
   const level = levelForPoints(S.save.stats.pointsEarned);
   const { into, span } = pointsIntoLevel(S.save.stats.pointsEarned);
@@ -1723,6 +1732,9 @@ function renderAvatarPanel(body) {
     sceneStage.className = 'scene-stage';
     sceneStage.append(head, panel, toggle);
     body.append(tabs, sceneStage);
+    // Put the side panel back where it was so a purchase or recolour updates
+    // the row in place rather than jumping the list to the top.
+    panel.scrollTop = prevPanelScroll;
   } else {
     body.append(head, tabs, section);
   }
@@ -1913,8 +1925,12 @@ function renderAvatarRoom(section) {
   // a lamp all behave identically.
   const buyable = (item, icon, onBuy) => {
     const buy = document.createElement('button');
-    buy.className = 'primary';
-    buy.textContent = 'Buy';
+    buy.className = 'primary buy';
+    // Dim only when you genuinely can't afford it — that is what "unavailable"
+    // should mean here, not the row simply being unowned.
+    const affordable = (S.save.stats.points ?? 0) >= item.price;
+    buy.disabled = !affordable;
+    buy.textContent = affordable ? 'Buy' : `${item.price}🪙`;
     buy.addEventListener('click', (e) => {
       e.stopPropagation();
       if (!spendPoints(S.save.stats, item.price)) {
@@ -1937,7 +1953,10 @@ function renderAvatarRoom(section) {
       // the two kinds share one row builder.
       const has = opt.unlockLevel != null ? !gated : owned.has(opt.id);
       const on = isOn(opt);
-      const el = row(has && !gated ? 'clickable' : 'locked');
+      // Owned → tappable; level-gated → dimmed lock; a store item you don't own
+      // yet is purchasable, so it stays at full strength with a Buy button
+      // rather than reading as unavailable like a gated row.
+      const el = row(has && !gated ? 'clickable' : gated ? 'locked' : 'buyable');
 
       const text = document.createElement('div');
       text.className = 'grow';
