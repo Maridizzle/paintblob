@@ -18,6 +18,7 @@ import {
 } from './abilities.js';
 import { WARDROBE_ITEMS } from './wardrobe.js';
 import { outlineSVG, outlineWeight } from './thumbnail.js';
+import { computePlayStats } from './playstats.js';
 import {
   ROOMS, HOUSE_ITEMS, LIGHTING, PETS, PROP_SLOTS, SLOT_LABEL,
   defaultHouse, itemsFor, starterFor, buildRoomSVG, colourablesIn, colourKey,
@@ -481,6 +482,8 @@ function tryPaint(clientX, clientY, pointerType) {
     }
     sfx.play('nope');
     streaks.wrong();
+    // Lifetime wrong-colour taps, for the accuracy stat (cells / (cells + wrongTaps)).
+    S.save.stats.wrongTaps = (S.save.stats.wrongTaps ?? 0) + 1;
     const tub = $('tubs').children[cell.colour];
     tub?.classList.remove('nudge');
     void tub?.offsetWidth; // restart the animation
@@ -582,6 +585,9 @@ function commitFill(burst) {
   bumpPointsHud(award);
 
   for (const id of streaks.fill(Date.now())) achievements.award(id);
+  // Best fill-streak is a lifetime high-water mark of the current combo, so undo
+  // (which never lowers a record) leaves it untouched.
+  if (streaks.combo > S.save.stats.bestStreak) S.save.stats.bestStreak = streaks.combo;
   achievements.sync(S.save.stats);
 
   if (S.remaining[cell.colour] === 0) {
@@ -1580,6 +1586,37 @@ function paintStage(stage) {
   }
 }
 
+// The play-stats dashboard that fills the space under the room on the scene
+// tabs. Pure derivation lives in playstats.js; this only lays it out.
+function buildSceneStats() {
+  const wrap = document.createElement('div');
+  wrap.className = 'scene-stats';
+  for (const group of computePlayStats(S.save)) {
+    const section = document.createElement('div');
+    section.className = 'stat-group';
+    const heading = document.createElement('h4');
+    heading.textContent = group.title;
+    const grid = document.createElement('div');
+    grid.className = 'stat-grid';
+    for (const tile of group.tiles) {
+      const cell = document.createElement('div');
+      cell.className = 'stat-tile';
+      const val = document.createElement('div');
+      val.className = 'stat-value';
+      if (tile.value === '—') val.classList.add('dim');
+      val.textContent = tile.value;
+      const label = document.createElement('div');
+      label.className = 'stat-label';
+      label.textContent = tile.label;
+      cell.append(val, label);
+      grid.append(cell);
+    }
+    section.append(heading, grid);
+    wrap.append(section);
+  }
+  return wrap;
+}
+
 function renderAvatarPanel(body) {
   body.textContent = '';
   const level = levelForPoints(S.save.stats.pointsEarned);
@@ -1599,6 +1636,9 @@ function renderAvatarPanel(body) {
   stage.className = 'avatar-stage';
   paintStage(stage);
   head.append(stage);
+  // The scene tabs (room/pet) leave a tall band under the room; fill it with a
+  // play-stats dashboard for the min/max crowd. Same block on both tabs.
+  if (scene) head.append(buildSceneStats());
 
   const levelbar = document.createElement('div');
   levelbar.className = 'avatar-levelbar';
@@ -2597,6 +2637,12 @@ async function boot() {
   S.save.stats.daysVisited ??= 0;
   S.save.stats.points ??= 0;
   S.save.stats.pointsEarned ??= 0;
+  // Tracking added with the play-stats dashboard — a save from before it counts
+  // from zero, so these grow only from this release forward.
+  S.save.stats.bestStreak ??= 0;
+  S.save.stats.wrongTaps ??= 0;
+  S.save.stats.dayStreak ??= 0;
+  S.save.stats.bestDayStreak ??= 0;
   S.save.settings.detail ??= 'normal';
 
   // A save from before this feature existed has no `avatar` key at all — the
@@ -2657,6 +2703,17 @@ async function boot() {
   // login streak — missing a day should not cost you a ladder you were on.
   const today = new Date().toDateString();
   if (S.save.stats.lastVisitDay !== today) {
+    // Consecutive-day streak: if the last visit was yesterday the ladder grows,
+    // otherwise it starts over at today. A save from before this shipped has no
+    // usable lastVisitDay for the gap check, so it simply begins a new streak.
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (S.save.stats.lastVisitDay === yesterday.toDateString()) {
+      S.save.stats.dayStreak++;
+    } else {
+      S.save.stats.dayStreak = 1;
+    }
+    S.save.stats.bestDayStreak = Math.max(S.save.stats.bestDayStreak, S.save.stats.dayStreak);
     S.save.stats.lastVisitDay = today;
     S.save.stats.daysVisited++;
   }
