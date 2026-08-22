@@ -40,6 +40,19 @@
     ]
   },
   {
+    "id": "brass-fruit-bowl",
+    "title": "Brass Fruit Bowl",
+    "cells": 456,
+    "colours": 26,
+    "thumb": [
+      "#f53e3c",
+      "#612d1a",
+      "#7f351b",
+      "#b15925",
+      "#da782e"
+    ]
+  },
+  {
     "id": "cactus-mesa",
     "title": "Cactus Mesa",
     "cells": 17,
@@ -149,6 +162,19 @@
     ]
   },
   {
+    "id": "hummingbird-blossoms",
+    "title": "Hummingbird Blossoms",
+    "cells": 207,
+    "colours": 30,
+    "thumb": [
+      "#fa9e66",
+      "#fefcf9",
+      "#85af46",
+      "#38875d",
+      "#0fb5cd"
+    ]
+  },
+  {
     "id": "humpback-whale",
     "title": "Humpback Whale",
     "cells": 500,
@@ -175,6 +201,19 @@
       "#703413"
     ],
     "blind": true
+  },
+  {
+    "id": "koi-and-lilies",
+    "title": "Koi And Lilies",
+    "cells": 650,
+    "colours": 29,
+    "thumb": [
+      "#d42214",
+      "#ed7051",
+      "#ef4618",
+      "#63321c",
+      "#f8a37c"
+    ]
   },
   {
     "id": "koi-pond",
@@ -244,6 +283,33 @@
       "#cf5b51"
     ],
     "blind": true
+  },
+  {
+    "id": "pumpkin-lake",
+    "title": "Pumpkin Lake",
+    "cells": 248,
+    "colours": 23,
+    "thumb": [
+      "#c63c23",
+      "#f26e37",
+      "#d99c71",
+      "#f2a972",
+      "#b09075"
+    ],
+    "blind": true
+  },
+  {
+    "id": "rainy-cottage",
+    "title": "Rainy Cottage",
+    "cells": 500,
+    "colours": 26,
+    "thumb": [
+      "#912e25",
+      "#e73f2f",
+      "#f5553d",
+      "#c4482e",
+      "#f37f53"
+    ]
   },
   {
     "id": "sunset-tidepool",
