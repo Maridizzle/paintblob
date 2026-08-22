@@ -200,6 +200,9 @@ export async function importImages(files, { detail = 'normal', taken = new Set()
         cells: puzzle.cells.length,
         colours: puzzle.palette.length,
         thumb: puzzle.palette.slice(0, 5).map((p) => p.hex),
+        // The detail preset the picture was built at, so it filters by
+        // difficulty alongside the bundled set. Imports carry no themes.
+        difficulty: detail,
         photoLike: puzzle.photoLike,
         // When you added it, so the Pictures list can sort your own imports
         // newest-first. Bundled pictures have no equivalent — they arrive

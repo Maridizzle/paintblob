@@ -1133,6 +1133,48 @@ test('an untagged picture carries no animation at all', () => {
   }
 });
 
+/* ----------------------------------------------- difficulty + theme tags */
+
+const DIFFICULTIES = ['chunky', 'normal', 'detailed', 'insane'];
+const THEMES = ['Animals', 'Flowers', 'Food', 'Fantasy', 'Space', 'Landscape', 'Spooky', 'Abstract', 'Water'];
+const PIC_TAGS = Object.entries(
+  JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles/tags.json'), 'utf8')),
+).filter(([id]) => !id.startsWith('_'));
+
+test('every tags.json entry names a real picture, a valid difficulty and known themes', () => {
+  for (const [id, tag] of PIC_TAGS) {
+    assert.ok(fs.existsSync(puzzleFile(id)), `tags.json tags "${id}", which is not a puzzle`);
+    assert.ok(DIFFICULTIES.includes(tag.difficulty), `${id}: unknown difficulty "${tag.difficulty}"`);
+    assert.ok(Array.isArray(tag.themes), `${id}: themes must be an array`);
+    assert.ok(tag.themes.length >= 1 && tag.themes.length <= 3, `${id}: want 1–3 themes`);
+    for (const t of tag.themes) assert.ok(THEMES.includes(t), `${id}: unknown theme "${t}"`);
+  }
+});
+
+test('the manifest is in sync with tags.json (every entry has a valid difficulty)', () => {
+  const tags = Object.fromEntries(PIC_TAGS);
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles/manifest.json'), 'utf8'));
+  for (const entry of manifest) {
+    assert.ok(DIFFICULTIES.includes(entry.difficulty),
+      `${entry.id}: manifest difficulty "${entry.difficulty}" invalid — run \`npm run seed\``);
+    const want = tags[entry.id];
+    assert.equal(entry.difficulty, want?.difficulty ?? 'normal',
+      `${entry.id}: manifest difficulty out of date — run \`node tools/apply-tags.mjs\``);
+    assert.deepEqual(entry.themes ?? [], want?.themes ?? [],
+      `${entry.id}: manifest themes out of date — run \`node tools/apply-tags.mjs\``);
+  }
+});
+
+test('tags.json is a sidecar: kept out of the web build, matches the theme list in the UI', () => {
+  const apply = readSource('tools/apply-animations.mjs');
+  assert.match(apply, /TAG_SIDECARS = new Set\(\[[^\]]*'tags\.json'/,
+    'tags.json must be in TAG_SIDECARS so build-web excludes it and the scanners skip it');
+  const game = readSource('src/game.js');
+  for (const t of THEMES) {
+    assert.ok(game.includes(`'${t}'`), `PICTURE_THEMES in game.js is missing "${t}"`);
+  }
+});
+
 test('the animation window plays for the 5-10 seconds it was asked to', () => {
   const render = readSource('src/render.js');
   const ms = Number(render.match(/const LIVING_DURATION = (\d+)/)[1]);
@@ -1277,7 +1319,7 @@ test('the pictures list opens showing everything, alphabetical', () => {
   // The filter resets to the widest possible view every time the panel opens,
   // so nothing is ever hidden behind a filter left on from last time.
   assert.match(game,
-    /S\.picFilter = \{ q: '', status: 'all', source: 'all', size: 'all', sort: 'az' \}/,
+    /S\.picFilter = \{ q: '', status: 'all', source: 'all', size: 'all', difficulty: 'all', theme: 'all', sort: 'az' \}/,
     'openPanel must reset the picture filter to show-everything, A–Z');
 });
 

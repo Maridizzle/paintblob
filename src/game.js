@@ -60,7 +60,7 @@ const S = {
   // How the Pictures list is filtered. UI-only, like the two above: it resets
   // to "show everything, A–Z" every time the panel opens, so the list you land
   // on is always the whole list.
-  picFilter: { q: '', status: 'all', source: 'all', size: 'all', sort: 'az' },
+  picFilter: { q: '', status: 'all', source: 'all', size: 'all', difficulty: 'all', theme: 'all', sort: 'az' },
   avatarSlot: null,       // which avatar part is currently being recoloured
   previewId: null,        // picture whose large preview is open or pending
   previewTimer: 0,
@@ -905,7 +905,7 @@ async function openPanel(kind) {
     // picture mapified while the app was open shows up without a restart.
     S.manifest = await api.listPuzzles();
     if (S.panel !== kind) return; // closed again while we were waiting
-    S.picFilter = { q: '', status: 'all', source: 'all', size: 'all', sort: 'az' };
+    S.picFilter = { q: '', status: 'all', source: 'all', size: 'all', difficulty: 'all', theme: 'all', sort: 'az' };
     renderPictures(body);
   } else if (kind === 'trophies') {
     renderTrophies(body);
@@ -1178,6 +1178,8 @@ function renderPictures(body) {
       title: p.title,
       imported: !!p.imported,
       cells: p.cells,
+      difficulty: p.difficulty ?? 'normal',
+      themes: p.themes ?? [],
       status: done ? 'done' : painted > 0 ? 'started' : 'todo',
       added: p.added ?? 0,
       idx: list.childElementCount, // manifest order, for restoring the default sort
@@ -1197,6 +1199,12 @@ function bandVisible(list) {
     i += 1;
   }
 }
+
+// The theme tags a picture can carry (see puzzles/tags.json). The Pictures
+// list offers these as a single-select dropdown; the values match the manifest.
+const PICTURE_THEMES = [
+  'Animals', 'Flowers', 'Food', 'Fantasy', 'Space', 'Landscape', 'Spooky', 'Abstract', 'Water',
+];
 
 function segGroup(axis, current, options, onPick) {
   const seg = document.createElement('div');
@@ -1265,6 +1273,26 @@ function buildPicFilterBar() {
   chips.append(segGroup('size', f.size, [
     ['all', 'Any size'], ['quick', 'Quick'], ['full', 'Full'],
   ], (v) => { f.size = v; applyPicFilter(); }));
+  // How hard a picture is — the preset it was built at (chunky/normal/detailed/
+  // insane). Wraps as its own group so its "All" never reads as another axis'.
+  chips.append(segGroup('difficulty', f.difficulty, [
+    ['all', 'All'], ['chunky', 'Chunky'], ['normal', 'Normal'],
+    ['detailed', 'Detailed'], ['insane', 'Insane'],
+  ], (v) => { f.difficulty = v; applyPicFilter(); }));
+  // Theme is a single-select dropdown rather than a segmented strip: nine
+  // values would wrap into an unreadable wall of chips.
+  const theme = document.createElement('select');
+  theme.className = 'pic-theme';
+  theme.setAttribute('aria-label', 'Filter by theme');
+  for (const [value, text] of [['all', 'Any theme'], ...PICTURE_THEMES.map((t) => [t, t])]) {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = text;
+    if (value === f.theme) opt.selected = true;
+    theme.append(opt);
+  }
+  theme.addEventListener('change', () => { f.theme = theme.value; applyPicFilter(); });
+  chips.append(theme);
   chips.append(segGroup('sort', f.sort, [
     ['az', 'A–Z'], ['recent', 'Recent'],
   ], (v) => { f.sort = v; applyPicFilter(); }));
@@ -1285,7 +1313,9 @@ function applyPicFilter() {
     const ok = (!f.q || p.label.includes(f.q))
       && (f.status === 'all' || p.status === f.status)
       && (f.source === 'all' || (f.source === 'yours') === p.imported)
-      && (f.size === 'all' || (f.size === 'quick') === (p.cells < 100));
+      && (f.size === 'all' || (f.size === 'quick') === (p.cells < 100))
+      && (f.difficulty === 'all' || p.difficulty === f.difficulty)
+      && (f.theme === 'all' || p.themes.includes(f.theme));
     el.classList.toggle('hidden', !ok);
     if (ok) shown += 1;
   }

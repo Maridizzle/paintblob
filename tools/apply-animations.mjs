@@ -29,7 +29,7 @@ const LIFTS = path.join(PUZZLE_DIR, 'lifts.json');
  * The tag sidecars: hand-edited inputs that mapify bakes into the puzzle
  * files, so the client never fetches them and they must not ship.
  */
-export const TAG_SIDECARS = new Set(['animations.json', 'lifts.json']);
+export const TAG_SIDECARS = new Set(['animations.json', 'lifts.json', 'tags.json']);
 
 /**
  * Everything in puzzles/ that is not a puzzle — the tag sidecars plus the
