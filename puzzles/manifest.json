@@ -1,5 +1,18 @@
 [
   {
+    "id": "airship-harvest",
+    "title": "Airship Harvest",
+    "cells": 650,
+    "colours": 28,
+    "thumb": [
+      "#fd8171",
+      "#2d150f",
+      "#c6552b",
+      "#b09166",
+      "#cbb684"
+    ]
+  },
+  {
     "id": "aurora-over-ice",
     "title": "Aurora Over Ice",
     "cells": 500,
@@ -14,6 +27,45 @@
     "blind": true
   },
   {
+    "id": "aurora-toadstool",
+    "title": "Aurora Toadstool",
+    "cells": 421,
+    "colours": 25,
+    "thumb": [
+      "#e0b896",
+      "#fbf8d3",
+      "#ddddc7",
+      "#b5f57a",
+      "#92ec79"
+    ]
+  },
+  {
+    "id": "balloon-fireworks",
+    "title": "Balloon Fireworks",
+    "cells": 32,
+    "colours": 13,
+    "thumb": [
+      "#f17229",
+      "#f69f35",
+      "#73ccc2",
+      "#269aa3",
+      "#15667e"
+    ]
+  },
+  {
+    "id": "brass-fruit-bowl",
+    "title": "Brass Fruit Bowl",
+    "cells": 456,
+    "colours": 26,
+    "thumb": [
+      "#f53e3c",
+      "#612d1a",
+      "#7f351b",
+      "#b15925",
+      "#da782e"
+    ]
+  },
+  {
     "id": "cactus-mesa",
     "title": "Cactus Mesa",
     "cells": 17,
@@ -25,6 +77,62 @@
       "#ad412b",
       "#8b3022"
     ]
+  },
+  {
+    "id": "cherry-cupcake",
+    "title": "Cherry Cupcake",
+    "cells": 34,
+    "colours": 10,
+    "thumb": [
+      "#f99661",
+      "#f0b086",
+      "#fdd038",
+      "#f6f0b1",
+      "#5cd6d8"
+    ],
+    "blind": true
+  },
+  {
+    "id": "clockwork-cupcake",
+    "title": "Clockwork Cupcake",
+    "cells": 371,
+    "colours": 20,
+    "thumb": [
+      "#d82120",
+      "#330d07",
+      "#712214",
+      "#a64525",
+      "#e05817"
+    ],
+    "blind": true
+  },
+  {
+    "id": "cosmic-still-life",
+    "title": "Cosmic Still Life",
+    "cells": 210,
+    "colours": 33,
+    "thumb": [
+      "#b32d28",
+      "#f4433e",
+      "#de5731",
+      "#ee7a49",
+      "#c95e19"
+    ],
+    "blind": true
+  },
+  {
+    "id": "cosmic-teapot",
+    "title": "Cosmic Teapot",
+    "cells": 198,
+    "colours": 17,
+    "thumb": [
+      "#fcf0d5",
+      "#fdfae7",
+      "#f8fcfb",
+      "#dbecec",
+      "#80c7cb"
+    ],
+    "blind": true
   },
   {
     "id": "dusk-harbour",
@@ -54,6 +162,20 @@
     "blind": true
   },
   {
+    "id": "toadstool-chunky",
+    "title": "Fly Agaric",
+    "cells": 38,
+    "colours": 12,
+    "thumb": [
+      "#f4e8c5",
+      "#abed7b",
+      "#7ee679",
+      "#54d882",
+      "#2bb793"
+    ],
+    "blind": true
+  },
+  {
     "id": "harbour-row",
     "title": "Harbour Row",
     "cells": 88,
@@ -64,6 +186,32 @@
       "#487dbd",
       "#3769a9",
       "#2e7397"
+    ]
+  },
+  {
+    "id": "hummingbird-blossoms",
+    "title": "Hummingbird Blossoms",
+    "cells": 207,
+    "colours": 30,
+    "thumb": [
+      "#fa9e66",
+      "#fefcf9",
+      "#85af46",
+      "#38875d",
+      "#0fb5cd"
+    ]
+  },
+  {
+    "id": "hummingbird-donut",
+    "title": "Hummingbird Donut",
+    "cells": 466,
+    "colours": 26,
+    "thumb": [
+      "#f3cbc9",
+      "#c2aeac",
+      "#8e3625",
+      "#f7e1d7",
+      "#ba5a29"
     ]
   },
   {
@@ -93,6 +241,19 @@
       "#703413"
     ],
     "blind": true
+  },
+  {
+    "id": "koi-and-lilies",
+    "title": "Koi And Lilies",
+    "cells": 650,
+    "colours": 29,
+    "thumb": [
+      "#d42214",
+      "#ed7051",
+      "#ef4618",
+      "#63321c",
+      "#f8a37c"
+    ]
   },
   {
     "id": "koi-pond",
@@ -160,6 +321,61 @@
       "#cf8b4e",
       "#a8af2f",
       "#cf5b51"
+    ],
+    "blind": true
+  },
+  {
+    "id": "pumpkin-lake",
+    "title": "Pumpkin Lake",
+    "cells": 248,
+    "colours": 23,
+    "thumb": [
+      "#c63c23",
+      "#f26e37",
+      "#d99c71",
+      "#f2a972",
+      "#b09075"
+    ],
+    "blind": true
+  },
+  {
+    "id": "rainy-cottage",
+    "title": "Rainy Cottage",
+    "cells": 500,
+    "colours": 26,
+    "thumb": [
+      "#912e25",
+      "#e73f2f",
+      "#f5553d",
+      "#c4482e",
+      "#f37f53"
+    ]
+  },
+  {
+    "id": "rainy-harvest",
+    "title": "Rainy Day Harvest",
+    "cells": 500,
+    "colours": 32,
+    "thumb": [
+      "#f3463e",
+      "#1c0a07",
+      "#3d2019",
+      "#73321f",
+      "#aa4a25"
+    ],
+    "blind": true
+  },
+  {
+    "id": "storm-lake",
+    "title": "Storm Over The Lake",
+    "cells": 277,
+    "colours": 24,
+    "thumb": [
+      "#cd3b22",
+      "#f27038",
+      "#d99c71",
+      "#f2a972",
+      "#b59174"
     ],
     "blind": true
   },
