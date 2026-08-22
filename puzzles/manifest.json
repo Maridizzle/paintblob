@@ -67,6 +67,20 @@
     "blind": true
   },
   {
+    "id": "blossom-pattern",
+    "title": "Blossom Pattern",
+    "cells": 1200,
+    "colours": 31,
+    "thumb": [
+      "#652c2c",
+      "#d32c2c",
+      "#ef504e",
+      "#f75e58",
+      "#f67267"
+    ],
+    "blind": true
+  },
+  {
     "id": "brass-fruit-bowl",
     "title": "Brass Fruit Bowl",
     "cells": 456,
@@ -132,6 +146,19 @@
       "#e05817"
     ],
     "blind": true
+  },
+  {
+    "id": "cloud-peacock",
+    "title": "Cloud Peacock",
+    "cells": 1200,
+    "colours": 29,
+    "thumb": [
+      "#bc8775",
+      "#973d19",
+      "#d09a83",
+      "#e6b9a2",
+      "#2b5549"
+    ]
   },
   {
     "id": "cosmic-still-life",
@@ -201,6 +228,19 @@
       "#2bb793"
     ],
     "blind": true
+  },
+  {
+    "id": "greenhouse",
+    "title": "Greenhouse",
+    "cells": 1200,
+    "colours": 30,
+    "thumb": [
+      "#3e1514",
+      "#dd742f",
+      "#aa6934",
+      "#f0bd75",
+      "#c8a259"
+    ]
   },
   {
     "id": "harbour-row",
@@ -434,6 +474,19 @@
     "blind": true
   },
   {
+    "id": "stone-mosaic",
+    "title": "Stone Mosaic",
+    "cells": 251,
+    "colours": 29,
+    "thumb": [
+      "#b1231b",
+      "#130a07",
+      "#7f350c",
+      "#86521f",
+      "#ca7a1e"
+    ]
+  },
+  {
     "id": "storm-lake",
     "title": "Storm Over The Lake",
     "cells": 277,
@@ -472,6 +525,20 @@
       "#c95734",
       "#d0486a",
       "#a5ab26"
+    ],
+    "blind": true
+  },
+  {
+    "id": "wildflower-bunch",
+    "title": "Wildflower Bunch",
+    "cells": 1200,
+    "colours": 30,
+    "thumb": [
+      "#170505",
+      "#2b0b09",
+      "#491d16",
+      "#a88377",
+      "#613e21"
     ],
     "blind": true
   }
