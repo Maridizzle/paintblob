@@ -3,18 +3,69 @@
    outside its radius is genuinely see-through desktop. */
 
 :root {
-  /* Ink-black vinyl base + paper-grey secondary surface — a monochrome duotone,
-     de-purpled from the old warm-dark scheme. */
-  --ink: #0b0b0d;
-  --vinyl: #121216;
-  --card: rgba(15, 15, 19, 0.94);
-  --card-solid: #131317;
+  /* A deep void-black world: every surface bottoms out at near-pure black, with
+     dark-grey only as raised insets and banding, and the neons threaded through
+     the dead space rather than reserved for text. Paper-grey stays the one warm
+     secondary surface. */
+  --void: #020204;          /* the deepest ground — dead space, letterbox */
+  --ink: #050507;
+  --vinyl: #050507;
+  --card: rgba(3, 3, 5, 0.96);
+  --card-solid: #0e0e12;    /* a raised inset / tile — reads as dark grey on void */
+  --band: rgba(255, 255, 255, 0.06); /* dark-grey banding stripe over void */
   --paper: #cdc9bd;
   --paper-ink: #14140f;
-  --edge: rgba(255, 255, 255, 0.09);
-  --edge-strong: rgba(255, 255, 255, 0.16);
+  --edge: rgba(255, 255, 255, 0.08);
+  --edge-strong: rgba(255, 255, 255, 0.15);
   --text: #edecf0;
   --muted: #8f8d99;
+
+  /* Neons bled into the ground itself: a cyan wash from one corner, a green wash
+     from the opposite — turned up so the void reads as lit, not flat black. */
+  --void-glow:
+    radial-gradient(120% 85% at 2% -14%, rgba(53, 233, 255, 0.22), transparent 44%),
+    radial-gradient(125% 90% at 102% 114%, rgba(77, 255, 145, 0.18), transparent 46%);
+
+  /* Shots and streaks of colour ripped diagonally across the whole surface —
+     razor-thin bright cores riding soft glow halos, so the neons slash THROUGH
+     the background and the menus rather than hugging the edges. Cyan and green
+     are the voices; one rare orange. Pure gradients, so they cost nothing and
+     tile across any size. */
+  --streaks:
+    linear-gradient(64deg, transparent 26.6%, rgba(53, 233, 255, 0.9) 27.4%, transparent 28.2%),
+    linear-gradient(64deg, transparent 20%, rgba(53, 233, 255, 0.14) 27.6%, transparent 35%),
+    linear-gradient(-52deg, transparent 62.4%, rgba(77, 255, 145, 0.85) 63.2%, transparent 64%),
+    linear-gradient(-52deg, transparent 56%, rgba(77, 255, 145, 0.13) 63.4%, transparent 71%),
+    linear-gradient(73deg, transparent 79.6%, rgba(53, 233, 255, 0.7) 80.2%, transparent 80.9%),
+    linear-gradient(57deg, transparent 12.2%, rgba(77, 255, 145, 0.62) 12.9%, transparent 13.6%),
+    linear-gradient(-68deg, transparent 45.4%, rgba(255, 106, 31, 0.5) 46%, transparent 46.7%),
+    linear-gradient(-68deg, transparent 41%, rgba(255, 106, 31, 0.08) 46%, transparent 52%);
+
+  /* Sparks: a spray of tiny bright glints spitting off the streaks into the void
+     — 1px cores that fade in ~3px, cyan and green with a couple of orange embers.
+     Each is a radial-gradient layer; the whole set rides a slow twinkle. Kept off
+     no-repeat so they sit where placed rather than tiling into a grid. */
+  --sparks:
+    radial-gradient(circle at 9% 22%, rgba(53, 233, 255, 0.95) 0, rgba(53, 233, 255, 0.95) 1px, transparent 3px),
+    radial-gradient(circle at 17% 71%, rgba(77, 255, 145, 0.9) 0, rgba(77, 255, 145, 0.9) 1px, transparent 3px),
+    radial-gradient(circle at 27% 41%, rgba(53, 233, 255, 0.8) 0, rgba(53, 233, 255, 0.8) 1.2px, transparent 3.4px),
+    radial-gradient(circle at 34% 88%, rgba(77, 255, 145, 0.85) 0, rgba(77, 255, 145, 0.85) 1px, transparent 3px),
+    radial-gradient(circle at 44% 14%, rgba(255, 106, 31, 0.85) 0, rgba(255, 106, 31, 0.85) 1px, transparent 3px),
+    radial-gradient(circle at 52% 61%, rgba(53, 233, 255, 0.9) 0, rgba(53, 233, 255, 0.9) 1.3px, transparent 3.6px),
+    radial-gradient(circle at 63% 33%, rgba(77, 255, 145, 0.8) 0, rgba(77, 255, 145, 0.8) 1px, transparent 3px),
+    radial-gradient(circle at 71% 82%, rgba(53, 233, 255, 0.85) 0, rgba(53, 233, 255, 0.85) 1px, transparent 3px),
+    radial-gradient(circle at 79% 19%, rgba(77, 255, 145, 0.9) 0, rgba(77, 255, 145, 0.9) 1.2px, transparent 3.4px),
+    radial-gradient(circle at 86% 54%, rgba(53, 233, 255, 0.9) 0, rgba(53, 233, 255, 0.9) 1px, transparent 3px),
+    radial-gradient(circle at 93% 78%, rgba(255, 106, 31, 0.8) 0, rgba(255, 106, 31, 0.8) 1px, transparent 3px),
+    radial-gradient(circle at 40% 47%, rgba(53, 233, 255, 0.7) 0, rgba(53, 233, 255, 0.7) 1px, transparent 2.6px),
+    radial-gradient(circle at 58% 92%, rgba(77, 255, 145, 0.8) 0, rgba(77, 255, 145, 0.8) 1px, transparent 3px),
+    radial-gradient(circle at 22% 6%, rgba(77, 255, 145, 0.75) 0, rgba(77, 255, 145, 0.75) 1px, transparent 2.6px),
+    radial-gradient(circle at 68% 8%, rgba(53, 233, 255, 0.8) 0, rgba(53, 233, 255, 0.8) 1px, transparent 2.6px),
+    radial-gradient(circle at 96% 33%, rgba(53, 233, 255, 0.75) 0, rgba(53, 233, 255, 0.75) 1px, transparent 2.6px);
+  /* A vertical neon thread — dashed couture stitching that runs down the edges of
+     the negative space flanking a centred column. Cyan and green variants. */
+  --thread-cyan: repeating-linear-gradient(to bottom, rgba(53, 233, 255, 0.5) 0 5px, transparent 5px 11px);
+  --thread-green: repeating-linear-gradient(to bottom, rgba(77, 255, 145, 0.45) 0 5px, transparent 5px 11px);
 
   /* Two primary accents fracture the monochrome; orange is the rare violent hit.
      Interactive state is cyan; the green is the second voice (XP, meters, done);
@@ -68,14 +119,37 @@ html, body {
   display: flex;
   flex-direction: column;
   height: 100%;
-  /* Grain over vinyl: the matte-vinyl base of the whole card. */
-  background: var(--tx-grain), var(--card);
+  /* Grain over sparks over neon slashes over a washed void: the deep-black ground
+     of the whole card, cyan/green shots ripping across it, glints spitting off. */
+  background: var(--tx-grain), var(--sparks), var(--streaks), var(--void-glow), var(--card);
   border: 1px solid var(--edge);
   border-radius: var(--radius);
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5),
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6),
               inset 0 1px 0 rgba(255, 255, 255, 0.04);
   overflow: hidden;
   backdrop-filter: blur(18px);
+}
+
+/* The sparks catch and fade — a slow twinkle laid over the game screen (above
+   the board, below the panels and the HUD pills). Screen-blended so each glint
+   only ever adds light, never a dark dot; pointer-events off so it never eats a
+   paint stroke. The static background sparks stay as a steady base beneath. */
+#app::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: var(--sparks);
+  mix-blend-mode: screen;
+  animation: twinkle 3.8s ease-in-out infinite;
+}
+@keyframes twinkle {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #app::after { animation: none; opacity: 0.7; }
 }
 
 /* On an opaque window (Windows) there is nothing to see through, so square the
@@ -84,7 +158,7 @@ html, body {
 .opaque-window #app {
   border-radius: 0;
   border: none;
-  background: var(--tx-grain), var(--vinyl);
+  background: var(--tx-grain), var(--sparks), var(--streaks), var(--void-glow), var(--vinyl);
   backdrop-filter: none;
 }
 
@@ -879,7 +953,7 @@ button {
   inset: 0;
   display: flex;
   flex-direction: column;
-  background: var(--tx-grain), rgba(16, 16, 20, 0.99);
+  background: var(--tx-grain), var(--sparks), var(--streaks), var(--void-glow), var(--void);
   animation: fade 180ms ease both;
   z-index: 10;
 }
@@ -929,10 +1003,24 @@ button {
   gap: 7px;
 }
 /* On a wide desktop window the single-column list otherwise strands big empty
-   side margins; centre it so the surrounding textured vinyl frames the content
+   side margins; centre it so the surrounding void frames the content
    deliberately instead of reading as dead space. */
 @media (min-width: 641px) {
   .panel-body { width: min(100%, 580px); margin-inline: auto; }
+  /* Neon couture threads run down the edges of that negative space — cyan on the
+     left, green on the right — so the dead space is stitched, not empty. */
+  .panel::before {
+    content: '';
+    position: absolute;
+    top: 50px; bottom: 12px; left: 0; right: 0;
+    background-image: var(--thread-cyan), var(--thread-green);
+    background-repeat: repeat-y, repeat-y;
+    background-size: 1.5px 100%, 1.5px 100%;
+    background-position: calc(50% - 299px) 0, calc(50% + 299px) 0;
+    opacity: 0.6;
+    pointer-events: none;
+    z-index: 0;
+  }
 }
 .panel-body::-webkit-scrollbar { width: 8px; }
 .panel-body::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 4px; }
@@ -943,14 +1031,15 @@ button {
   gap: 11px;
   padding: 9px 11px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.035);
-  border: 1px solid transparent;
+  /* Rows read as raised dark-grey cards lifted off the void. */
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 /* Banding is assigned in JS (see band() in game.js) rather than :nth-child,
    because panel bodies interleave rows with headings and controls that are
    all plain divs. Declared here — above .row.earned, which shares its
    specificity — so an earned trophy keeps its own tint. */
-.row.alt { background: rgba(255, 255, 255, 0.075); }
+.row.alt { background: rgba(255, 255, 255, 0.09); }
 .row.clickable { cursor: pointer; transition: background 120ms, border-color 120ms; }
 /* Clears the band tint above it, so hover reads on either stripe. */
 .row.clickable:hover { background: rgba(53, 233, 255, 0.08); border-color: rgba(53, 233, 255, 0.3); }
