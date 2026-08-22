@@ -53,6 +53,20 @@
     ]
   },
   {
+    "id": "balloon-town",
+    "title": "Balloon Town",
+    "cells": 1200,
+    "colours": 34,
+    "thumb": [
+      "#5f2b1d",
+      "#150c09",
+      "#624d42",
+      "#281c15",
+      "#7b674e"
+    ],
+    "blind": true
+  },
+  {
     "id": "brass-fruit-bowl",
     "title": "Brass Fruit Bowl",
     "cells": 456,
@@ -76,6 +90,19 @@
       "#e55a5f",
       "#ad412b",
       "#8b3022"
+    ]
+  },
+  {
+    "id": "celestial-dragon",
+    "title": "Celestial Dragon",
+    "cells": 1200,
+    "colours": 30,
+    "thumb": [
+      "#f67876",
+      "#f5a38c",
+      "#f0784d",
+      "#f49855",
+      "#fcb75e"
     ]
   },
   {
@@ -297,6 +324,19 @@
     "blind": true
   },
   {
+    "id": "mandala",
+    "title": "Mandala",
+    "cells": 1200,
+    "colours": 28,
+    "thumb": [
+      "#67392d",
+      "#412317",
+      "#f29146",
+      "#fef2d9",
+      "#816b37"
+    ]
+  },
+  {
     "id": "nebula-peaks",
     "title": "Nebula Peaks",
     "cells": 500,
@@ -321,6 +361,20 @@
       "#cf8b4e",
       "#a8af2f",
       "#cf5b51"
+    ],
+    "blind": true
+  },
+  {
+    "id": "peacock",
+    "title": "Peacock",
+    "cells": 1200,
+    "colours": 35,
+    "thumb": [
+      "#c13518",
+      "#895747",
+      "#da6226",
+      "#4a3222",
+      "#a88a75"
     ],
     "blind": true
   },
@@ -362,6 +416,20 @@
       "#3d2019",
       "#73321f",
       "#aa4a25"
+    ],
+    "blind": true
+  },
+  {
+    "id": "steampunk-forest",
+    "title": "Steam Forest",
+    "cells": 1200,
+    "colours": 34,
+    "thumb": [
+      "#331512",
+      "#5b1f15",
+      "#9e301d",
+      "#b8381f",
+      "#80311d"
     ],
     "blind": true
   },
