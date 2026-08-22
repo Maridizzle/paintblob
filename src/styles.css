@@ -503,6 +503,64 @@ button {
   .panel-body.scene.panel-open .avatar-head { padding-left: 320px; }
 }
 
+/* -------- the play-stats dashboard filling the space under the room -------- */
+/* The head scrolls so the tiles are reachable inside the overflow:hidden stage
+   box; the room sits at the top, the dashboard flows beneath it. */
+.panel-body.scene .avatar-head { overflow-y: auto; }
+.panel-body.scene .avatar-head::-webkit-scrollbar { width: 8px; }
+.panel-body.scene .avatar-head::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12); border-radius: 4px;
+}
+
+.scene-stats {
+  flex: 0 0 auto;
+  width: min(94%, 520px);
+  margin: 14px 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.stat-group { display: flex; flex-direction: column; gap: 7px; }
+.stat-group h4 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 8px;
+}
+.stat-tile {
+  background: var(--card-solid);
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.stat-value {
+  font-size: 19px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stat-value.dim { color: var(--muted); font-weight: 700; }
+.stat-label {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.25;
+}
+
 /* The current colour of one room part, shown on its row. Square rather than
    round so it does not read as one of the palette swatches underneath. */
 .part-chip {
