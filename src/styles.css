@@ -21,12 +21,25 @@
   --muted: #8f8d99;
 
   /* Neons bled into the ground itself: a cyan wash from one corner, a green wash
-     from the opposite, faint enough to feel like light in the void, not colour.
-     Layered under grain on #app and the panels so the dead space is never flat
-     black. */
+     from the opposite — turned up so the void reads as lit, not flat black. */
   --void-glow:
-    radial-gradient(130% 90% at 4% -12%, rgba(53, 233, 255, 0.10), transparent 46%),
-    radial-gradient(130% 95% at 100% 112%, rgba(77, 255, 145, 0.08), transparent 48%);
+    radial-gradient(120% 85% at 2% -14%, rgba(53, 233, 255, 0.22), transparent 44%),
+    radial-gradient(125% 90% at 102% 114%, rgba(77, 255, 145, 0.18), transparent 46%);
+
+  /* Shots and streaks of colour ripped diagonally across the whole surface —
+     razor-thin bright cores riding soft glow halos, so the neons slash THROUGH
+     the background and the menus rather than hugging the edges. Cyan and green
+     are the voices; one rare orange. Pure gradients, so they cost nothing and
+     tile across any size. */
+  --streaks:
+    linear-gradient(64deg, transparent 26.6%, rgba(53, 233, 255, 0.9) 27.4%, transparent 28.2%),
+    linear-gradient(64deg, transparent 20%, rgba(53, 233, 255, 0.14) 27.6%, transparent 35%),
+    linear-gradient(-52deg, transparent 62.4%, rgba(77, 255, 145, 0.85) 63.2%, transparent 64%),
+    linear-gradient(-52deg, transparent 56%, rgba(77, 255, 145, 0.13) 63.4%, transparent 71%),
+    linear-gradient(73deg, transparent 79.6%, rgba(53, 233, 255, 0.7) 80.2%, transparent 80.9%),
+    linear-gradient(57deg, transparent 12.2%, rgba(77, 255, 145, 0.62) 12.9%, transparent 13.6%),
+    linear-gradient(-68deg, transparent 45.4%, rgba(255, 106, 31, 0.5) 46%, transparent 46.7%),
+    linear-gradient(-68deg, transparent 41%, rgba(255, 106, 31, 0.08) 46%, transparent 52%);
   /* A vertical neon thread — dashed couture stitching that runs down the edges of
      the negative space flanking a centred column. Cyan and green variants. */
   --thread-cyan: repeating-linear-gradient(to bottom, rgba(53, 233, 255, 0.5) 0 5px, transparent 5px 11px);
@@ -84,9 +97,9 @@ html, body {
   display: flex;
   flex-direction: column;
   height: 100%;
-  /* Grain over a neon-washed void: the deep-black ground of the whole card, the
-     cyan/green bleeding in from opposite corners so no dead space is flat. */
-  background: var(--tx-grain), var(--void-glow), var(--card);
+  /* Grain over neon slashes over a washed void: the deep-black ground of the
+     whole card, with cyan/green shots ripping diagonally across it. */
+  background: var(--tx-grain), var(--streaks), var(--void-glow), var(--card);
   border: 1px solid var(--edge);
   border-radius: var(--radius);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6),
@@ -101,7 +114,7 @@ html, body {
 .opaque-window #app {
   border-radius: 0;
   border: none;
-  background: var(--tx-grain), var(--void-glow), var(--vinyl);
+  background: var(--tx-grain), var(--streaks), var(--void-glow), var(--vinyl);
   backdrop-filter: none;
 }
 
@@ -896,7 +909,7 @@ button {
   inset: 0;
   display: flex;
   flex-direction: column;
-  background: var(--tx-grain), var(--void-glow), var(--void);
+  background: var(--tx-grain), var(--streaks), var(--void-glow), var(--void);
   animation: fade 180ms ease both;
   z-index: 10;
 }
