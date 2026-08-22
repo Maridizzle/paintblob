@@ -14,6 +14,32 @@
     "blind": true
   },
   {
+    "id": "aurora-toadstool",
+    "title": "Aurora Toadstool",
+    "cells": 421,
+    "colours": 25,
+    "thumb": [
+      "#e0b896",
+      "#fbf8d3",
+      "#ddddc7",
+      "#b5f57a",
+      "#92ec79"
+    ]
+  },
+  {
+    "id": "balloon-fireworks",
+    "title": "Balloon Fireworks",
+    "cells": 32,
+    "colours": 13,
+    "thumb": [
+      "#f17229",
+      "#f69f35",
+      "#73ccc2",
+      "#269aa3",
+      "#15667e"
+    ]
+  },
+  {
     "id": "cactus-mesa",
     "title": "Cactus Mesa",
     "cells": 17,
@@ -25,6 +51,48 @@
       "#ad412b",
       "#8b3022"
     ]
+  },
+  {
+    "id": "cherry-cupcake",
+    "title": "Cherry Cupcake",
+    "cells": 34,
+    "colours": 10,
+    "thumb": [
+      "#f99661",
+      "#f0b086",
+      "#fdd038",
+      "#f6f0b1",
+      "#5cd6d8"
+    ],
+    "blind": true
+  },
+  {
+    "id": "clockwork-cupcake",
+    "title": "Clockwork Cupcake",
+    "cells": 371,
+    "colours": 20,
+    "thumb": [
+      "#d82120",
+      "#330d07",
+      "#712214",
+      "#a64525",
+      "#e05817"
+    ],
+    "blind": true
+  },
+  {
+    "id": "cosmic-teapot",
+    "title": "Cosmic Teapot",
+    "cells": 198,
+    "colours": 17,
+    "thumb": [
+      "#fcf0d5",
+      "#fdfae7",
+      "#f8fcfb",
+      "#dbecec",
+      "#80c7cb"
+    ],
+    "blind": true
   },
   {
     "id": "dusk-harbour",
@@ -50,6 +118,20 @@
       "#d8a675",
       "#6491ba",
       "#6d3a17"
+    ],
+    "blind": true
+  },
+  {
+    "id": "toadstool-chunky",
+    "title": "Fly Agaric",
+    "cells": 38,
+    "colours": 12,
+    "thumb": [
+      "#f4e8c5",
+      "#abed7b",
+      "#7ee679",
+      "#54d882",
+      "#2bb793"
     ],
     "blind": true
   },
