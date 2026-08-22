@@ -1,5 +1,18 @@
 [
   {
+    "id": "airship-harvest",
+    "title": "Airship Harvest",
+    "cells": 650,
+    "colours": 28,
+    "thumb": [
+      "#fd8171",
+      "#2d150f",
+      "#c6552b",
+      "#b09166",
+      "#cbb684"
+    ]
+  },
+  {
     "id": "aurora-over-ice",
     "title": "Aurora Over Ice",
     "cells": 500,
@@ -94,6 +107,20 @@
     "blind": true
   },
   {
+    "id": "cosmic-still-life",
+    "title": "Cosmic Still Life",
+    "cells": 210,
+    "colours": 33,
+    "thumb": [
+      "#b32d28",
+      "#f4433e",
+      "#de5731",
+      "#ee7a49",
+      "#c95e19"
+    ],
+    "blind": true
+  },
+  {
     "id": "cosmic-teapot",
     "title": "Cosmic Teapot",
     "cells": 198,
@@ -172,6 +199,19 @@
       "#85af46",
       "#38875d",
       "#0fb5cd"
+    ]
+  },
+  {
+    "id": "hummingbird-donut",
+    "title": "Hummingbird Donut",
+    "cells": 466,
+    "colours": 26,
+    "thumb": [
+      "#f3cbc9",
+      "#c2aeac",
+      "#8e3625",
+      "#f7e1d7",
+      "#ba5a29"
     ]
   },
   {
@@ -310,6 +350,34 @@
       "#c4482e",
       "#f37f53"
     ]
+  },
+  {
+    "id": "rainy-harvest",
+    "title": "Rainy Day Harvest",
+    "cells": 500,
+    "colours": 32,
+    "thumb": [
+      "#f3463e",
+      "#1c0a07",
+      "#3d2019",
+      "#73321f",
+      "#aa4a25"
+    ],
+    "blind": true
+  },
+  {
+    "id": "storm-lake",
+    "title": "Storm Over The Lake",
+    "cells": 277,
+    "colours": 24,
+    "thumb": [
+      "#cd3b22",
+      "#f27038",
+      "#d99c71",
+      "#f2a972",
+      "#b59174"
+    ],
+    "blind": true
   },
   {
     "id": "sunset-tidepool",

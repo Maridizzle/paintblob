@@ -20,6 +20,24 @@
     "",
     "Underscore-prefixed keys (like this one) are ignored."
   ],
+  "airship-harvest": {
+    "effect": "twinkle",
+    "cells": [
+      5,
+      7,
+      13,
+      17,
+      329,
+      468,
+      476,
+      490,
+      494,
+      580,
+      624
+    ],
+    "speed": 1,
+    "amplitude": 1
+  },
   "aurora-over-ice": {
     "effect": "shimmer",
     "cells": [
@@ -397,6 +415,36 @@
     "speed": 1,
     "amplitude": 1.2
   },
+  "cosmic-still-life": {
+    "effect": "twinkle",
+    "cells": [
+      36,
+      40,
+      50,
+      55,
+      60,
+      62,
+      70,
+      79,
+      87,
+      88,
+      98,
+      104,
+      107,
+      112,
+      116,
+      128,
+      133,
+      151,
+      153,
+      154,
+      159,
+      174,
+      189
+    ],
+    "speed": 1,
+    "amplitude": 1
+  },
   "cosmic-teapot": {
     "effect": "twinkle",
     "cells": [
@@ -506,6 +554,52 @@
     ],
     "speed": 1,
     "amplitude": 0.8
+  },
+  "hummingbird-donut": {
+    "effect": "breathe",
+    "cells": [
+      32,
+      41,
+      51,
+      58,
+      62,
+      74,
+      75,
+      76,
+      79,
+      84,
+      88,
+      117,
+      118,
+      127,
+      128,
+      133,
+      172,
+      184,
+      188,
+      198,
+      220,
+      227,
+      230,
+      242,
+      252,
+      256,
+      266,
+      305,
+      323,
+      328,
+      350,
+      387,
+      397,
+      398,
+      413,
+      414,
+      415,
+      419,
+      428
+    ],
+    "speed": 1,
+    "amplitude": 1
   },
   "humpback-whale": {
     "effect": "ripple",
@@ -1020,6 +1114,55 @@
     "effect": "glow",
     "cells": [
       23
+    ],
+    "speed": 1,
+    "amplitude": 1
+  },
+  "rainy-harvest": {
+    "effect": "glow",
+    "cells": [
+      4,
+      31,
+      51,
+      97
+    ],
+    "speed": 1,
+    "amplitude": 1
+  },
+  "storm-lake": {
+    "effect": "glow",
+    "cells": [
+      24,
+      25,
+      39,
+      46,
+      47,
+      66,
+      70,
+      73,
+      83,
+      90,
+      102,
+      106,
+      157,
+      158,
+      169,
+      176,
+      177,
+      179,
+      191,
+      194,
+      198,
+      206,
+      236,
+      237,
+      239,
+      245,
+      248,
+      249,
+      250,
+      252,
+      260
     ],
     "speed": 1,
     "amplitude": 1
