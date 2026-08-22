@@ -10,6 +10,11 @@
       "#c6552b",
       "#b09166",
       "#cbb684"
+    ],
+    "difficulty": "detailed",
+    "themes": [
+      "Food",
+      "Fantasy"
     ]
   },
   {
@@ -24,7 +29,12 @@
       "#4074b2",
       "#144c84"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "normal",
+    "themes": [
+      "Landscape",
+      "Space"
+    ]
   },
   {
     "id": "aurora-toadstool",
@@ -37,6 +47,11 @@
       "#ddddc7",
       "#b5f57a",
       "#92ec79"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Space"
     ]
   },
   {
@@ -50,6 +65,10 @@
       "#73ccc2",
       "#269aa3",
       "#15667e"
+    ],
+    "difficulty": "chunky",
+    "themes": [
+      "Landscape"
     ]
   },
   {
@@ -64,7 +83,11 @@
       "#281c15",
       "#7b674e"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "insane",
+    "themes": [
+      "Landscape"
+    ]
   },
   {
     "id": "blossom-pattern",
@@ -78,7 +101,12 @@
       "#f75e58",
       "#f67267"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "insane",
+    "themes": [
+      "Flowers",
+      "Abstract"
+    ]
   },
   {
     "id": "brass-fruit-bowl",
@@ -91,6 +119,11 @@
       "#7f351b",
       "#b15925",
       "#da782e"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Food",
+      "Fantasy"
     ]
   },
   {
@@ -104,6 +137,10 @@
       "#e55a5f",
       "#ad412b",
       "#8b3022"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Landscape"
     ]
   },
   {
@@ -117,6 +154,12 @@
       "#f0784d",
       "#f49855",
       "#fcb75e"
+    ],
+    "difficulty": "insane",
+    "themes": [
+      "Animals",
+      "Fantasy",
+      "Space"
     ]
   },
   {
@@ -131,7 +174,11 @@
       "#f6f0b1",
       "#5cd6d8"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "chunky",
+    "themes": [
+      "Food"
+    ]
   },
   {
     "id": "clockwork-cupcake",
@@ -145,7 +192,12 @@
       "#a64525",
       "#e05817"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "normal",
+    "themes": [
+      "Food",
+      "Fantasy"
+    ]
   },
   {
     "id": "cloud-peacock",
@@ -158,6 +210,10 @@
       "#d09a83",
       "#e6b9a2",
       "#2b5549"
+    ],
+    "difficulty": "insane",
+    "themes": [
+      "Animals"
     ]
   },
   {
@@ -172,7 +228,12 @@
       "#ee7a49",
       "#c95e19"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "detailed",
+    "themes": [
+      "Food",
+      "Space"
+    ]
   },
   {
     "id": "cosmic-teapot",
@@ -186,7 +247,12 @@
       "#dbecec",
       "#80c7cb"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "normal",
+    "themes": [
+      "Food",
+      "Space"
+    ]
   },
   {
     "id": "dusk-harbour",
@@ -199,6 +265,11 @@
       "#ffd98a",
       "#2e599d",
       "#9556b8"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Landscape",
+      "Water"
     ]
   },
   {
@@ -213,7 +284,12 @@
       "#6491ba",
       "#6d3a17"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "normal",
+    "themes": [
+      "Landscape",
+      "Flowers"
+    ]
   },
   {
     "id": "toadstool-chunky",
@@ -227,7 +303,11 @@
       "#54d882",
       "#2bb793"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "chunky",
+    "themes": [
+      "Fantasy"
+    ]
   },
   {
     "id": "greenhouse",
@@ -240,6 +320,11 @@
       "#aa6934",
       "#f0bd75",
       "#c8a259"
+    ],
+    "difficulty": "insane",
+    "themes": [
+      "Flowers",
+      "Landscape"
     ]
   },
   {
@@ -253,6 +338,11 @@
       "#487dbd",
       "#3769a9",
       "#2e7397"
+    ],
+    "difficulty": "detailed",
+    "themes": [
+      "Landscape",
+      "Water"
     ]
   },
   {
@@ -266,6 +356,11 @@
       "#85af46",
       "#38875d",
       "#0fb5cd"
+    ],
+    "difficulty": "detailed",
+    "themes": [
+      "Animals",
+      "Flowers"
     ]
   },
   {
@@ -279,6 +374,11 @@
       "#8e3625",
       "#f7e1d7",
       "#ba5a29"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Animals",
+      "Food"
     ]
   },
   {
@@ -293,7 +393,12 @@
       "#3daec1",
       "#177698"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "normal",
+    "themes": [
+      "Animals",
+      "Water"
+    ]
   },
   {
     "id": "kintsugi-bowl-and-magnolias",
@@ -307,7 +412,12 @@
       "#a05320",
       "#703413"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "normal",
+    "themes": [
+      "Flowers",
+      "Food"
+    ]
   },
   {
     "id": "koi-and-lilies",
@@ -320,6 +430,11 @@
       "#ef4618",
       "#63321c",
       "#f8a37c"
+    ],
+    "difficulty": "detailed",
+    "themes": [
+      "Animals",
+      "Water"
     ]
   },
   {
@@ -333,6 +448,11 @@
       "#f58766",
       "#f9a875",
       "#3bb33f"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Animals",
+      "Water"
     ]
   },
   {
@@ -347,7 +467,12 @@
       "#bb7a37",
       "#d59f57"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Landscape"
+    ]
   },
   {
     "id": "lighthouse-eclipse",
@@ -361,7 +486,13 @@
       "#f5cc8c",
       "#c25bc0"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "normal",
+    "themes": [
+      "Landscape",
+      "Water",
+      "Space"
+    ]
   },
   {
     "id": "mandala",
@@ -374,6 +505,11 @@
       "#f29146",
       "#fef2d9",
       "#816b37"
+    ],
+    "difficulty": "insane",
+    "themes": [
+      "Abstract",
+      "Flowers"
     ]
   },
   {
@@ -388,7 +524,12 @@
       "#d186b7",
       "#4d6795"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "normal",
+    "themes": [
+      "Space",
+      "Landscape"
+    ]
   },
   {
     "id": "orchid-conservatory",
@@ -402,7 +543,11 @@
       "#a8af2f",
       "#cf5b51"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "normal",
+    "themes": [
+      "Flowers"
+    ]
   },
   {
     "id": "peacock",
@@ -416,7 +561,11 @@
       "#4a3222",
       "#a88a75"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "insane",
+    "themes": [
+      "Animals"
+    ]
   },
   {
     "id": "pumpkin-lake",
@@ -430,7 +579,13 @@
       "#f2a972",
       "#b09075"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "normal",
+    "themes": [
+      "Spooky",
+      "Water",
+      "Landscape"
+    ]
   },
   {
     "id": "rainy-cottage",
@@ -443,6 +598,10 @@
       "#f5553d",
       "#c4482e",
       "#f37f53"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Landscape"
     ]
   },
   {
@@ -457,7 +616,12 @@
       "#73321f",
       "#aa4a25"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "normal",
+    "themes": [
+      "Food",
+      "Spooky"
+    ]
   },
   {
     "id": "steampunk-forest",
@@ -471,7 +635,12 @@
       "#b8381f",
       "#80311d"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "insane",
+    "themes": [
+      "Fantasy",
+      "Spooky"
+    ]
   },
   {
     "id": "stone-mosaic",
@@ -484,6 +653,10 @@
       "#7f350c",
       "#86521f",
       "#ca7a1e"
+    ],
+    "difficulty": "insane",
+    "themes": [
+      "Abstract"
     ]
   },
   {
@@ -498,7 +671,12 @@
       "#f2a972",
       "#b59174"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "detailed",
+    "themes": [
+      "Spooky",
+      "Water"
+    ]
   },
   {
     "id": "sunset-tidepool",
@@ -512,7 +690,12 @@
       "#d59346",
       "#f9cf70"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "normal",
+    "themes": [
+      "Water",
+      "Landscape"
+    ]
   },
   {
     "id": "tidepool-mosaic",
@@ -526,7 +709,12 @@
       "#d0486a",
       "#a5ab26"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "normal",
+    "themes": [
+      "Water",
+      "Abstract"
+    ]
   },
   {
     "id": "wildflower-bunch",
@@ -540,6 +728,10 @@
       "#a88377",
       "#613e21"
     ],
-    "blind": true
+    "blind": true,
+    "difficulty": "insane",
+    "themes": [
+      "Flowers"
+    ]
   }
 ]

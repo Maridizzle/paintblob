@@ -1,0 +1,282 @@
+{
+  "_readme": [
+    "Difficulty + theme tags for the Pictures-list filters. Keyed by puzzle id.",
+    "  difficulty  chunky | normal | detailed | insane  (how the picture was built)",
+    "  themes      1-3 of: Abstract, Animals, Fantasy, Flowers, Food, Landscape, Space, Spooky, Water",
+    "Source of truth: tools/apply-tags.mjs reads this and writes difficulty/themes",
+    "into puzzles/manifest.json (the list reads the manifest, not the puzzle JSON).",
+    "Missing id defaults to difficulty \"normal\", no themes. Underscore keys ignored."
+  ],
+  "airship-harvest": {
+    "difficulty": "detailed",
+    "themes": [
+      "Food",
+      "Fantasy"
+    ]
+  },
+  "aurora-over-ice": {
+    "difficulty": "normal",
+    "themes": [
+      "Landscape",
+      "Space"
+    ]
+  },
+  "aurora-toadstool": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Space"
+    ]
+  },
+  "balloon-fireworks": {
+    "difficulty": "chunky",
+    "themes": [
+      "Landscape"
+    ]
+  },
+  "balloon-town": {
+    "difficulty": "insane",
+    "themes": [
+      "Landscape"
+    ]
+  },
+  "blossom-pattern": {
+    "difficulty": "insane",
+    "themes": [
+      "Flowers",
+      "Abstract"
+    ]
+  },
+  "brass-fruit-bowl": {
+    "difficulty": "normal",
+    "themes": [
+      "Food",
+      "Fantasy"
+    ]
+  },
+  "cactus-mesa": {
+    "difficulty": "normal",
+    "themes": [
+      "Landscape"
+    ]
+  },
+  "celestial-dragon": {
+    "difficulty": "insane",
+    "themes": [
+      "Animals",
+      "Fantasy",
+      "Space"
+    ]
+  },
+  "cherry-cupcake": {
+    "difficulty": "chunky",
+    "themes": [
+      "Food"
+    ]
+  },
+  "clockwork-cupcake": {
+    "difficulty": "normal",
+    "themes": [
+      "Food",
+      "Fantasy"
+    ]
+  },
+  "cloud-peacock": {
+    "difficulty": "insane",
+    "themes": [
+      "Animals"
+    ]
+  },
+  "cosmic-still-life": {
+    "difficulty": "detailed",
+    "themes": [
+      "Food",
+      "Space"
+    ]
+  },
+  "cosmic-teapot": {
+    "difficulty": "normal",
+    "themes": [
+      "Food",
+      "Space"
+    ]
+  },
+  "dusk-harbour": {
+    "difficulty": "normal",
+    "themes": [
+      "Landscape",
+      "Water"
+    ]
+  },
+  "firefly-meadow": {
+    "difficulty": "normal",
+    "themes": [
+      "Landscape",
+      "Flowers"
+    ]
+  },
+  "greenhouse": {
+    "difficulty": "insane",
+    "themes": [
+      "Flowers",
+      "Landscape"
+    ]
+  },
+  "harbour-row": {
+    "difficulty": "detailed",
+    "themes": [
+      "Landscape",
+      "Water"
+    ]
+  },
+  "hummingbird-blossoms": {
+    "difficulty": "detailed",
+    "themes": [
+      "Animals",
+      "Flowers"
+    ]
+  },
+  "hummingbird-donut": {
+    "difficulty": "normal",
+    "themes": [
+      "Animals",
+      "Food"
+    ]
+  },
+  "humpback-whale": {
+    "difficulty": "normal",
+    "themes": [
+      "Animals",
+      "Water"
+    ]
+  },
+  "kintsugi-bowl-and-magnolias": {
+    "difficulty": "normal",
+    "themes": [
+      "Flowers",
+      "Food"
+    ]
+  },
+  "koi-and-lilies": {
+    "difficulty": "detailed",
+    "themes": [
+      "Animals",
+      "Water"
+    ]
+  },
+  "koi-pond": {
+    "difficulty": "normal",
+    "themes": [
+      "Animals",
+      "Water"
+    ]
+  },
+  "library-in-the-clouds": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Landscape"
+    ]
+  },
+  "lighthouse-eclipse": {
+    "difficulty": "normal",
+    "themes": [
+      "Landscape",
+      "Water",
+      "Space"
+    ]
+  },
+  "mandala": {
+    "difficulty": "insane",
+    "themes": [
+      "Abstract",
+      "Flowers"
+    ]
+  },
+  "nebula-peaks": {
+    "difficulty": "normal",
+    "themes": [
+      "Space",
+      "Landscape"
+    ]
+  },
+  "orchid-conservatory": {
+    "difficulty": "normal",
+    "themes": [
+      "Flowers"
+    ]
+  },
+  "peacock": {
+    "difficulty": "insane",
+    "themes": [
+      "Animals"
+    ]
+  },
+  "pumpkin-lake": {
+    "difficulty": "normal",
+    "themes": [
+      "Spooky",
+      "Water",
+      "Landscape"
+    ]
+  },
+  "rainy-cottage": {
+    "difficulty": "normal",
+    "themes": [
+      "Landscape"
+    ]
+  },
+  "rainy-harvest": {
+    "difficulty": "normal",
+    "themes": [
+      "Food",
+      "Spooky"
+    ]
+  },
+  "steampunk-forest": {
+    "difficulty": "insane",
+    "themes": [
+      "Fantasy",
+      "Spooky"
+    ]
+  },
+  "stone-mosaic": {
+    "difficulty": "insane",
+    "themes": [
+      "Abstract"
+    ]
+  },
+  "storm-lake": {
+    "difficulty": "detailed",
+    "themes": [
+      "Spooky",
+      "Water"
+    ]
+  },
+  "sunset-tidepool": {
+    "difficulty": "normal",
+    "themes": [
+      "Water",
+      "Landscape"
+    ]
+  },
+  "tidepool-mosaic": {
+    "difficulty": "normal",
+    "themes": [
+      "Water",
+      "Abstract"
+    ]
+  },
+  "toadstool-chunky": {
+    "difficulty": "chunky",
+    "themes": [
+      "Fantasy"
+    ]
+  },
+  "wildflower-bunch": {
+    "difficulty": "insane",
+    "themes": [
+      "Flowers"
+    ]
+  }
+}

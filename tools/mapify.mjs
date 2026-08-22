@@ -70,14 +70,29 @@ function updateManifest(entry) {
 }
 
 export function manifestEntry(puzzle, { id, title, blind }) {
+  // Difficulty + themes come from the tags.json sidecar rather than the puzzle
+  // JSON: the list reads the manifest, and the game never needs them at play
+  // time. Reading them here means a single re-bake keeps them in the manifest.
+  const tag = tagsFor(id);
   return {
     id,
     title,
     cells: puzzle.cells.length,
     colours: puzzle.palette.length,
     thumb: puzzle.palette.slice(0, 5).map((p) => p.hex),
+    difficulty: tag?.difficulty ?? 'normal',
+    ...(tag?.themes?.length ? { themes: tag.themes } : {}),
     ...(blind ? { blind: true } : {}),
   };
+}
+
+/**
+ * A picture's difficulty (the preset it was built at) and theme tags, from the
+ * tags.json sidecar. Unlike animation/lift these land in the manifest, not the
+ * puzzle JSON — see manifestEntry. Missing id → null (caller defaults to normal).
+ */
+export function tagsFor(id, dir = PUZZLE_DIR) {
+  return sidecarTag('tags.json', id, dir);
 }
 
 /**
