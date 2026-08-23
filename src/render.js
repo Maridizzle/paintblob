@@ -126,15 +126,6 @@ export class Board {
     return this.fitScale * this.zoom;
   }
 
-  /** Extra alpha added to the selected-colour highlight once the user has
-   *  zoomed in. The wash is deliberately faint at 100%, but at high zoom —
-   *  where a phone user usually is — it becomes hard to see which cells still
-   *  want the held paint. Zero at 100%, ramps gently, capped so the highlight
-   *  never turns into a solid fill. */
-  get highlightBoost() {
-    return Math.min(0.12, Math.max(0, (this.zoom - 1) * 0.08));
-  }
-
   /** Picture's on-screen top-left corner, CSS px, incorporating pan.
    *  Safe with no puzzle loaded yet — toPuzzle() gets called on every
    *  pointerdown regardless of whether one has, same as the fields these
@@ -489,16 +480,16 @@ export class Board {
         ctx.fill(cell.path);
         continue;
       } else if (cell.colour === this.selected) {
-        // Faint wash of the actual paint so it is obvious where it goes —
-        // firmed up a little once zoomed in, where the subtle version washes
-        // out.
+        // Blank paper, then a diagonal hatch of the actual paint — the same
+        // mark the tiny numberless cells get, so "this blank is this colour"
+        // reads one way across the whole picture. Hatched rather than washed:
+        // a flat tint of the colour just looks like a faded version of the
+        // finished cell, where the hatch plainly says "not painted yet, and
+        // this is what goes here". The number draws over it in the pass below.
         ctx.fillStyle = BLANK;
         ctx.fill(cell.path);
-        ctx.save();
-        ctx.globalAlpha = 0.16 + this.highlightBoost;
-        ctx.fillStyle = this.hexOf(cell.colour);
+        ctx.fillStyle = stripeFor(cell.colour, true);
         ctx.fill(cell.path);
-        ctx.restore();
         continue;
       } else {
         ctx.fillStyle = BLANK;
@@ -583,19 +574,6 @@ export class Board {
     const lifted = this.liftCells ? this.drawLift(sx, sy) : null;
 
     this.applyTransform(ctx, sx, sy);
-
-    // Pulsing wash over every cell that takes the selected paint.
-    if (this.selected >= 0 && this.reveal < 1) {
-      const pulse = 0.06 + this.highlightBoost + 0.05 * (0.5 + 0.5 * Math.sin(timeMs / 380));
-      ctx.save();
-      ctx.globalAlpha = pulse;
-      ctx.fillStyle = this.hexOf(this.selected);
-      for (const cell of this.cells) {
-        if (cell.colour !== this.selected || this.filled.has(cell.id)) continue;
-        ctx.fill(cell.path);
-      }
-      ctx.restore();
-    }
 
     if (this.colourFlash) {
       const elapsed = timeMs - this.colourFlash.start;
