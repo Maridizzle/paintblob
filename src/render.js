@@ -90,6 +90,7 @@ export class Board {
     this.hover = -1;
     this.reveal = 0;      // 1 = finished picture, outlines faded away
     this.dirty = true;
+    this._pulseStripe = null; // cached breathing-hatch pattern — see pulseStripe()
     this.hintTarget = null; // { id, start } while a hint flash is showing
     this.colourFlash = null;    // { id, start, duration } — Colour Flash ability
     this.numberOverride = null; // { colour, end } — Number Recolor ability
@@ -414,15 +415,22 @@ export class Board {
    * carry a number. Sized in picture units, like every line width in this
    * file, so the stripe reads as a constant width on screen regardless of
    * zoom, rather than shrinking to nothing on the smallest cells.
+   *
+   * `opaque` (the base-layer default) paints paper in the gaps so one fill
+   * establishes the whole cell. `opaque = false` leaves the gaps transparent —
+   * just the coloured diagonals — so the tile can be laid *over* an existing
+   * hatch to deepen only its lines, without glazing the gaps toward paper.
    */
-  stripePattern(ctx, hex, vivid) {
+  stripePattern(ctx, hex, vivid, opaque = true) {
     const n = Math.max(2, Math.round(10 / this.scale));
     const tile = document.createElement('canvas');
     tile.width = n;
     tile.height = n;
     const tctx = tile.getContext('2d');
-    tctx.fillStyle = BLANK;
-    tctx.fillRect(0, 0, n, n);
+    if (opaque) {
+      tctx.fillStyle = BLANK;
+      tctx.fillRect(0, 0, n, n);
+    }
     tctx.strokeStyle = hex;
     tctx.globalAlpha = vivid ? 0.8 : 0.36;
     tctx.lineWidth = n * 0.45;
@@ -435,6 +443,24 @@ export class Board {
     }
     tctx.stroke();
     return ctx.createPattern(tile, 'repeat');
+  }
+
+  /**
+   * The breathing-hatch pattern for the colour currently in hand — the same
+   * vivid diagonals the base layer draws on that colour's blank cells, but with
+   * transparent gaps so the live layer can lay it over the resting hatch and
+   * deepen just the lines (see draw()). One pattern per tub and tile size,
+   * rebuilt only when the selection or the zoom (which sets the tile size)
+   * changes, so a steady hold costs nothing per frame.
+   */
+  pulseStripe() {
+    const n = Math.max(2, Math.round(10 / this.scale));
+    const key = `${this.selected}:${n}`;
+    if (!this._pulseStripe || this._pulseStripe.key !== key) {
+      const pattern = this.stripePattern(this.ctx, this.hexOf(this.selected), true, false);
+      this._pulseStripe = { key, pattern };
+    }
+    return this._pulseStripe.pattern;
   }
 
   /* ------------------------------------------------------------- base layer */
@@ -574,6 +600,28 @@ export class Board {
     const lifted = this.liftCells ? this.drawLift(sx, sy) : null;
 
     this.applyTransform(ctx, sx, sy);
+
+    // The colour in hand breathes: a soft hatch of that paint lifts and settles
+    // over its unpainted cells, drawing the eye to where the next strokes go.
+    // The resting hatch is on the base layer; this deepens the same diagonal
+    // lines in place (a transparent-gap tile at the same phase), so the
+    // highlight stays hatch-shaded and never washes the cells with flat colour.
+    // The lazy 30fps idle redraw (frame() in game.js) animates it for free.
+    // A finished picture (reveal === 1) has no unpainted cells of any colour, so
+    // the loop below simply finds none — no separate guard needed for it.
+    if (this.selected >= 0) {
+      const breath = 0.22 * (0.5 + 0.5 * Math.sin(timeMs / 620));
+      if (breath > 0.01) {
+        ctx.save();
+        ctx.globalAlpha = breath;
+        ctx.fillStyle = this.pulseStripe();
+        for (const cell of this.cells) {
+          if (cell.colour !== this.selected || this.filled.has(cell.id)) continue;
+          ctx.fill(cell.path);
+        }
+        ctx.restore();
+      }
+    }
 
     if (this.colourFlash) {
       const elapsed = timeMs - this.colourFlash.start;
