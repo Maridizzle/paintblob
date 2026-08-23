@@ -90,6 +90,7 @@ export class Board {
     this.hover = -1;
     this.reveal = 0;      // 1 = finished picture, outlines faded away
     this.dirty = true;
+    this._pulseStripe = null; // cached breathing-hatch pattern — see pulseStripe()
     this.hintTarget = null; // { id, start } while a hint flash is showing
     this.colourFlash = null;    // { id, start, duration } — Colour Flash ability
     this.numberOverride = null; // { colour, end } — Number Recolor ability
@@ -124,15 +125,6 @@ export class Board {
    * click still lands on the right cell at any zoom level. */
   get scale() {
     return this.fitScale * this.zoom;
-  }
-
-  /** Extra alpha added to the selected-colour highlight once the user has
-   *  zoomed in. The wash is deliberately faint at 100%, but at high zoom —
-   *  where a phone user usually is — it becomes hard to see which cells still
-   *  want the held paint. Zero at 100%, ramps gently, capped so the highlight
-   *  never turns into a solid fill. */
-  get highlightBoost() {
-    return Math.min(0.12, Math.max(0, (this.zoom - 1) * 0.08));
   }
 
   /** Picture's on-screen top-left corner, CSS px, incorporating pan.
@@ -423,15 +415,22 @@ export class Board {
    * carry a number. Sized in picture units, like every line width in this
    * file, so the stripe reads as a constant width on screen regardless of
    * zoom, rather than shrinking to nothing on the smallest cells.
+   *
+   * `opaque` (the base-layer default) paints paper in the gaps so one fill
+   * establishes the whole cell. `opaque = false` leaves the gaps transparent —
+   * just the coloured diagonals — so the tile can be laid *over* an existing
+   * hatch to deepen only its lines, without glazing the gaps toward paper.
    */
-  stripePattern(ctx, hex, vivid) {
+  stripePattern(ctx, hex, vivid, opaque = true) {
     const n = Math.max(2, Math.round(10 / this.scale));
     const tile = document.createElement('canvas');
     tile.width = n;
     tile.height = n;
     const tctx = tile.getContext('2d');
-    tctx.fillStyle = BLANK;
-    tctx.fillRect(0, 0, n, n);
+    if (opaque) {
+      tctx.fillStyle = BLANK;
+      tctx.fillRect(0, 0, n, n);
+    }
     tctx.strokeStyle = hex;
     tctx.globalAlpha = vivid ? 0.8 : 0.36;
     tctx.lineWidth = n * 0.45;
@@ -444,6 +443,24 @@ export class Board {
     }
     tctx.stroke();
     return ctx.createPattern(tile, 'repeat');
+  }
+
+  /**
+   * The breathing-hatch pattern for the colour currently in hand — the same
+   * vivid diagonals the base layer draws on that colour's blank cells, but with
+   * transparent gaps so the live layer can lay it over the resting hatch and
+   * deepen just the lines (see draw()). One pattern per tub and tile size,
+   * rebuilt only when the selection or the zoom (which sets the tile size)
+   * changes, so a steady hold costs nothing per frame.
+   */
+  pulseStripe() {
+    const n = Math.max(2, Math.round(10 / this.scale));
+    const key = `${this.selected}:${n}`;
+    if (!this._pulseStripe || this._pulseStripe.key !== key) {
+      const pattern = this.stripePattern(this.ctx, this.hexOf(this.selected), true, false);
+      this._pulseStripe = { key, pattern };
+    }
+    return this._pulseStripe.pattern;
   }
 
   /* ------------------------------------------------------------- base layer */
@@ -489,16 +506,16 @@ export class Board {
         ctx.fill(cell.path);
         continue;
       } else if (cell.colour === this.selected) {
-        // Faint wash of the actual paint so it is obvious where it goes —
-        // firmed up a little once zoomed in, where the subtle version washes
-        // out.
+        // Blank paper, then a diagonal hatch of the actual paint — the same
+        // mark the tiny numberless cells get, so "this blank is this colour"
+        // reads one way across the whole picture. Hatched rather than washed:
+        // a flat tint of the colour just looks like a faded version of the
+        // finished cell, where the hatch plainly says "not painted yet, and
+        // this is what goes here". The number draws over it in the pass below.
         ctx.fillStyle = BLANK;
         ctx.fill(cell.path);
-        ctx.save();
-        ctx.globalAlpha = 0.16 + this.highlightBoost;
-        ctx.fillStyle = this.hexOf(cell.colour);
+        ctx.fillStyle = stripeFor(cell.colour, true);
         ctx.fill(cell.path);
-        ctx.restore();
         continue;
       } else {
         ctx.fillStyle = BLANK;
@@ -584,17 +601,26 @@ export class Board {
 
     this.applyTransform(ctx, sx, sy);
 
-    // Pulsing wash over every cell that takes the selected paint.
-    if (this.selected >= 0 && this.reveal < 1) {
-      const pulse = 0.06 + this.highlightBoost + 0.05 * (0.5 + 0.5 * Math.sin(timeMs / 380));
-      ctx.save();
-      ctx.globalAlpha = pulse;
-      ctx.fillStyle = this.hexOf(this.selected);
-      for (const cell of this.cells) {
-        if (cell.colour !== this.selected || this.filled.has(cell.id)) continue;
-        ctx.fill(cell.path);
+    // The colour in hand breathes: a soft hatch of that paint lifts and settles
+    // over its unpainted cells, drawing the eye to where the next strokes go.
+    // The resting hatch is on the base layer; this deepens the same diagonal
+    // lines in place (a transparent-gap tile at the same phase), so the
+    // highlight stays hatch-shaded and never washes the cells with flat colour.
+    // The lazy 30fps idle redraw (frame() in game.js) animates it for free.
+    // A finished picture (reveal === 1) has no unpainted cells of any colour, so
+    // the loop below simply finds none — no separate guard needed for it.
+    if (this.selected >= 0) {
+      const breath = 0.22 * (0.5 + 0.5 * Math.sin(timeMs / 620));
+      if (breath > 0.01) {
+        ctx.save();
+        ctx.globalAlpha = breath;
+        ctx.fillStyle = this.pulseStripe();
+        for (const cell of this.cells) {
+          if (cell.colour !== this.selected || this.filled.has(cell.id)) continue;
+          ctx.fill(cell.path);
+        }
+        ctx.restore();
       }
-      ctx.restore();
     }
 
     if (this.colourFlash) {

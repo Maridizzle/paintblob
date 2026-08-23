@@ -707,6 +707,51 @@ test('the band tint is distinct from both the base row and the hover tint', () =
 
 /* ------------------------------------------------------- the raised element */
 
+test('the in-hand colour marks its blank cells with a hatch, not a wash', () => {
+  const render = readSource('src/render.js');
+  const base = render.slice(render.indexOf('  drawBase() {'));
+  const body = base.slice(0, base.indexOf('\n  }\n'));
+  // The selected-colour branch fills a diagonal hatch of the paint, the same
+  // mark the tiny numberless cells use — not a translucent flat fill, which
+  // just reads as a faded copy of the finished cell.
+  const branch = body.slice(body.indexOf('else if (cell.colour === this.selected)'));
+  assert.match(branch.slice(0, 800), /stripeFor\(cell\.colour, true\)/,
+    'selected blank cells must be hatched via stripeFor, not washed');
+  // The old animated flat *wash* (and its zoom boost) that rode over them is
+  // gone — what breathes over them on the live layer now is a hatch, not a wash
+  // (see the next test), or the watermark comes straight back.
+  assert.ok(!/Pulsing wash|highlightBoost/.test(render),
+    'the flat pulsing highlight wash (and its zoom boost) must be gone');
+});
+
+test('the in-hand colour breathes as a hatch on the live layer, never a glaze', () => {
+  const render = readSource('src/render.js');
+
+  // The live breath deepens the resting hatch: it fills the selected colour's
+  // unpainted cells with the cached stripe pattern, modulated by a slow sine.
+  // It must not paint a flat colour glaze (hexOf) back over them — that would
+  // be the watermark again, just moving.
+  const draw = render.slice(render.indexOf('  draw(bursts, timeMs) {'));
+  const drawBody = draw.slice(0, draw.indexOf('\n  }\n'));
+  const block = drawBody.slice(
+    drawBody.indexOf('The colour in hand breathes'),
+    drawBody.indexOf('if (this.colourFlash)'),
+  );
+  assert.match(block, /this\.pulseStripe\(\)/,
+    'the breath must fill selected cells with the pulseStripe pattern');
+  assert.match(block, /cell\.colour !== this\.selected/,
+    'the breath must be scoped to the selected colour’s cells');
+  assert.ok(!/hexOf/.test(block),
+    'the breath must stay a hatch — no flat colour glaze (hexOf) over the cells');
+
+  // And that pattern is built transparent-gap (opaque = false), so it deepens
+  // only the diagonal lines rather than glazing the paper between them.
+  const pulse = render.slice(render.indexOf('  pulseStripe() {'));
+  const pulseBody = pulse.slice(0, pulse.indexOf('\n  }\n'));
+  assert.match(pulseBody, /stripePattern\([^\n]*true, false\)/,
+    'pulseStripe must build a transparent-gap tile (opaque = false)');
+});
+
 test('the raise belongs to painting, and cannot reach the photo', () => {
   const render = readSource('src/render.js');
   const draw = render.slice(render.indexOf('  draw(bursts, timeMs) {'));
