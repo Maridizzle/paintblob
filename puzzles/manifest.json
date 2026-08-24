@@ -255,6 +255,21 @@
     ]
   },
   {
+    "id": "desert-milky-way",
+    "title": "Desert Milky Way",
+    "cells": 500,
+    "colours": 29,
+    "thumb": [
+      "#6c3834",
+      "#94665d",
+      "#9e4c33",
+      "#ba7457",
+      "#da6a33"
+    ],
+    "difficulty": "normal",
+    "blind": true
+  },
+  {
     "id": "dusk-harbour",
     "title": "Dusk Harbour",
     "cells": 23,
@@ -308,6 +323,21 @@
     "themes": [
       "Fantasy"
     ]
+  },
+  {
+    "id": "framed-tidepool-bird",
+    "title": "Framed Tidepool Bird",
+    "cells": 500,
+    "colours": 33,
+    "thumb": [
+      "#b84523",
+      "#e07747",
+      "#e5ab7e",
+      "#58432f",
+      "#3d3122"
+    ],
+    "difficulty": "normal",
+    "blind": true
   },
   {
     "id": "greenhouse",
@@ -399,6 +429,21 @@
       "Animals",
       "Water"
     ]
+  },
+  {
+    "id": "jellyfish-drift",
+    "title": "Jellyfish Drift",
+    "cells": 500,
+    "colours": 40,
+    "thumb": [
+      "#9a4f4f",
+      "#e39a95",
+      "#c05636",
+      "#d89063",
+      "#f5ae61"
+    ],
+    "difficulty": "normal",
+    "blind": true
   },
   {
     "id": "kintsugi-bowl-and-magnolias",
@@ -511,6 +556,21 @@
       "Abstract",
       "Flowers"
     ]
+  },
+  {
+    "id": "mossy-forest-stream",
+    "title": "Mossy Forest Stream",
+    "cells": 500,
+    "colours": 33,
+    "thumb": [
+      "#bb5b14",
+      "#ec9433",
+      "#9c651f",
+      "#332815",
+      "#60481a"
+    ],
+    "difficulty": "normal",
+    "blind": true
   },
   {
     "id": "nebula-peaks",
@@ -696,6 +756,21 @@
       "Water",
       "Landscape"
     ]
+  },
+  {
+    "id": "tea-among-the-planets",
+    "title": "Tea Among The Planets",
+    "cells": 500,
+    "colours": 35,
+    "thumb": [
+      "#742222",
+      "#922f20",
+      "#c84d24",
+      "#e5712f",
+      "#795840"
+    ],
+    "difficulty": "normal",
+    "blind": true
   },
   {
     "id": "tidepool-mosaic",
