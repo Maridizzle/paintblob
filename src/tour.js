@@ -92,12 +92,16 @@ export class Tour {
   // their target is missing or hidden on this platform, so one list serves
   // desktop and phone; a step WITH a `before` is always kept, since its target
   // may not exist until that hook has run.
-  start(steps, { onEnd } = {}) {
+  // `suppressible` adds a "Don't show again" checkbox to the card. It rides
+  // checked by default (the tour is one-and-done), and onEnd is handed its
+  // state: false means the viewer un-ticked it and wants to be shown again.
+  start(steps, { onEnd, suppressible = false } = {}) {
     if (this.running) return;
     this.steps = steps.filter((s) => s.before || !s.target || this._resolve(s.target));
     if (!this.steps.length) { onEnd?.(); return; }
 
     this.onEnd = onEnd;
+    this.suppressible = suppressible;
     this.running = true;
     this.i = 0;
     this._build();
@@ -113,13 +117,22 @@ export class Tour {
     this.running = false;
     window.removeEventListener('keydown', this._onKey, true);
     window.removeEventListener('resize', this._onResize);
+    // Read the checkbox before the root is torn down.
+    const suppress = this._suppress();
     this.root?.classList.add('out');
     const root = this.root;
     setTimeout(() => root?.remove(), 260);
     this.root = null;
     const done = this.onEnd;
     this.onEnd = null;
-    done?.();
+    done?.(suppress);
+  }
+
+  // The "Don't show again" state, or undefined when the tour carries no
+  // checkbox (a Settings replay) — the caller leaves the saved flag alone then.
+  _suppress() {
+    if (!this.suppressible) return undefined;
+    return this.root?.querySelector('.tour-again-box')?.checked ?? true;
   }
 
   /* ---------------------------------------------------------------- internals */
@@ -138,7 +151,7 @@ export class Tour {
 
   _build() {
     const root = document.createElement('div');
-    root.className = 'tour';
+    root.className = this.suppressible ? 'tour suppressible' : 'tour';
     root.innerHTML =
       '<div class="tour-spotlight"></div>' +
       `<div class="tour-squirrel">${squirrelSVG()}</div>` +
@@ -148,9 +161,15 @@ export class Tour {
         '<div class="tour-body"></div>' +
         '<div class="tour-foot">' +
           '<div class="tour-dots"></div>' +
-          '<div class="tour-btns">' +
-            '<button class="tour-skip" type="button">Skip</button>' +
-            '<button class="tour-next primary" type="button">Next</button>' +
+          '<div class="tour-controls">' +
+            '<label class="tour-again">' +
+              '<input type="checkbox" class="tour-again-box" checked>' +
+              "<span>Don't show again</span>" +
+            '</label>' +
+            '<div class="tour-btns">' +
+              '<button class="tour-skip" type="button">Skip</button>' +
+              '<button class="tour-next primary" type="button">Next</button>' +
+            '</div>' +
           '</div>' +
         '</div>' +
       '</div>';

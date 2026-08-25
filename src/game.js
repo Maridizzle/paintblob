@@ -2460,10 +2460,16 @@ function startTour({ fromSettings = false } = {}) {
   tour = new Tour($('app'));
   // Let a closing panel finish sliding away before the first stop is measured.
   setTimeout(() => tour.start(TOUR_STEPS, {
-    onEnd: () => {
-      if (!S.save.settings.tourSeen) {
-        S.save.settings.tourSeen = true;
-        persist();
+    suppressible: !fromSettings,
+    onEnd: (suppress) => {
+      // Seen is already set up front (so a mid-tour reload can't restart it);
+      // un-ticking "Don't show again" during the auto run is the one thing that
+      // clears it, letting a still-fresh save be greeted once more. A Settings
+      // replay carries no checkbox (suppress is undefined) and leaves it be.
+      if (suppress === false) {
+        // An explicit "show me again" must outlast an immediate close, so flush now.
+        S.save.settings.tourSeen = false;
+        persist(true);
       }
     },
   }), fromSettings ? 260 : 0);
@@ -2537,10 +2543,13 @@ function startAvatarTour({ fromSettings = false } = {}) {
     tour?.end();
     tour = new Tour($('app'));
     tour.start(AVATAR_STEPS, {
-      onEnd: () => {
-        if (!S.save.settings.avatarTourSeen) {
-          S.save.settings.avatarTourSeen = true;
-          persist();
+      suppressible: !fromSettings,
+      onEnd: (suppress) => {
+        // avatarTourSeen was set up front; un-ticking "Don't show again" clears
+        // it, so the next visit to the avatar panel plays it once more.
+        if (suppress === false) {
+          S.save.settings.avatarTourSeen = false;
+          persist(true);
         }
         // Leave the panel on the first tab rather than wherever the tour stopped.
         if (S.panel === 'avatar') setAvatarTab('customize');
