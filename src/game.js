@@ -920,6 +920,10 @@ async function openPanel(kind) {
 
 function closePanel() {
   S.panel = null;
+  // A first-visit avatar tour still counting down is cancelled by closing the
+  // panel — it must not reopen it.
+  clearTimeout(avatarTourTimer);
+  avatarTourTimer = 0;
   hidePicturePreview();
   $('panel').classList.add('hidden');
   $('pointsHud').classList.remove('hidden');
@@ -2450,6 +2454,10 @@ const TOUR_STEPS = [
 ];
 
 let tour = null;
+// The avatar tour is scheduled a beat after the panel opens; closePanel clears
+// this so closing the panel inside that window cancels it rather than having it
+// reopen the panel from under the user.
+let avatarTourTimer = 0;
 
 function startTour({ fromSettings = false } = {}) {
   if (fromSettings) closePanel();
@@ -2556,14 +2564,22 @@ function startAvatarTour({ fromSettings = false } = {}) {
       },
     });
   };
-  if (S.panel === 'avatar') {
-    setTimeout(begin, fromSettings ? 200 : 0);
-  } else {
-    // Replaying from Settings (panel closed): open the avatar panel first, then
-    // let it settle before the squirrel sets off.
-    if (fromSettings) closePanel();
-    openPanel('avatar').then(() => setTimeout(begin, 320));
+  if (fromSettings) {
+    // A deliberate replay: open the avatar panel if it is not already up, then
+    // let it settle before the squirrel sets off. Reopening it here is wanted —
+    // the viewer asked for the tour.
+    if (S.panel === 'avatar') setTimeout(begin, 200);
+    else { closePanel(); openPanel('avatar').then(() => setTimeout(begin, 320)); }
+    return;
   }
+  // Auto first-visit: only if the panel is still open. The viewer may have
+  // closed it inside maybeAvatarTour's delay, or a replay may have taken over —
+  // in either case leave it be rather than reopening it against them. Marking it
+  // seen here, not up front, means a first visit cut short stays a first visit.
+  if (S.panel !== 'avatar' || tour?.running) return;
+  S.save.settings.avatarTourSeen = true;
+  persist();
+  begin();
 }
 
 function maybeAvatarTour() {
@@ -2571,9 +2587,8 @@ function maybeAvatarTour() {
   if (S.save.settings.avatarTourSeen) return;
   // Don't stack on the opening tour if it happens to still be up.
   if (tour?.running) return;
-  S.save.settings.avatarTourSeen = true;
-  persist();
-  setTimeout(() => startAvatarTour(), 450);
+  clearTimeout(avatarTourTimer);
+  avatarTourTimer = setTimeout(() => { avatarTourTimer = 0; startAvatarTour(); }, 450);
 }
 
 function renderSettings(body) {
