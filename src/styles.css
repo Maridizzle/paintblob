@@ -1447,3 +1447,175 @@ button {
   border-bottom: 2px solid rgba(255, 255, 255, 0.26);
   border-bottom-right-radius: 3px;
 }
+
+/* -------------------------------------------------------------------- tour */
+
+/* The first-run squirrel tour. One full-window layer over everything (above the
+   panel and the HUD), catching every click so nothing behind it paints while
+   the squirrel talks — only the card's own buttons opt back in. The dimming is
+   the spotlight's box-shadow, not a scrim of its own. */
+.tour {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  --sq-fur: #b06a30;
+  --sq-nose: #2a1810;
+  --sq-eye: #20140c;
+  --tour-dim: rgba(6, 6, 9, 0.72);
+  animation: fade 260ms ease both;
+}
+.tour.out { animation: fade 240ms ease reverse both; }
+
+.tour-spotlight {
+  position: absolute;
+  border-radius: 12px;
+  pointer-events: none;
+  /* The bright hole is just the un-shadowed rectangle; the 9999px spread throws
+     dark over the rest of the window. A cyan ring and glow ride the edge. */
+  box-shadow: 0 0 0 9999px var(--tour-dim),
+              inset 0 0 0 2px rgba(53, 233, 255, 0.85),
+              0 0 18px rgba(53, 233, 255, 0.45);
+  transition: left 460ms cubic-bezier(0.4, 0.1, 0.2, 1),
+              top 460ms cubic-bezier(0.4, 0.1, 0.2, 1),
+              width 460ms cubic-bezier(0.4, 0.1, 0.2, 1),
+              height 460ms cubic-bezier(0.4, 0.1, 0.2, 1);
+}
+/* A centred hello/goodbye: keep the even wash but hide the ring, so nothing on
+   the screen is singled out. */
+.tour-spotlight.no-hole {
+  box-shadow: 0 0 0 9999px var(--tour-dim);
+}
+
+.tour-squirrel {
+  position: absolute;
+  width: 88px; height: 88px;
+  pointer-events: none;
+  z-index: 1;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.5));
+  /* The scamper: top/left are tweened, so setting a new spot slides it there. */
+  transition: left 640ms cubic-bezier(0.45, 0.05, 0.3, 1),
+              top 640ms cubic-bezier(0.45, 0.05, 0.3, 1);
+}
+.tour-squirrel .sq { display: block; width: 100%; height: 100%; overflow: visible; }
+.sq-fur { fill: var(--sq-fur); }
+.sq-nose { fill: var(--sq-nose); }
+.sq-eye { fill: var(--sq-eye); }
+
+/* Face the way it is pointing — mirror about the viewBox centre. */
+.tour-squirrel[data-face="-1"] .sq-flip { transform: scaleX(-1); transform-origin: 50px 50px; }
+
+/* The bushy tail sways the whole time; while running the body hops with a
+   little squash; while parked the raised paw taps toward the card. */
+.sq-tail { transform-origin: 30px 78px; animation: sq-sway 2.4s ease-in-out infinite; }
+.sq-arm { transform-origin: 62px 62px; animation: sq-point 1.8s ease-in-out infinite; }
+.tour-squirrel.running .sq { animation: sq-hop 0.34s ease-in-out infinite; }
+.tour-squirrel.running .sq-arm { animation: none; }
+
+@keyframes sq-sway {
+  0%, 100% { transform: rotate(-4deg); }
+  50% { transform: rotate(5deg); }
+}
+@keyframes sq-point {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-11deg); }
+}
+@keyframes sq-hop {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  30% { transform: translateY(-9px) scaleY(1.06); }
+  60% { transform: translateY(0) scaleY(0.94); }
+}
+
+/* reduced motion (and the .still flag tour.js sets from it): no scamper, no
+   idle fidget — it simply appears at each stop. */
+.tour-squirrel.still { transition: none; }
+.tour-squirrel.still .sq-tail,
+.tour-squirrel.still .sq-arm,
+.tour-squirrel.still .sq { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .tour-spotlight { transition: none; }
+  .tour-squirrel { transition: none; }
+  .sq-tail, .sq-arm, .tour-squirrel.running .sq { animation: none; }
+}
+
+.tour-card {
+  position: absolute;
+  z-index: 2;
+  pointer-events: auto;
+  max-width: min(320px, calc(100vw - 24px));
+  padding: 13px 15px 12px;
+  border-radius: 13px;
+  background: rgba(16, 16, 20, 0.98);
+  border: 1px solid rgba(53, 233, 255, 0.34);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55), var(--glow-cyan);
+  transition: left 460ms cubic-bezier(0.4, 0.1, 0.2, 1),
+              top 460ms cubic-bezier(0.4, 0.1, 0.2, 1);
+  animation: fade 300ms ease both;
+}
+.tour-card .tour-step {
+  font-size: 10px;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 5px;
+}
+.tour-card .tour-title { font-size: 15px; font-weight: 700; margin-bottom: 5px; }
+.tour-card .tour-body { font-size: 12px; line-height: 1.5; color: var(--muted); }
+
+.tour-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  margin-top: 13px;
+}
+.tour-dots { display: flex; gap: 5px; flex-wrap: wrap; }
+.tour-controls { display: flex; align-items: center; gap: 10px; }
+
+/* The "Don't show again" opt-out, only on the auto-run tours. Rides checked —
+   the tour is one-and-done — so un-ticking it is the deliberate "show me next
+   time" gesture. Hidden on a Settings replay, where it would mean nothing. */
+.tour-again {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  color: var(--muted);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.tour-again:hover { color: var(--text); }
+.tour-again-box {
+  width: 15px; height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.tour:not(.suppressible) .tour-again { display: none; }
+.tour-dot {
+  width: 7px; height: 7px;
+  padding: 0;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.22);
+  cursor: pointer;
+  transition: background 140ms, transform 140ms;
+}
+.tour-dot:hover { background: rgba(255, 255, 255, 0.45); }
+.tour-dot.on { background: var(--accent); box-shadow: var(--glow-cyan); transform: scale(1.15); }
+
+.tour-btns { display: flex; align-items: center; gap: 9px; }
+.tour-skip {
+  -webkit-app-region: no-drag;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 6px 4px;
+  transition: color 120ms;
+}
+.tour-skip:hover { color: var(--text); }
+.tour-card .tour-next { font-size: 12px; padding: 7px 15px; }
+
+/* The little seal on the Settings row that replays the tour. */
+.tour-seal { font-size: 18px; opacity: 0.9; }

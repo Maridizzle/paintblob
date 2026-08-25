@@ -187,7 +187,10 @@ function createWindow() {
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   win.setAlwaysOnTop(save.settings.alwaysOnTop !== false, 'floating');
 
-  win.loadFile(path.join(__dirname, '..', 'src', 'index.html'));
+  // Under --smoke the script below drives the UI, so keep the first-run squirrel
+  // tour from covering it; a normal launch gets the tour as intended.
+  win.loadFile(path.join(__dirname, '..', 'src', 'index.html'),
+    SMOKE ? { search: 'notour' } : undefined);
   if (DEV) win.webContents.openDevTools({ mode: 'detach' });
 
   // Anything trying to navigate away or spawn a window goes to the real

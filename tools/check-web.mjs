@@ -80,7 +80,10 @@ const check = (label, ok, detail = '') => {
 
 console.log(`Pixel 5, ${origin}`);
 
-await page.goto(origin);
+// ?notour keeps the first-run squirrel tour from covering the screen while we
+// drive it — it survives the offline reload below, and a real phone never
+// carries the flag.
+await page.goto(`${origin}?notour`);
 await page.waitForFunction(
   () => document.querySelectorAll('#tubs .tub').length > 0,
   null,

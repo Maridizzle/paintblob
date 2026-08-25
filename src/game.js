@@ -19,6 +19,7 @@ import {
 import { WARDROBE_ITEMS } from './wardrobe.js';
 import { outlineSVG, outlineWeight } from './thumbnail.js';
 import { computePlayStats } from './playstats.js';
+import { Tour } from './tour.js';
 import {
   ROOMS, HOUSE_ITEMS, LIGHTING, PETS, PROP_SLOTS, SLOT_LABEL,
   defaultHouse, itemsFor, starterFor, buildRoomSVG, colourablesIn, colourKey,
@@ -911,6 +912,7 @@ async function openPanel(kind) {
     renderTrophies(body);
   } else if (kind === 'avatar') {
     renderAvatarPanel(body);
+    maybeAvatarTour();
   } else {
     renderSettings(body);
   }
@@ -918,6 +920,10 @@ async function openPanel(kind) {
 
 function closePanel() {
   S.panel = null;
+  // A first-visit avatar tour still counting down is cancelled by closing the
+  // panel — it must not reopen it.
+  clearTimeout(avatarTourTimer);
+  avatarTourTimer = 0;
   hidePicturePreview();
   $('panel').classList.add('hidden');
   $('pointsHud').classList.remove('hidden');
@@ -2416,6 +2422,175 @@ function syncAbilityRow() {
   }
 }
 
+/* -------------------------------------------------------------------- tour */
+
+// The squirrel's route around the screen. Each stop names a control by
+// selector and what to say about it; tour.js drops any stop whose control is
+// hidden on this platform (the desktop-only window buttons on the phone, say),
+// so one list serves both. `null` targets are the centred hello and goodbye.
+const TOUR_STEPS = [
+  { target: null, title: 'Hello — I\'m your guide',
+    body: 'One quick lap around the screen so you know where everything is. It takes about twenty seconds, and you can Skip any time.' },
+  { target: '#board', title: 'The canvas',
+    body: 'Your picture lives here. Pick a paint, then click any cell showing that paint\'s number — a blob explosion tears across the whole picture and sucks itself into the cell you clicked.' },
+  { target: '#tubs', title: 'Your paints',
+    body: 'Each tub is a colour with a number. Click a cell carrying that number to fill it. Number keys 1–9 switch tubs, and when a tub runs dry the next one takes over on its own.' },
+  { target: '.progress', title: 'Progress',
+    body: 'This bar creeps across as you fill cells — it\'s how close you are to finishing the picture.' },
+  { target: '#pointsHud', title: 'Coins',
+    body: 'Every cell you paint earns a few. Spend them on outfits for your avatar and furniture for its room.' },
+  { target: '[data-act="hint"]', title: 'Hints',
+    body: 'Stuck on where a colour goes? A hint flashes an unfinished cell. You earn hints just by painting, and more from achievements.' },
+  { target: '#avatarWidget', title: 'That\'s you',
+    body: 'The ring around your avatar is its experience bar. Click once for your abilities, and again to open the wardrobe and decorate your room.' },
+  { target: '[data-act="pictures"]', title: 'Pictures',
+    body: 'Your gallery. Browse what\'s here, or add your own — drag an image onto the window, paste one, or use Add. Each becomes a paint-by-number.' },
+  { target: '[data-act="trophies"]', title: 'Achievements',
+    body: 'Small goals to chase. Reaching one hands you hints and the odd outfit.' },
+  { target: '[data-act="settings"]', title: 'Settings',
+    body: 'Sound, and how fast and thick the blob splats. This is also where you can send me round again — look for "Squirrel tour".' },
+  { target: null, title: 'Off you go',
+    body: 'That\'s the whole screen. Pick a tub, click a cell, and enjoy the mess. 🐿️' },
+];
+
+let tour = null;
+// The avatar tour is scheduled a beat after the panel opens; closePanel clears
+// this so closing the panel inside that window cancels it rather than having it
+// reopen the panel from under the user.
+let avatarTourTimer = 0;
+
+function startTour({ fromSettings = false } = {}) {
+  if (fromSettings) closePanel();
+  // A panel or the ability fan open over the board would fight the spotlight;
+  // clear them so every stop is actually visible before the squirrel sets off.
+  closeAbilityFan();
+  tour?.end();
+  tour = new Tour($('app'));
+  // Let a closing panel finish sliding away before the first stop is measured.
+  setTimeout(() => tour.start(TOUR_STEPS, {
+    suppressible: !fromSettings,
+    onEnd: (suppress) => {
+      // Seen is already set up front (so a mid-tour reload can't restart it);
+      // un-ticking "Don't show again" during the auto run is the one thing that
+      // clears it, letting a still-fresh save be greeted once more. A Settings
+      // replay carries no checkbox (suppress is undefined) and leaves it be.
+      if (suppress === false) {
+        // An explicit "show me again" must outlast an immediate close, so flush now.
+        S.save.settings.tourSeen = false;
+        persist(true);
+      }
+    },
+  }), fromSettings ? 260 : 0);
+}
+
+function maybeFirstRunTour() {
+  // The headless harnesses (check-web, preview) and the Electron smoke test all
+  // boot a fresh save and then drive the UI, which the tour would sit on top of.
+  // They load with ?notour so only they skip the automatic run — the Settings
+  // replay is always available, and a real first launch never carries the flag.
+  if (/[?&]notour\b/.test(location.search)) return;
+  if (S.save.settings.tourSeen) return;
+  // Only a genuinely untouched save gets the tour unbidden — a returning player
+  // who has painted before shouldn't be ambushed by it, so mark it seen for
+  // them silently (Settings still offers a replay). A fresh player gets a beat
+  // for the picture to settle, then the squirrel sets off. Either way it is
+  // marked up front, so a reload mid-tour doesn't start it over.
+  const fresh = !S.save.stats.cells && !S.save.stats.puzzles && !S.save.stats.imported;
+  S.save.settings.tourSeen = true;
+  persist();
+  if (fresh) setTimeout(() => startTour(), 700);
+}
+
+/* ------------------------------------------------------- tour: the avatar */
+
+// The avatar panel is its own screen with five tabs, so it gets its own short
+// tour — given in context the first time it is opened rather than tacked onto
+// the opening lap. Each stop switches to a tab and then points: the list tabs
+// (Customize/Outfits/Abilities) at their tab button, the scene tabs (Room/Pet)
+// at the figure itself, which by then is showing the room. `before` does the
+// switching; tour.js waits for it before measuring.
+const AVATAR_TAB_BTN = (name) => () =>
+  [...document.querySelectorAll('.avatar-tabs button')]
+    .find((b) => b.textContent.trim().toLowerCase() === name);
+
+function setAvatarTab(key) {
+  S.avatarTab = key;
+  if (S.panel === 'avatar') renderAvatarPanel($('panelBody'));
+  // A beat for the tab (and, for Room/Pet, the scene layout) to settle before
+  // the spotlight is measured against it.
+  return new Promise((r) => setTimeout(r, 260));
+}
+
+const AVATAR_STEPS = [
+  { target: '.avatar-stage', before: () => setAvatarTab('customize'),
+    title: 'This is you, full size',
+    body: 'The figure up top is your avatar; the five tabs below are everything you can do with it. Let me run through them.' },
+  { target: AVATAR_TAB_BTN('customize'), before: () => setAvatarTab('customize'),
+    title: 'Customize',
+    body: 'Build the look — race, hair, face and body sliders — and recolour any single part from the palette. The figure updates as you go.' },
+  { target: AVATAR_TAB_BTN('outfits'), before: () => setAvatarTab('outfits'),
+    title: 'Outfits',
+    body: 'Clothes you\'ve unlocked. You earn more by hitting achievements and levelling up; click one to put it on.' },
+  { target: AVATAR_TAB_BTN('abilities'), before: () => setAvatarTab('abilities'),
+    title: 'Abilities',
+    body: 'Small powers — a streak shield, a colour surge, a steadier hand. They gain charges as you level up, and you arm one from the ring on the picture.' },
+  { target: '.avatar-stage', before: () => setAvatarTab('room'),
+    title: 'Room',
+    body: 'Your own little room. Spend coins on furniture, change the lighting, and recolour anything in it — the controls slide in from the left.' },
+  { target: '.avatar-stage', before: () => setAvatarTab('pet'),
+    title: 'Pet',
+    body: 'And a pet to keep. Feed it and give it some attention now and then; a contented pet is its own small reward.' },
+  { target: null, before: () => setAvatarTab('customize'),
+    title: 'That\'s the lot',
+    body: 'Poke around whenever you like — nothing here costs anything but the coins you\'ve already earned. 🐿️' },
+];
+
+function startAvatarTour({ fromSettings = false } = {}) {
+  const begin = () => {
+    closeAbilityFan();
+    tour?.end();
+    tour = new Tour($('app'));
+    tour.start(AVATAR_STEPS, {
+      suppressible: !fromSettings,
+      onEnd: (suppress) => {
+        // avatarTourSeen was set up front; un-ticking "Don't show again" clears
+        // it, so the next visit to the avatar panel plays it once more.
+        if (suppress === false) {
+          S.save.settings.avatarTourSeen = false;
+          persist(true);
+        }
+        // Leave the panel on the first tab rather than wherever the tour stopped.
+        if (S.panel === 'avatar') setAvatarTab('customize');
+      },
+    });
+  };
+  if (fromSettings) {
+    // A deliberate replay: open the avatar panel if it is not already up, then
+    // let it settle before the squirrel sets off. Reopening it here is wanted —
+    // the viewer asked for the tour.
+    if (S.panel === 'avatar') setTimeout(begin, 200);
+    else { closePanel(); openPanel('avatar').then(() => setTimeout(begin, 320)); }
+    return;
+  }
+  // Auto first-visit: only if the panel is still open. The viewer may have
+  // closed it inside maybeAvatarTour's delay, or a replay may have taken over —
+  // in either case leave it be rather than reopening it against them. Marking it
+  // seen here, not up front, means a first visit cut short stays a first visit.
+  if (S.panel !== 'avatar' || tour?.running) return;
+  S.save.settings.avatarTourSeen = true;
+  persist();
+  begin();
+}
+
+function maybeAvatarTour() {
+  if (/[?&]notour\b/.test(location.search)) return;
+  if (S.save.settings.avatarTourSeen) return;
+  // Don't stack on the opening tour if it happens to still be up.
+  if (tour?.running) return;
+  clearTimeout(avatarTourTimer);
+  avatarTourTimer = setTimeout(() => { avatarTourTimer = 0; startAvatarTour(); }, 450);
+}
+
 function renderSettings(body) {
   const settings = S.save.settings;
 
@@ -2475,6 +2650,20 @@ function renderSettings(body) {
   slider('Blob speed', 'speed', 0.6, 1.8, 0.1, (v) => `${v.toFixed(1)}×`);
   slider('Blob density', 'density', 0.4, 1.6, 0.1, (v) => `${v.toFixed(1)}×`);
   slider('Blob opacity', 'opacity', 0.25, 1, 0.05, (v) => `${Math.round(v * 100)}%`);
+
+  const guide = row('clickable');
+  guide.innerHTML = '<div class="grow"><div class="label">Squirrel tour</div>' +
+    '<div class="sub">Send the squirrel round the screen again</div></div>' +
+    '<div class="tour-seal" aria-hidden="true">🐿️</div>';
+  guide.addEventListener('click', () => startTour({ fromSettings: true }));
+  body.append(guide);
+
+  const avatarGuide = row('clickable');
+  avatarGuide.innerHTML = '<div class="grow"><div class="label">Avatar tour</div>' +
+    '<div class="sub">A walk through the avatar\'s five tabs</div></div>' +
+    '<div class="tour-seal" aria-hidden="true">🐿️</div>';
+  avatarGuide.addEventListener('click', () => startAvatarTour({ fromSettings: true }));
+  body.append(avatarGuide);
 
   const reset = row('clickable');
   reset.innerHTML = '<div class="grow"><div class="label">Repaint this picture</div>' +
@@ -2819,6 +3008,7 @@ async function boot() {
 
   await loadPuzzle(first.id);
   ensureFrame();
+  maybeFirstRunTour();
 }
 
 boot();
