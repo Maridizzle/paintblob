@@ -145,7 +145,9 @@ await page.addInitScript((data) => {
   };
 }, { manifest, puzzles, speed });
 
-await page.goto(`http://127.0.0.1:${port}/src/index.html`);
+// ?notour suppresses the first-run squirrel tour, which would otherwise cover
+// the burst these frames are here to capture.
+await page.goto(`http://127.0.0.1:${port}/src/index.html?notour`);
 // polling must be a timer, not the default 'raf' — the virtual clock above
 // hijacks requestAnimationFrame, so raf-based polling never fires.
 await page.waitForFunction(
