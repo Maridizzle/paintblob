@@ -912,6 +912,7 @@ async function openPanel(kind) {
     renderTrophies(body);
   } else if (kind === 'avatar') {
     renderAvatarPanel(body);
+    maybeAvatarTour();
   } else {
     renderSettings(body);
   }
@@ -2486,6 +2487,86 @@ function maybeFirstRunTour() {
   if (fresh) setTimeout(() => startTour(), 700);
 }
 
+/* ------------------------------------------------------- tour: the avatar */
+
+// The avatar panel is its own screen with five tabs, so it gets its own short
+// tour — given in context the first time it is opened rather than tacked onto
+// the opening lap. Each stop switches to a tab and then points: the list tabs
+// (Customize/Outfits/Abilities) at their tab button, the scene tabs (Room/Pet)
+// at the figure itself, which by then is showing the room. `before` does the
+// switching; tour.js waits for it before measuring.
+const AVATAR_TAB_BTN = (name) => () =>
+  [...document.querySelectorAll('.avatar-tabs button')]
+    .find((b) => b.textContent.trim().toLowerCase() === name);
+
+function setAvatarTab(key) {
+  S.avatarTab = key;
+  if (S.panel === 'avatar') renderAvatarPanel($('panelBody'));
+  // A beat for the tab (and, for Room/Pet, the scene layout) to settle before
+  // the spotlight is measured against it.
+  return new Promise((r) => setTimeout(r, 260));
+}
+
+const AVATAR_STEPS = [
+  { target: '.avatar-stage', before: () => setAvatarTab('customize'),
+    title: 'This is you, full size',
+    body: 'The figure up top is your avatar; the five tabs below are everything you can do with it. Let me run through them.' },
+  { target: AVATAR_TAB_BTN('customize'), before: () => setAvatarTab('customize'),
+    title: 'Customize',
+    body: 'Build the look — race, hair, face and body sliders — and recolour any single part from the palette. The figure updates as you go.' },
+  { target: AVATAR_TAB_BTN('outfits'), before: () => setAvatarTab('outfits'),
+    title: 'Outfits',
+    body: 'Clothes you\'ve unlocked. You earn more by hitting achievements and levelling up; click one to put it on.' },
+  { target: AVATAR_TAB_BTN('abilities'), before: () => setAvatarTab('abilities'),
+    title: 'Abilities',
+    body: 'Small powers — a streak shield, a colour surge, a steadier hand. They gain charges as you level up, and you arm one from the ring on the picture.' },
+  { target: '.avatar-stage', before: () => setAvatarTab('room'),
+    title: 'Room',
+    body: 'Your own little room. Spend coins on furniture, change the lighting, and recolour anything in it — the controls slide in from the left.' },
+  { target: '.avatar-stage', before: () => setAvatarTab('pet'),
+    title: 'Pet',
+    body: 'And a pet to keep. Feed it and give it some attention now and then; a contented pet is its own small reward.' },
+  { target: null, before: () => setAvatarTab('customize'),
+    title: 'That\'s the lot',
+    body: 'Poke around whenever you like — nothing here costs anything but the coins you\'ve already earned. 🐿️' },
+];
+
+function startAvatarTour({ fromSettings = false } = {}) {
+  const begin = () => {
+    closeAbilityFan();
+    tour?.end();
+    tour = new Tour($('app'));
+    tour.start(AVATAR_STEPS, {
+      onEnd: () => {
+        if (!S.save.settings.avatarTourSeen) {
+          S.save.settings.avatarTourSeen = true;
+          persist();
+        }
+        // Leave the panel on the first tab rather than wherever the tour stopped.
+        if (S.panel === 'avatar') setAvatarTab('customize');
+      },
+    });
+  };
+  if (S.panel === 'avatar') {
+    setTimeout(begin, fromSettings ? 200 : 0);
+  } else {
+    // Replaying from Settings (panel closed): open the avatar panel first, then
+    // let it settle before the squirrel sets off.
+    if (fromSettings) closePanel();
+    openPanel('avatar').then(() => setTimeout(begin, 320));
+  }
+}
+
+function maybeAvatarTour() {
+  if (/[?&]notour\b/.test(location.search)) return;
+  if (S.save.settings.avatarTourSeen) return;
+  // Don't stack on the opening tour if it happens to still be up.
+  if (tour?.running) return;
+  S.save.settings.avatarTourSeen = true;
+  persist();
+  setTimeout(() => startAvatarTour(), 450);
+}
+
 function renderSettings(body) {
   const settings = S.save.settings;
 
@@ -2552,6 +2633,13 @@ function renderSettings(body) {
     '<div class="tour-seal" aria-hidden="true">🐿️</div>';
   guide.addEventListener('click', () => startTour({ fromSettings: true }));
   body.append(guide);
+
+  const avatarGuide = row('clickable');
+  avatarGuide.innerHTML = '<div class="grow"><div class="label">Avatar tour</div>' +
+    '<div class="sub">A walk through the avatar\'s five tabs</div></div>' +
+    '<div class="tour-seal" aria-hidden="true">🐿️</div>';
+  avatarGuide.addEventListener('click', () => startAvatarTour({ fromSettings: true }));
+  body.append(avatarGuide);
 
   const reset = row('clickable');
   reset.innerHTML = '<div class="grow"><div class="label">Repaint this picture</div>' +

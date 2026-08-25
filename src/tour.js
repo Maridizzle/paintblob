@@ -78,18 +78,23 @@ export class Tour {
     this.i = 0;
     this.onEnd = null;
     this.running = false;
+    this._showTok = 0; // guards a before-hook step against a newer one landing first
     this.reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
     this._onKey = this._onKey.bind(this);
     this._onResize = this._onResize.bind(this);
   }
 
-  // steps: [{ target, title, body }]. `target` is a CSS selector, an Element,
-  // a () => Element, or null for a centred welcome/farewell card. Steps whose
-  // target cannot be found or is not on screen (hidden on this platform) are
-  // dropped, so the same list works on desktop and phone.
+  // steps: [{ target, title, body, before }]. `target` is a CSS selector, an
+  // Element, a () => Element, or null for a centred welcome/farewell card.
+  // `before` is an optional async hook run just before the step is shown — it is
+  // how a step sets the screen up for itself (open a panel, switch a tab) before
+  // the squirrel points. Steps without a `before` are dropped up front when
+  // their target is missing or hidden on this platform, so one list serves
+  // desktop and phone; a step WITH a `before` is always kept, since its target
+  // may not exist until that hook has run.
   start(steps, { onEnd } = {}) {
     if (this.running) return;
-    this.steps = steps.filter((s) => !s.target || this._resolve(s.target));
+    this.steps = steps.filter((s) => s.before || !s.target || this._resolve(s.target));
     if (!this.steps.length) { onEnd?.(); return; }
 
     this.onEnd = onEnd;
@@ -187,7 +192,7 @@ export class Tour {
 
   _onResize() { this._show(this.i); }
 
-  _show(i) {
+  async _show(i) {
     this.i = i;
     const step = this.steps[i];
     const last = i === this.steps.length - 1;
@@ -198,6 +203,17 @@ export class Tour {
     this.card.querySelector('.tour-next').textContent = last ? "Let's paint" : 'Next';
     this.root.querySelectorAll('.tour-dot')
       .forEach((d, k) => d.classList.toggle('on', k === i));
+
+    // The before-hook may open a panel or switch a tab and needs a beat to
+    // settle before we measure. A token guards against a fast Next landing us on
+    // a later step while this one is still waiting — the stale call bows out.
+    if (step.before) {
+      const tok = ++this._showTok;
+      await step.before();
+      if (!this.running || tok !== this._showTok) return;
+    } else {
+      this._showTok = (this._showTok || 0) + 1;
+    }
 
     this._layout(step);
   }
