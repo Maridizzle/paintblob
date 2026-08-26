@@ -18,6 +18,24 @@
   --edge: rgba(255, 255, 255, 0.08);
   --edge-strong: rgba(255, 255, 255, 0.15);
   --text: #edecf0;
+  /* The ground a rule may assume. Every highlight in the stylesheet used to be
+     literal white and every shadow literal black, which quietly hard-coded
+     "this app is dark" into 60 rules — a light theme came out with invisible
+     insets and unreadable banding. Tinting through these lets a theme say what
+     "lighter" and "darker" mean on the surface it actually has. */
+  /* A chip that floats OVER the picture — the zoom and undo pills, the coin
+     read, the avatar's circle, a tooltip. Not a card and not the ground: it has
+     to stay legible against whatever the player just painted, so a theme has to
+     be able to say which way that goes. */
+  --chip-rgb: 16, 16, 20;
+  --sheen-rgb: 255, 255, 255;
+  --shade-rgb: 0, 0, 0;
+
+  /* Type and corners, so a theme can stop being this typeface and this
+     geometry rather than only this palette. */
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-stamp: ui-monospace, "SF Mono", Menlo, monospace;
+  --stamp-spacing: 1.5px;
   --muted: #8f8d99;
 
   /* Neons bled into the ground itself: a cyan wash from one corner, a green wash
@@ -118,88 +136,104 @@
    gold. A single cyan would undo it: a chapter has to read as somewhere you
    have arrived, not as a hue rotation of somewhere else. */
 :root[data-theme="fae"] {
-  --void: #180b17;
-  --ink: #1f0f1d;
-  --vinyl: #1f0f1d;
-  --card: rgba(29, 14, 27, 0.96);
-  --card-solid: #33203a;
-  --band: rgba(255, 214, 235, 0.07);
-  --paper: #f3e3e9;
-  --paper-ink: #2b1226;
-  --edge: rgba(255, 205, 232, 0.11);
-  --edge-strong: rgba(255, 205, 232, 0.22);
-  --text: #f8ebf3;
-  --muted: #bb96b2;
+  /* Tee Vibes. Chapter one, and deliberately not the void in a pink coat: this
+     is aged paper rather than dead space, so the ground is light, the type has
+     serifs, and there is no glow anywhere in it. What the void does with neon
+     cut across black, this does with thread laid on cloth.
 
-  /* The tonal field: rose bloom out of one corner, gold out of the other, and
-     a wide soft drift through the middle so no surface is flatly one colour. */
+     The hard rule is that nothing reaches outside magenta's family or gold. One
+     cyan would undo it — a chapter has to read as somewhere you arrived. */
+
+  /* Everything a rule may take as "lighter" and "darker" flips: on paper, an
+     inset is pressed INTO the surface, so the hair of light on a top lip
+     becomes a hair of plum and every white wash becomes a tint. Without this
+     the whole theme comes out with invisible insets and unreadable banding. */
+  --chip-rgb: 253, 247, 243;
+  --sheen-rgb: 118, 58, 96;
+  --shade-rgb: 92, 42, 72;
+
+  --font: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --font-stamp: "Iowan Old Style", Palatino, Georgia, serif;
+  --stamp-spacing: 2.6px;
+
+  --void: #e3d2d4;
+  --ink: #efe0df;
+  --vinyl: #efe0df;
+  --card: rgba(250, 241, 238, 0.975);
+  --card-solid: #f0dfe1;
+  --band: rgba(118, 58, 96, 0.05);
+  --paper: #fdf6f2;
+  --paper-ink: #3a1c33;
+  /* Seams are gold leaf, not a hairline of light. */
+  --edge: rgba(176, 122, 58, 0.30);
+  --edge-strong: rgba(176, 122, 58, 0.55);
+  --text: #3d1f36;
+  --muted: #8a6478;
+
+  --accent-rgb: 214, 74, 148;
+  --accent2-rgb: 176, 122, 58;
+  --hot-rgb: 201, 138, 66;
+  --accent: #d64a94;
+  --accent2: #b07a3a;
+  --hot: #c98a42;
+  --danger: #b8455c;
+  --on-accent: #fff4fa;
+
+  /* Dye soaking into cloth, not light thrown at a wall. */
   --void-glow:
-    radial-gradient(120% 85% at 2% -14%, rgba(255, 130, 200, 0.20), transparent 46%),
-    radial-gradient(125% 90% at 102% 114%, rgba(233, 184, 94, 0.15), transparent 48%),
-    radial-gradient(95% 75% at 50% 42%, rgba(203, 108, 178, 0.11), transparent 62%);
+    radial-gradient(120% 85% at 4% -10%, rgba(226, 150, 190, 0.30), transparent 52%),
+    radial-gradient(120% 90% at 100% 108%, rgba(214, 172, 108, 0.26), transparent 54%),
+    radial-gradient(90% 70% at 52% 46%, rgba(232, 196, 206, 0.30), transparent 66%);
 
-  /* Where void slashes, this weaves. Two fine cross-hatches make the ground
-     read as cloth; the two wide diagonals keep the original composition's
-     movement but drift across it rather than cutting it. */
+  /* Linen. Two fine cross-hatches at right angles make a weave, and a wider
+     pair every eleventh thread gives it a slub. No diagonals: the void's
+     slashes are the one thing this must not inherit. */
   --streaks:
-    repeating-linear-gradient(28deg, rgba(255, 190, 225, 0.05) 0 2px, transparent 2px 9px),
-    repeating-linear-gradient(-62deg, rgba(233, 184, 94, 0.045) 0 2px, transparent 2px 11px),
-    linear-gradient(64deg, transparent 23%, rgba(255, 140, 205, 0.08) 27.5%, transparent 32%),
-    linear-gradient(-52deg, transparent 59%, rgba(233, 184, 94, 0.07) 63.5%, transparent 68%),
-    linear-gradient(73deg, transparent 77%, rgba(255, 160, 214, 0.05) 80.5%, transparent 84%);
+    repeating-linear-gradient(0deg, rgba(118, 58, 96, 0.055) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(90deg, rgba(118, 58, 96, 0.045) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(0deg, rgba(176, 122, 58, 0.05) 0 1px, transparent 1px 23px),
+    repeating-linear-gradient(90deg, rgba(176, 122, 58, 0.04) 0 1px, transparent 1px 23px);
 
-  /* Pollen, not sparks. Same positions as the void's glints so the composition
-     survives, but each is a soft warm mote falling off over six pixels instead
-     of a 1px core dying in three. */
+  /* Pollen pressed into the page — soft, warm, and dark enough to read on it. */
   --sparks:
-    radial-gradient(circle at 9% 22%, rgba(255, 176, 222, 0.8) 0, rgba(255, 176, 222, 0.55) 1.6px, transparent 6px),
-    radial-gradient(circle at 17% 71%, rgba(240, 198, 120, 0.7) 0, rgba(240, 198, 120, 0.45) 1.4px, transparent 5.5px),
-    radial-gradient(circle at 27% 41%, rgba(255, 150, 210, 0.7) 0, rgba(255, 150, 210, 0.4) 1.8px, transparent 6.5px),
-    radial-gradient(circle at 34% 88%, rgba(255, 190, 228, 0.65) 0, rgba(255, 190, 228, 0.4) 1.5px, transparent 6px),
-    radial-gradient(circle at 44% 14%, rgba(233, 184, 94, 0.7) 0, rgba(233, 184, 94, 0.45) 1.4px, transparent 5.5px),
-    radial-gradient(circle at 52% 61%, rgba(255, 166, 219, 0.75) 0, rgba(255, 166, 219, 0.45) 1.9px, transparent 7px),
-    radial-gradient(circle at 63% 33%, rgba(240, 198, 120, 0.6) 0, rgba(240, 198, 120, 0.38) 1.5px, transparent 6px),
-    radial-gradient(circle at 71% 82%, rgba(255, 176, 222, 0.7) 0, rgba(255, 176, 222, 0.42) 1.5px, transparent 6px),
-    radial-gradient(circle at 79% 19%, rgba(255, 150, 210, 0.65) 0, rgba(255, 150, 210, 0.4) 1.7px, transparent 6.5px),
-    radial-gradient(circle at 86% 54%, rgba(240, 198, 120, 0.65) 0, rgba(240, 198, 120, 0.4) 1.5px, transparent 6px),
-    radial-gradient(circle at 93% 78%, rgba(255, 190, 228, 0.6) 0, rgba(255, 190, 228, 0.36) 1.4px, transparent 5.5px),
-    radial-gradient(circle at 40% 47%, rgba(255, 166, 219, 0.55) 0, rgba(255, 166, 219, 0.34) 1.3px, transparent 5px),
-    radial-gradient(circle at 58% 92%, rgba(233, 184, 94, 0.6) 0, rgba(233, 184, 94, 0.38) 1.4px, transparent 5.5px),
-    radial-gradient(circle at 22% 6%, rgba(255, 176, 222, 0.6) 0, rgba(255, 176, 222, 0.36) 1.3px, transparent 5px),
-    radial-gradient(circle at 68% 8%, rgba(255, 150, 210, 0.6) 0, rgba(255, 150, 210, 0.36) 1.4px, transparent 5.5px),
-    radial-gradient(circle at 96% 33%, rgba(240, 198, 120, 0.55) 0, rgba(240, 198, 120, 0.34) 1.3px, transparent 5px);
+    radial-gradient(circle at 9% 22%, rgba(206, 108, 162, 0.34) 0, transparent 7px),
+    radial-gradient(circle at 17% 71%, rgba(176, 122, 58, 0.30) 0, transparent 6px),
+    radial-gradient(circle at 27% 41%, rgba(206, 108, 162, 0.26) 0, transparent 8px),
+    radial-gradient(circle at 34% 88%, rgba(214, 150, 186, 0.30) 0, transparent 6px),
+    radial-gradient(circle at 44% 14%, rgba(176, 122, 58, 0.30) 0, transparent 6px),
+    radial-gradient(circle at 52% 61%, rgba(206, 108, 162, 0.28) 0, transparent 9px),
+    radial-gradient(circle at 63% 33%, rgba(176, 122, 58, 0.24) 0, transparent 7px),
+    radial-gradient(circle at 71% 82%, rgba(206, 108, 162, 0.28) 0, transparent 6px),
+    radial-gradient(circle at 79% 19%, rgba(214, 150, 186, 0.28) 0, transparent 7px),
+    radial-gradient(circle at 86% 54%, rgba(176, 122, 58, 0.26) 0, transparent 6px),
+    radial-gradient(circle at 93% 78%, rgba(206, 108, 162, 0.24) 0, transparent 6px),
+    radial-gradient(circle at 40% 47%, rgba(214, 150, 186, 0.22) 0, transparent 5px),
+    radial-gradient(circle at 58% 92%, rgba(176, 122, 58, 0.24) 0, transparent 6px),
+    radial-gradient(circle at 22% 6%, rgba(206, 108, 162, 0.24) 0, transparent 5px),
+    radial-gradient(circle at 68% 8%, rgba(214, 150, 186, 0.24) 0, transparent 6px),
+    radial-gradient(circle at 96% 33%, rgba(176, 122, 58, 0.22) 0, transparent 5px);
 
-  --thread-cyan: repeating-linear-gradient(to bottom, rgba(255, 150, 210, 0.5) 0 5px, transparent 5px 11px);
-  --thread-green: repeating-linear-gradient(to bottom, rgba(233, 184, 94, 0.5) 0 5px, transparent 5px 11px);
+  --thread-cyan: repeating-linear-gradient(to bottom, rgba(206, 108, 162, 0.5) 0 5px, transparent 5px 11px);
+  --thread-green: repeating-linear-gradient(to bottom, rgba(176, 122, 58, 0.55) 0 5px, transparent 5px 11px);
 
-  /* Magenta carries every interactive state; gold is the second voice, which
-     puts it on XP, meters and anything earned — exactly where gold belongs. */
-  --accent-rgb: 255, 111, 199;
-  --accent2-rgb: 233, 184, 94;
-  --hot-rgb: 255, 217, 138;
-  --accent: #ff6fc7;
-  --accent2: #e9b85e;
-  --hot: #ffd98a;
-  --danger: #ff7d92;
-  --on-accent: #2d0a20;
+  /* No glow. Paper does not glow — it takes an impression. What used to be a
+     halo is a soft warm bed the element sits in. */
+  --glow-cyan: 0 2px 10px rgba(214, 74, 148, 0.26);
+  --glow-green: 0 2px 10px rgba(176, 122, 58, 0.26);
+  --glow-hot: 0 2px 9px rgba(201, 138, 66, 0.3);
+  --cut: 0 1px 0 rgba(255, 252, 250, 0.75), 0 6px 16px rgba(92, 42, 72, 0.13);
+  --radius: 17px;
 
-  /* Bloom rather than neon: wider, softer, lower — storybook luminance is a
-     glow you can look at, where the void's is a glow that looks back. */
-  --glow-cyan: 0 0 18px rgba(255, 111, 199, 0.42);
-  --glow-green: 0 0 18px rgba(233, 184, 94, 0.38);
-  --glow-hot: 0 0 16px rgba(255, 217, 138, 0.5);
-  --cut: 0 1px 0 rgba(255, 235, 246, 0.07), 0 10px 26px rgba(20, 6, 18, 0.5);
-
-  /* Paper tooth rather than vinyl grain — a touch heavier, since cloth and
-     pressed paper have a surface and a record sleeve does not. */
-  --tx-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.07'/%3E%3C/svg%3E");
-  /* The knot in the seam goes gold. */
-  --tx-stitch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='3'%3E%3Crect x='0' y='1' width='8' height='1' fill='%23ffe3f1' opacity='0.24'/%3E%3Ccircle cx='11.5' cy='1.5' r='0.9' fill='%23e9b85e' opacity='0.7'/%3E%3C/svg%3E");
-  /* The insignia becomes a pressed rosette: six petals round a seeded centre,
-     which is the botanical softness the rest of the theme only implies. */
-  --stamp-cyan: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='70' height='70' viewBox='0 0 70 70' fill='none' stroke='%23ff6fc7' stroke-width='1.3'%3E%3Ccircle cx='35' cy='35' r='30'/%3E%3Ccircle cx='35' cy='35' r='22' stroke-dasharray='2 3.5'/%3E%3Cg%3E%3Cellipse cx='35' cy='24' rx='5' ry='9'/%3E%3Cellipse cx='35' cy='46' rx='5' ry='9'/%3E%3Cellipse cx='25.5' cy='29.5' rx='5' ry='9' transform='rotate(60 25.5 29.5)'/%3E%3Cellipse cx='44.5' cy='40.5' rx='5' ry='9' transform='rotate(60 44.5 40.5)'/%3E%3Cellipse cx='25.5' cy='40.5' rx='5' ry='9' transform='rotate(-60 25.5 40.5)'/%3E%3Cellipse cx='44.5' cy='29.5' rx='5' ry='9' transform='rotate(-60 44.5 29.5)'/%3E%3C/g%3E%3Ccircle cx='35' cy='35' r='2.6' fill='%23ff6fc7' stroke='none'/%3E%3C/svg%3E");
-  --stamp-hot: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='70' height='70' viewBox='0 0 70 70' fill='none' stroke='%23e9b85e' stroke-width='1.5'%3E%3Ccircle cx='35' cy='35' r='30'/%3E%3Ccircle cx='35' cy='35' r='21' stroke-dasharray='1.5 4'/%3E%3Cpath d='M35 19c6 5 9 10 9 15a9 9 0 0 1-18 0c0-5 3-10 9-15z' stroke-width='1.2'/%3E%3Cpath d='M35 26v18' stroke-width='1'/%3E%3C/svg%3E");
+  /* Paper fibre: coarser and heavier than vinyl grain, so the surface has a
+     tooth you can see rather than a hiss you cannot. */
+  --tx-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.45' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.11'/%3E%3C/svg%3E");
+  /* A real running stitch: a slanted gold thread with the needle hole beside it. */
+  --tx-stitch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='4'%3E%3Cpath d='M1 3L7 1' stroke='%23b07a3a' stroke-width='1.1' stroke-linecap='round' opacity='0.65'/%3E%3Ccircle cx='10.5' cy='2' r='0.7' fill='%233d1f36' opacity='0.25'/%3E%3C/svg%3E");
+  /* Pressed rosette, and a seed-pod counterpart — botanical, not astral. */
+  --stamp-cyan: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='70' height='70' viewBox='0 0 70 70' fill='none' stroke='%23d64a94' stroke-width='1.2'%3E%3Ccircle cx='35' cy='35' r='29' stroke-dasharray='3 2.5'/%3E%3Cellipse cx='35' cy='24' rx='5' ry='9'/%3E%3Cellipse cx='35' cy='46' rx='5' ry='9'/%3E%3Cellipse cx='25.5' cy='29.5' rx='5' ry='9' transform='rotate(60 25.5 29.5)'/%3E%3Cellipse cx='44.5' cy='40.5' rx='5' ry='9' transform='rotate(60 44.5 40.5)'/%3E%3Cellipse cx='25.5' cy='40.5' rx='5' ry='9' transform='rotate(-60 25.5 40.5)'/%3E%3Cellipse cx='44.5' cy='29.5' rx='5' ry='9' transform='rotate(-60 44.5 29.5)'/%3E%3Ccircle cx='35' cy='35' r='2.6' fill='%23d64a94' stroke='none'/%3E%3C/svg%3E");
+  --stamp-hot: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='70' height='70' viewBox='0 0 70 70' fill='none' stroke='%23b07a3a' stroke-width='1.3'%3E%3Ccircle cx='35' cy='35' r='29' stroke-dasharray='2 3'/%3E%3Cpath d='M35 17c7 6 10 12 10 18a10 10 0 0 1-20 0c0-6 3-12 10-18z'/%3E%3Cpath d='M35 25v20M35 32l-5-4M35 38l5-4' stroke-width='0.9'/%3E%3C/svg%3E");
 }
+
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -207,7 +241,7 @@ html, body {
   height: 100%;
   background: transparent;
   overflow: hidden;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--font);
   color: var(--text);
   -webkit-user-select: none;
   user-select: none;
@@ -229,8 +263,8 @@ html, body {
   background: var(--tx-grain), var(--sparks), var(--streaks), var(--void-glow), var(--card);
   border: 1px solid var(--edge);
   border-radius: var(--radius);
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6),
-              inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  box-shadow: 0 18px 50px rgba(var(--shade-rgb), 0.6),
+              inset 0 1px 0 rgba(var(--sheen-rgb), 0.04);
   overflow: hidden;
   backdrop-filter: blur(18px);
 }
@@ -279,8 +313,8 @@ html, body {
   /* A single narrow vinyl-gloss band raked across the bar. */
   background: linear-gradient(105deg,
               transparent 0 34%,
-              rgba(255, 255, 255, 0.045) 40%,
-              rgba(255, 255, 255, 0.01) 44%,
+              rgba(var(--sheen-rgb), 0.045) 40%,
+              rgba(var(--sheen-rgb), 0.01) 44%,
               transparent 50%);
   -webkit-app-region: drag;
 }
@@ -311,7 +345,7 @@ html, body {
   letter-spacing: 1.4px;
   text-transform: uppercase;
   /* Embossed wordmark: a hair of light above, ink below. */
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), 0 -1px 0 rgba(0, 0, 0, 0.4);
+  text-shadow: 0 1px 0 rgba(var(--sheen-rgb), 0.06), 0 -1px 0 rgba(var(--shade-rgb), 0.4);
 }
 #bar .subtitle { font-size: 11.5px; color: var(--muted); }
 #bar .spacer { flex: 1; }
@@ -324,7 +358,7 @@ html, body {
   gap: 6px;
   margin-right: 4px;
   padding-left: 22px;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--font-stamp);
   font-size: 9.5px;
   font-weight: 600;
   letter-spacing: 1.5px;
@@ -408,8 +442,8 @@ button {
      beneath, so the picture reads as pressed into the vinyl rather than laid on
      it. box-shadow only — it never intercepts a paint stroke. */
   box-shadow: 0 0 0 1px var(--edge),
-              inset 0 0 0 1px rgba(255, 255, 255, 0.05),
-              0 8px 22px rgba(0, 0, 0, 0.45);
+              inset 0 0 0 1px rgba(var(--sheen-rgb), 0.05),
+              0 8px 22px rgba(var(--shade-rgb), 0.45);
   /* The canvas owns its gestures completely — no scroll, no pinch-zoom (the
      app implements its own, in game.js, so it can share it with painting). */
   touch-action: none;
@@ -424,12 +458,12 @@ button {
   -webkit-app-region: no-drag;
   padding: 5px 11px;
   border-radius: 20px;
-  background: rgba(16, 16, 20, 0.9);
+  background: rgba(var(--chip-rgb), 0.9);
   border: 1px solid var(--edge);
   font-size: 11px;
   font-weight: 650;
   color: var(--text);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 14px rgba(var(--shade-rgb), 0.4);
   transition: background 120ms, transform 120ms, border-color 120ms;
 }
 .zoom-pill:hover, .compare-pill:hover, .undo-pill:hover {
@@ -447,7 +481,7 @@ button {
    the compare pill starts, so the two are never on screen together. Kept as
    see-through as the points HUD, for the same reason — unlike the zoom and
    compare pills, this one is up while you are painting rather than after. */
-.undo-pill { top: 10px; left: 10px; background: rgba(16, 16, 20, 0.68); }
+.undo-pill { top: 10px; left: 10px; background: rgba(var(--chip-rgb), 0.68); }
 
 /* Top-center is the one corner of #stage nothing else claims. Deliberately
    more transparent than the zoom/compare pills (0.68 vs their 0.9) — this
@@ -463,12 +497,12 @@ button {
   gap: 5px;
   padding: 5px 12px;
   border-radius: 20px;
-  background: rgba(16, 16, 20, 0.68);
+  background: rgba(var(--chip-rgb), 0.68);
   border: 1px solid var(--edge);
   font-size: 12.5px;
   font-weight: 700;
   color: var(--text);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 14px rgba(var(--shade-rgb), 0.3);
   /* Read-only HUD — never steals a tap from the board beneath it, same
      posture as #toasts. */
   pointer-events: none;
@@ -491,7 +525,7 @@ button {
   font-size: 12px;
   font-weight: 800;
   color: var(--accent);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  text-shadow: 0 1px 3px rgba(var(--shade-rgb), 0.5);
   white-space: nowrap;
   animation: points-float 700ms ease-out both;
 }
@@ -536,7 +570,7 @@ button {
      `calc(37.5% * 1%)` is not, and an invalid value here drops the whole
      background and takes the ring with it. */
   background: conic-gradient(var(--accent2) calc(var(--xp, 0) * 1%),
-                             rgba(255, 255, 255, 0.14) 0);
+                             rgba(var(--sheen-rgb), 0.14) 0);
   transition: --xp 240ms ease;
 }
 
@@ -549,9 +583,9 @@ button {
   height: 52px;
   border-radius: 50%;
   overflow: hidden;
-  background: rgba(16, 16, 20, 0.9);
+  background: rgba(var(--chip-rgb), 0.9);
   border: 1px solid var(--edge-strong);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4), var(--glow-green);
+  box-shadow: 0 4px 14px rgba(var(--shade-rgb), 0.4), var(--glow-green);
   transition: transform 120ms;
 }
 .avatar-pill:hover { transform: translateY(-1px); }
@@ -604,9 +638,9 @@ button {
   gap: 6px;
   padding: 8px;
   border-radius: 14px;
-  background: rgba(16, 16, 20, 0.94);
+  background: rgba(var(--chip-rgb), 0.94);
   border: 1px solid var(--edge);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 10px 28px rgba(var(--shade-rgb), 0.5);
 }
 
 .ability-btn {
@@ -614,12 +648,12 @@ button {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: rgba(16, 16, 20, 0.9);
+  background: rgba(var(--chip-rgb), 0.9);
   border: 1px solid var(--edge);
   font-size: 13px;
   display: grid;
   place-items: center;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 3px 10px rgba(var(--shade-rgb), 0.35);
   transition: transform 120ms, opacity 160ms;
 }
 .ability-btn:hover { transform: translateY(-1px); }
@@ -649,7 +683,7 @@ button {
   gap: 8px;
   padding-bottom: 9px;
   margin-bottom: 4px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid rgba(var(--sheen-rgb), 0.07);
 }
 /* Wide enough for the room around her. The figure is drawn at 0.8 inside the
    scene, so she ends up close to her old on-screen size. */
@@ -720,7 +754,7 @@ button {
   background: var(--card-solid);
   border-right: 1px solid var(--edge);
   border-radius: 0 16px 16px 0;
-  box-shadow: 10px 0 30px rgba(0, 0, 0, 0.42);
+  box-shadow: 10px 0 30px rgba(var(--shade-rgb), 0.42);
   transition: transform 260ms cubic-bezier(0.22, 0.61, 0.36, 1);
   z-index: 3;
 }
@@ -740,7 +774,7 @@ button {
 }
 .room-panel .avatar-section { flex: 0 0 auto; }
 .room-panel::-webkit-scrollbar { width: 8px; }
-.room-panel::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 4px; }
+.room-panel::-webkit-scrollbar-thumb { background: rgba(var(--sheen-rgb), 0.12); border-radius: 4px; }
 
 /* The edge tab that opens/closes the panel — parked at the stage edge when
    closed, at the panel's edge when open, so it is always reachable. */
@@ -763,10 +797,10 @@ button {
   line-height: 1;
   cursor: pointer;
   z-index: 4;
-  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.32);
+  box-shadow: 4px 0 12px rgba(var(--shade-rgb), 0.32);
   transition: left 260ms cubic-bezier(0.22, 0.61, 0.36, 1);
 }
-.room-panel-toggle:hover { background: rgba(255, 255, 255, 0.09); }
+.room-panel-toggle:hover { background: rgba(var(--sheen-rgb), 0.09); }
 .panel-body.scene.panel-open .room-panel-toggle { left: min(300px, 82%); }
 
 /* On a wide screen, slide the room to the right of the open panel so both are
@@ -782,7 +816,7 @@ button {
 .panel-body.scene .avatar-head { overflow-y: auto; }
 .panel-body.scene .avatar-head::-webkit-scrollbar { width: 8px; }
 .panel-body.scene .avatar-head::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12); border-radius: 4px;
+  background: rgba(var(--sheen-rgb), 0.12); border-radius: 4px;
 }
 
 .scene-stats {
@@ -841,7 +875,7 @@ button {
   height: 20px;
   border-radius: 5px;
   flex: none;
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(var(--sheen-rgb), 0.22);
 }
 
 .swatch-row { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 2px 2px; }
@@ -849,10 +883,10 @@ button {
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.16);
+  border: 2px solid rgba(var(--sheen-rgb), 0.16);
   transition: transform 120ms, border-color 120ms;
 }
-.swatch:hover { transform: scale(1.12); border-color: rgba(255, 255, 255, 0.5); }
+.swatch:hover { transform: scale(1.12); border-color: rgba(var(--sheen-rgb), 0.5); }
 
 @media (pointer: coarse) {
   .avatar-ring { width: 60px; height: 60px; }
@@ -882,7 +916,7 @@ button {
 .progress {
   height: 3px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.09);
+  background: rgba(var(--sheen-rgb), 0.09);
   overflow: hidden;
   margin-bottom: 11px;
 }
@@ -907,7 +941,7 @@ button {
   position: relative;
   width: 38px; height: 38px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.14);
+  border: 2px solid rgba(var(--sheen-rgb), 0.14);
   display: grid;
   place-items: center;
   font-size: 12px;
@@ -921,7 +955,7 @@ button {
   position: absolute;
   inset: 3px;
   border-radius: 50%;
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0) 46%);
+  background: linear-gradient(160deg, rgba(var(--sheen-rgb), 0.42) 0%, rgba(var(--sheen-rgb), 0) 46%);
   pointer-events: none;
 }
 
@@ -930,7 +964,7 @@ button {
   transform: translateY(-5px) scale(1.09);
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.9), var(--glow-cyan),
-              0 7px 16px rgba(0, 0, 0, 0.5);
+              0 7px 16px rgba(var(--shade-rgb), 0.5);
 }
 .tub.spent { opacity: 0.26; pointer-events: none; transform: none; }
 
@@ -966,7 +1000,7 @@ button {
   inset: 12px;
   display: grid;
   place-items: center;
-  background: rgba(9, 9, 12, 0.74);
+  background: rgba(var(--chip-rgb), 0.74);
   border-radius: 9px;
   backdrop-filter: blur(3px);
   animation: fade 380ms ease both;
@@ -992,7 +1026,7 @@ button {
   border-radius: 8px;
   /* A glossy vinyl slab: a sheen skimming the top lip over solid cyan, dark ink
      pressed into it, a knife-edge shadow beneath. */
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0) 44%),
+  background: linear-gradient(180deg, rgba(var(--sheen-rgb), 0.32), rgba(var(--sheen-rgb), 0) 44%),
               var(--accent);
   color: var(--on-accent);
   font-size: 12.5px;
@@ -1034,16 +1068,16 @@ button {
   gap: 10px;
   padding: 8px 13px 8px 9px;
   border-radius: 11px;
-  background: rgba(16, 16, 20, 0.97);
+  background: rgba(var(--chip-rgb), 0.97);
   border: 1px solid rgba(var(--accent-rgb), 0.32);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 8px 22px rgba(var(--shade-rgb), 0.45);
   animation: toast-in 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 .toast.out { animation: toast-out 300ms ease both; }
 /* #toasts is click-through so status toasts never block the board — an
    achievement waits for a click to go away, so it alone opts back in. */
 .toast.sticky { pointer-events: auto; cursor: pointer; }
-.toast.sticky:hover { border-color: rgba(var(--accent-rgb), 0.7); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45), var(--glow-cyan); }
+.toast.sticky:hover { border-color: rgba(var(--accent-rgb), 0.7); box-shadow: 0 8px 22px rgba(var(--shade-rgb), 0.45), var(--glow-cyan); }
 @keyframes toast-in { from { opacity: 0; transform: translateX(-24px) scale(0.94); } }
 @keyframes toast-out { to { opacity: 0; transform: translateY(9px); } }
 
@@ -1128,7 +1162,7 @@ button {
   }
 }
 .panel-body::-webkit-scrollbar { width: 8px; }
-.panel-body::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 4px; }
+.panel-body::-webkit-scrollbar-thumb { background: rgba(var(--sheen-rgb), 0.12); border-radius: 4px; }
 
 .row {
   display: flex;
@@ -1137,14 +1171,14 @@ button {
   padding: 9px 11px;
   border-radius: 10px;
   /* Rows read as raised dark-grey cards lifted off the void. */
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(var(--sheen-rgb), 0.04);
+  border: 1px solid rgba(var(--sheen-rgb), 0.05);
 }
 /* Banding is assigned in JS (see band() in game.js) rather than :nth-child,
    because panel bodies interleave rows with headings and controls that are
    all plain divs. Declared here — above .row.earned, which shares its
    specificity — so an earned trophy keeps its own tint. */
-.row.alt { background: rgba(255, 255, 255, 0.09); }
+.row.alt { background: rgba(var(--sheen-rgb), 0.09); }
 .row.clickable { cursor: pointer; transition: background 120ms, border-color 120ms; }
 /* Clears the band tint above it, so hover reads on either stripe. */
 .row.clickable:hover { background: rgba(var(--accent-rgb), 0.08); border-color: rgba(var(--accent-rgb), 0.3); }
@@ -1176,7 +1210,7 @@ button {
 .pic-thumb svg { width: 100%; height: 100%; display: block; }
 /* A blind pack's shapes give it away as fast as its title would. */
 .pic-thumb.blind {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--sheen-rgb), 0.05);
   color: var(--muted);
   font-size: 19px;
   font-weight: 600;
@@ -1191,7 +1225,7 @@ button {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  background: rgba(9, 8, 13, 0.78);
+  background: rgba(var(--chip-rgb), 0.78);
   animation: fade 130ms ease both;
   pointer-events: none; /* a look, not a target — the row underneath keeps its taps */
 }
@@ -1200,7 +1234,7 @@ button {
   color: var(--paper-ink);
   border-radius: 9px;
   padding: 7px;
-  box-shadow: 0 20px 54px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 20px 54px rgba(var(--shade-rgb), 0.55);
   max-width: 88%;
   max-height: 76%;
 }
@@ -1216,7 +1250,7 @@ button {
   height: 3px;
   margin-top: 6px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(var(--sheen-rgb), 0.1);
   overflow: hidden;
 }
 .bar > i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
@@ -1229,13 +1263,13 @@ button {
   font-size: 15px;
   font-weight: 700;
   color: var(--text);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--sheen-rgb), 0.06);
   border: 1px solid var(--edge);
   border-radius: 8px;
   padding: 7px 10px;
 }
 .pet-name::placeholder { color: var(--muted); font-weight: 600; }
-.pet-name:focus { outline: none; border-color: var(--accent); background: rgba(255, 255, 255, 0.09); }
+.pet-name:focus { outline: none; border-color: var(--accent); background: rgba(var(--sheen-rgb), 0.09); }
 
 .pet-meter { gap: 11px; }
 /* A chunkier bar than the level bar's hairline — this is the thing you act on. */
@@ -1243,7 +1277,7 @@ button {
   height: 8px;
   margin-top: 6px;
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.09);
+  background: rgba(var(--sheen-rgb), 0.09);
   overflow: hidden;
 }
 .meter > i {
@@ -1267,7 +1301,7 @@ button {
 .switch {
   width: 38px; height: 21px;
   border-radius: 11px;
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(var(--sheen-rgb), 0.14);
   position: relative;
   transition: background 160ms;
   flex: 0 0 auto;
@@ -1286,9 +1320,9 @@ button {
 
 .empty { padding: 26px 14px; text-align: center; color: var(--muted); font-size: 12px; line-height: 1.65; }
 .empty code {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--font-stamp);
   font-size: 11px;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(var(--sheen-rgb), 0.08);
   padding: 2px 6px;
   border-radius: 5px;
 }
@@ -1307,7 +1341,7 @@ button {
   gap: 7px;
   padding: 4px 0 8px;
   background: var(--card);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid rgba(var(--sheen-rgb), 0.07);
 }
 
 .pic-search { position: relative; display: flex; }
@@ -1316,7 +1350,7 @@ button {
   padding: 8px 30px 8px 11px;
   border-radius: 8px;
   border: 1px solid var(--edge);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(var(--sheen-rgb), 0.04);
   color: var(--text);
   font-size: 12.5px;
   -webkit-app-region: no-drag;
@@ -1338,7 +1372,7 @@ button {
   display: grid;
   place-items: center;
 }
-.pic-search-clear:hover { background: rgba(255, 255, 255, 0.1); color: var(--text); }
+.pic-search-clear:hover { background: rgba(var(--sheen-rgb), 0.1); color: var(--text); }
 
 .pic-chips { display: flex; flex-wrap: wrap; gap: 6px 10px; }
 
@@ -1347,7 +1381,7 @@ button {
 .pic-theme {
   border-radius: 8px;
   border: 1px solid var(--edge);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--sheen-rgb), 0.03);
   color: var(--text);
   font-size: 11px;
   font-weight: 600;
@@ -1359,7 +1393,7 @@ button {
   background-repeat: no-repeat;
   background-position: right 9px center;
 }
-.pic-theme:hover { background-color: rgba(255, 255, 255, 0.09); }
+.pic-theme:hover { background-color: rgba(var(--sheen-rgb), 0.09); }
 .pic-theme:focus { outline: none; border-color: var(--accent); }
 /* The dropdown list itself is drawn by the OS; keep its options readable in the
    app's dark surface where the platform honours it. */
@@ -1375,7 +1409,7 @@ button {
   gap: 8px 10px;
   align-items: center;
   padding: 4px 2px 11px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid rgba(var(--sheen-rgb), 0.07);
   margin-bottom: 4px;
 }
 
@@ -1396,17 +1430,17 @@ button {
   font-size: 11px;
   font-weight: 600;
   color: var(--muted);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--sheen-rgb), 0.03);
   transition: background 120ms, color 120ms;
 }
 .segmented button + button { border-left: 1px solid var(--edge); }
 .segmented button:hover { background: rgba(var(--accent-rgb), 0.1); color: var(--text); }
 /* The selected chip reads like an ink-stamp pressed onto the tag strip. */
 .segmented button.on {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0) 46%),
+  background: linear-gradient(180deg, rgba(var(--sheen-rgb), 0.28), rgba(var(--sheen-rgb), 0) 46%),
               var(--accent);
   color: var(--on-accent);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(var(--sheen-rgb), 0.18);
 }
 
 /* For option sets too long for one row (the six fantasy races). The base
@@ -1441,7 +1475,7 @@ button {
   place-items: center;
   border-radius: 12px;
   border: 2px dashed var(--accent);
-  background: rgba(16, 14, 22, 0.86);
+  background: rgba(var(--chip-rgb), 0.86);
   backdrop-filter: blur(3px);
   pointer-events: none;
 }
@@ -1548,8 +1582,8 @@ button {
   position: absolute;
   right: 4px; bottom: 4px;
   width: 7px; height: 7px;
-  border-right: 2px solid rgba(255, 255, 255, 0.26);
-  border-bottom: 2px solid rgba(255, 255, 255, 0.26);
+  border-right: 2px solid rgba(var(--sheen-rgb), 0.26);
+  border-bottom: 2px solid rgba(var(--sheen-rgb), 0.26);
   border-bottom-right-radius: 3px;
 }
 
@@ -1596,7 +1630,7 @@ button {
   width: 88px; height: 88px;
   pointer-events: none;
   z-index: 1;
-  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.5));
+  filter: drop-shadow(0 6px 10px rgba(var(--shade-rgb), 0.5));
   /* The scamper: top/left are tweened, so setting a new spot slides it there. */
   transition: left 640ms cubic-bezier(0.45, 0.05, 0.3, 1),
               top 640ms cubic-bezier(0.45, 0.05, 0.3, 1);
@@ -1649,9 +1683,9 @@ button {
   max-width: min(320px, calc(100vw - 24px));
   padding: 13px 15px 12px;
   border-radius: 13px;
-  background: rgba(16, 16, 20, 0.98);
+  background: rgba(var(--chip-rgb), 0.98);
   border: 1px solid rgba(var(--accent-rgb), 0.34);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55), var(--glow-cyan);
+  box-shadow: 0 12px 30px rgba(var(--shade-rgb), 0.55), var(--glow-cyan);
   transition: left 460ms cubic-bezier(0.4, 0.1, 0.2, 1),
               top 460ms cubic-bezier(0.4, 0.1, 0.2, 1);
   animation: fade 300ms ease both;
@@ -1701,11 +1735,11 @@ button {
   padding: 0;
   border-radius: 50%;
   border: none;
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(var(--sheen-rgb), 0.22);
   cursor: pointer;
   transition: background 140ms, transform 140ms;
 }
-.tour-dot:hover { background: rgba(255, 255, 255, 0.45); }
+.tour-dot:hover { background: rgba(var(--sheen-rgb), 0.45); }
 .tour-dot.on { background: var(--accent); box-shadow: var(--glow-cyan); transform: scale(1.15); }
 
 .tour-btns { display: flex; align-items: center; gap: 9px; }

@@ -780,12 +780,16 @@ test('a theme overrides tokens and never reaches past them', () => {
     if (t.id === DEFAULT_THEME) continue;
     const start = css.indexOf(`[data-theme="${t.id}"]`);
     const block = css.slice(start, css.indexOf('\n}', start));
+    // Comments come out wholesale first — a prose line can carry a colon
+    // ("No diagonals: the void's"), which a line-at-a-time guess reads as a
+    // declaration and fails on.
+    const bare = block.replace(/\/\*[\s\S]*?\*\//g, '');
     // Only custom properties. A theme that starts writing real rules stops
     // being swappable and starts being a second stylesheet.
-    for (const line of block.split('\n').slice(1)) {
-      const decl = line.trim();
-      if (!decl || decl.startsWith('/*') || decl.startsWith('*') || !decl.includes(':')) continue;
-      assert.ok(decl.startsWith('--'), `theme "${t.id}" sets something that is not a token: ${decl}`);
+    for (const decl of bare.split(';')) {
+      const d = decl.trim();
+      if (!d || !d.includes(':') || d.includes('{')) continue;
+      assert.ok(d.startsWith('--'), `theme "${t.id}" sets something that is not a token: ${d.slice(0, 60)}`);
     }
   }
 });
@@ -1007,7 +1011,10 @@ test('every panel renderer bands its list', () => {
 test('the band tint is distinct from both the base row and the hover tint', () => {
   const css = readSource('src/styles.css');
   const tint = (selector) => {
-    const m = css.match(new RegExp(`${selector}\\s*\\{[^}]*background: (rgba\\([^)]*\\))`));
+    // Up to the semicolon, not to the first ')': a tint is now written
+    // rgba(var(--sheen-rgb), .06), so stopping at the first bracket truncates
+    // every one of them to the same string and the comparison always passes.
+    const m = css.match(new RegExp(`${selector}\\s*\\{[^}]*background: ([^;]+);`));
     assert.ok(m, `no background found for ${selector}`);
     return m[1];
   };
