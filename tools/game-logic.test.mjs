@@ -19,6 +19,10 @@ import {
   activate, isActive, consumeActive, NUMBER_RECOLOR_CYCLE, nextNumberRecolorIndex,
 } from '../src/abilities.js';
 import { WARDROBE_ITEMS } from '../src/wardrobe.js';
+import {
+  RUNGS, MAX_RUNG_SHARE, luma, gridFor, ladderFor, rungOf, lightnessOf, shadeHex,
+  trayFor, rungShare, worthOffering, partnerFor,
+} from '../src/overtime.js';
 import { LIVING_EFFECTS } from '../src/render.js';
 import { Burst } from '../src/paint-fx.js';
 import {
@@ -741,6 +745,108 @@ test('every wardrobe item is outlined as one garment, not as loose pieces', () =
       `${item.id} is not union-inked`);
     assert.ok(!/NaN|undefined|Infinity/.test(svg), `${item.id} produced a poisoned path`);
   }
+});
+
+/* -------------------------------------------------------------- overtime */
+
+// Overtime collapses a puzzle to ~30 blocks of one hue for sixty seconds. The
+// arithmetic is pure and lives away from the canvas, so all of it runs here.
+
+test('the grid lands near thirty tiles and follows the aspect ratio', () => {
+  for (const [w, h] of [[900, 900], [768, 621], [738, 719], [400, 1200], [1200, 400]]) {
+    const { cols, rows } = gridFor(w, h);
+    assert.ok(cols >= 2 && rows >= 2, `${w}x${h} collapsed to a stripe`);
+    const tiles = cols * rows;
+    assert.ok(tiles >= 18 && tiles <= 44, `${w}x${h} gave ${tiles} tiles`);
+    // Wider than tall must not come back taller than wide.
+    if (w > h) assert.ok(cols >= rows, `${w}x${h} came back portrait`);
+    if (h > w) assert.ok(rows >= cols, `${w}x${h} came back landscape`);
+  }
+  assert.deepEqual(gridFor(0, 0), { cols: 2, rows: 2 }, 'a degenerate size must not throw');
+});
+
+test('the ladder stretches to the range the picture actually uses', () => {
+  // Midtones only: without stretching, all five rungs would be the same grey.
+  const mid = [110, 118, 126, 134, 142];
+  const ladder = ladderFor(mid);
+  assert.equal(rungOf(110, ladder), 0, 'the darkest tile must be the bottom rung');
+  assert.equal(rungOf(142, ladder), RUNGS - 1, 'the lightest tile must be the top rung');
+  const flat = ladderFor([90, 90, 90]);
+  assert.equal(rungOf(90, flat), 2, 'a flat picture must land mid-ladder, not throw');
+});
+
+test('no two tubs in a tray are the same shade', () => {
+  // THE regression. The first build downsampled the picture but not its
+  // values, and handed back eight to eighteen near-identical shades — a
+  // gradient, not a tray. Whatever the input, the tubs must be tellable apart.
+  const inputs = [
+    Array.from({ length: 30 }, (_, i) => i * 8),          // an even ramp
+    Array.from({ length: 30 }, (_, i) => 110 + i * 1.1),  // a narrow midtone band
+    Array.from({ length: 30 }, (_, i) => (i % 7) * 36),   // repeating
+    [0, 255, 12, 240, 128, 130, 126, 60, 200, 44, 210, 90, 150, 30, 170],
+  ];
+  for (const values of inputs) {
+    const tray = trayFor(values, { hue: 8 });
+    const hexes = new Set(tray.map((t) => t.hex));
+    assert.equal(hexes.size, tray.length, `duplicate tubs in ${JSON.stringify(tray)}`);
+    assert.ok(tray.length <= RUNGS, `tray of ${tray.length} exceeds ${RUNGS} rungs`);
+    assert.deepEqual([...tray].sort((a, b) => a.rung - b.rung), tray, 'tray must run dark to light');
+    assert.equal(tray.reduce((n, t) => n + t.count, 0), values.length, 'tiles went missing');
+  }
+});
+
+test('rung lightness climbs, and every shade is a real hex', () => {
+  let last = -1;
+  for (let r = 0; r < RUNGS; r++) {
+    const l = lightnessOf(r, RUNGS);
+    assert.ok(l > last, 'rungs must get lighter, never darker');
+    last = l;
+    assert.match(shadeHex(8, 0.42, l), /^#[0-9a-f]{6}$/, 'malformed shade');
+  }
+});
+
+test('a picture with nothing to choose from is never offered', () => {
+  assert.equal(worthOffering(Array(30).fill(120)), false, 'one flat shade is not a puzzle');
+  assert.equal(worthOffering([10, 250]), false, 'two tiles is not a puzzle');
+  // 80% of tiles on one rung — the shape the measured gate exists to catch.
+  const lopsided = [...Array(24).fill(250), 0, 10, 20, 30, 40, 50];
+  assert.ok(rungShare(lopsided) > MAX_RUNG_SHARE, 'the lopsided case must exceed the gate');
+  assert.equal(worthOffering(lopsided), false);
+  const spread = Array.from({ length: 30 }, (_, i) => i * 8);
+  assert.equal(worthOffering(spread), true, 'an even ramp must be offered');
+});
+
+test('a doubled fill takes the nearest unfilled cell of the same colour', () => {
+  const cell = (id, colour, x, y) => ({ id, colour, anchor: { x, y } });
+  const cells = [
+    cell(0, 1, 0, 0), cell(1, 1, 5, 0), cell(2, 1, 50, 0),
+    cell(3, 2, 1, 1), cell(4, 1, 2, 0),
+  ];
+  const none = new Set();
+  const near = partnerFor(cells, cells[0], { colour: 1, filled: none, pending: none });
+  assert.equal(near.id, 4, 'the closest same-colour cell must win');
+  assert.equal(
+    partnerFor(cells, cells[0], { colour: 1, filled: new Set([4]), pending: new Set([1]) }).id, 2,
+    'filled and in-flight cells must both be skipped',
+  );
+  assert.equal(
+    partnerFor(cells, cells[0], { colour: 1, filled: new Set([1, 2, 4]), pending: none }), null,
+    'no candidate must give null, not a throw',
+  );
+  assert.equal(partnerFor(cells, null, { colour: 1 }), null);
+  assert.equal(
+    partnerFor(cells, cells[3], { colour: 2, filled: none, pending: none }), null,
+    'a colour with only the origin cell has no partner',
+  );
+});
+
+test('overtime measures lightness the same way the rest of the app does', () => {
+  // luma() and readableOn() disagreeing would mean "how light is this" means
+  // two different things one file apart.
+  assert.equal(luma(255, 255, 255), 255);
+  assert.equal(luma(0, 0, 0), 0);
+  assert.match(readSource('src/game.js'), /0\.299 \* r \+ 0\.587 \* g \+ 0\.114 \* b/,
+    'readableOn no longer uses the coefficients overtime.js matches');
 });
 
 /* ------------------------------------------------------------- paint blob */
