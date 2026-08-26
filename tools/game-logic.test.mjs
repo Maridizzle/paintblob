@@ -662,6 +662,26 @@ test('both DEFAULT_SAVE literals declare a style, and boot backfills it', () => 
     'boot() must backfill customize.style — an existing save replaces avatar wholesale');
 });
 
+test('every customize row with more than four options is allowed to wrap', () => {
+  // `.segmented` is overflow:hidden with no wrap, so a long row silently
+  // drops its last buttons off the end rather than showing you it did. This
+  // is the check that catches a VARIANTS list growing past what one line
+  // holds — which is exactly how the Style row broke when it went from two
+  // entries to six.
+  const game = readSource('src/game.js');
+  const LONG = 4;
+  const rows = {
+    Style: VARIANTS.style, Race: VARIANTS.race, Gender: VARIANTS.gender,
+    Hair: VARIANTS.hairStyle, Eyes: VARIANTS.eyesStyle, Face: VARIANTS.faceShape,
+  };
+  for (const [label, list] of Object.entries(rows)) {
+    if (list.length <= LONG) continue;
+    const call = game.slice(game.indexOf(`pick('${label}'`));
+    assert.ok(call.slice(0, call.indexOf(');')).includes(', true'),
+      `the ${label} row has ${list.length} options and must pass wrap`);
+  }
+});
+
 test('setVariant accepts known styles and ignores anything else', () => {
   const c = defaultAvatarCustomize();
   setVariant(c, 'style', 'classic');

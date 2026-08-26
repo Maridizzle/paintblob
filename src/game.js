@@ -1811,8 +1811,10 @@ function renderAvatarCustomize(section, stage) {
 
   // First, because it changes how everything below it is drawn rather than
   // what any one of them is.
+  // Wrapped, like Race: `.segmented` is overflow:hidden with no wrap, so six
+  // styles on one line silently lose the last two off the end.
   pick('Style', VARIANTS.style, () => customize.style ?? 'inked',
-    (v) => setVariant(customize, 'style', v));
+    (v) => setVariant(customize, 'style', v), true);
   pick('Race', VARIANTS.race, () => customize.race, (v) => setVariant(customize, 'race', v), true);
   pick('Gender', VARIANTS.gender, () => customize.gender, (v) => setVariant(customize, 'gender', v));
   pick('Hair', VARIANTS.hairStyle, () => customize.hair.style, (v) => setVariant(customize, 'hair', v));
