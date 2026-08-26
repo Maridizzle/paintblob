@@ -120,6 +120,102 @@ const inkAttrs = (w) =>
 const union = (inner, w) =>
   `<g fill="${INK}"${inkAttrs(w * 2)}>${inner}</g>${inner}`;
 
+/* ---------------------------------------------------------------- styles */
+
+// What each style switches on. Kept as flags rather than one name checked in
+// forty places, because they compose: Gouache is Inked plus paint texture,
+// and Anime is that plus a different face.
+const STYLE = {
+  classic: {},
+  inked: { ink: true },
+  soft: { soft: true },
+  gouache: { ink: true, paint: true },
+  anime: { ink: true, paint: true, anime: true },
+  neon: { glass: true },
+};
+
+/**
+ * The same copy-the-slot trick `union` uses, for the overlays that need a
+ * silhouette of a slot rather than an outline of it — Soft's form shadow and
+ * rim light. The washes have to come out of the copy first: they carry their
+ * own fill, so they would ignore the gradient and simply paint themselves a
+ * second time on top of the real ones.
+ */
+// Strips every element carrying a fill of its OWN, which leaves exactly the
+// shapes that inherit the slot's colour — the forms. That is the set an
+// overlay wants: washes would ignore the gradient and repaint themselves, and
+// a copy of the white of an eye would blot out the iris beneath it.
+const formsOnly = (s) =>
+  s.replace(/<(?:path|rect|circle|ellipse)\b[^>]*?\sfill="[^"]*"[^>]*?\/>/g, '');
+
+/**
+ * The gradients and filters the richer styles reference, emitted by
+ * avatarInner so they travel with the figure into house.js's room scene too.
+ *
+ * Every id is `av-`-prefixed for one specific reason: the avatar is live in
+ * TWO svg documents at once (the tray pill and the panel stage), and nests
+ * inside the room's svg, which carries defs of its own. `url(#id)` resolves
+ * document-wide in HTML, so an unprefixed `#form` would collide with the
+ * room's. Duplicate `av-` ids across the pill and the stage are harmless:
+ * both render the same customize, so the definitions are identical.
+ *
+ * The gradients are userSpaceOnUse over the 120x210 frame, not the default
+ * objectBoundingBox — bounding-box units would restart the gradient inside
+ * every separate shape, lighting a sleeve from a different direction than the
+ * torso it hangs off. One frame-wide ramp means one light source.
+ */
+function defsFor(S) {
+  if (!S.soft && !S.paint && !S.glass) return '';
+  const out = ['<defs>'];
+  if (S.soft) {
+    out.push('<linearGradient id="av-form" gradientUnits="userSpaceOnUse" x1="22" y1="6" x2="104" y2="200">' +
+      '<stop offset="0" stop-color="rgba(0,0,0,0)"/>' +
+      '<stop offset="0.42" stop-color="rgba(0,0,0,0.04)"/>' +
+      '<stop offset="1" stop-color="rgba(0,0,0,0.26)"/></linearGradient>');
+    // Kept low: this is a copy of the figure showing through a 0.7-unit offset,
+    // so the alpha is the whole brightness of the rim. At 0.9 it stopped being
+    // light wrapping an edge and became a wire drawn along one.
+    out.push('<linearGradient id="av-rim" gradientUnits="userSpaceOnUse" x1="26" y1="4" x2="94" y2="150">' +
+      '<stop offset="0" stop-color="rgba(255,255,255,0.44)"/>' +
+      '<stop offset="0.45" stop-color="rgba(255,255,255,0.14)"/>' +
+      '<stop offset="1" stop-color="rgba(255,255,255,0)"/></linearGradient>');
+    out.push('<radialGradient id="av-ground" cx="0.5" cy="0.5" r="0.5">' +
+      '<stop offset="0" stop-color="rgba(0,0,0,0.45)"/>' +
+      '<stop offset="1" stop-color="rgba(0,0,0,0)"/></radialGradient>');
+  }
+  if (S.paint) {
+    // Two turbulences doing two different jobs. The coarse one displaces the
+    // artwork so every edge wanders the way a loaded brush does — which is
+    // hue-agnostic by construction, since it moves geometry and never touches
+    // colour. The fine one is paper tooth, composited back INSIDE the figure
+    // so the grain stops at her silhouette instead of fogging the panel.
+    out.push('<filter id="av-paint" x="-8%" y="-5%" width="116%" height="110%">' +
+      '<feTurbulence type="fractalNoise" baseFrequency="0.028" numOctaves="3" seed="7" result="warp"/>' +
+      '<feDisplacementMap in="SourceGraphic" in2="warp" scale="3.4" ' +
+      'xChannelSelector="R" yChannelSelector="G" result="wob"/>' +
+      '<feTurbulence type="fractalNoise" baseFrequency="0.62" numOctaves="2" seed="3" result="tooth"/>' +
+      '<feColorMatrix in="tooth" type="matrix" result="grey" values="' +
+      '0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0.46 0"/>' +
+      '<feComposite in="grey" in2="wob" operator="in" result="inked"/>' +
+      '<feBlend in="wob" in2="inked" mode="overlay"/></filter>');
+  }
+  if (S.glass) {
+    out.push('<filter id="av-glow" x="-30%" y="-18%" width="160%" height="136%">' +
+      '<feGaussianBlur in="SourceAlpha" stdDeviation="1.5" result="b"/>' +
+      '<feFlood flood-color="#35e9ff" flood-opacity="0.5" result="c"/>' +
+      '<feComposite in="c" in2="b" operator="in" result="glow"/>' +
+      '<feMerge><feMergeNode in="glow"/>' +
+      '<feMergeNode in="SourceGraphic"/></feMerge></filter>');
+    out.push('<linearGradient id="av-sheen" gradientUnits="userSpaceOnUse" x1="18" y1="0" x2="86" y2="205">' +
+      '<stop offset="0" stop-color="rgba(53,233,255,0.16)"/>' +
+      '<stop offset="0.4" stop-color="rgba(255,255,255,0.10)"/>' +
+      '<stop offset="0.58" stop-color="rgba(77,255,145,0.04)"/>' +
+      '<stop offset="1" stop-color="rgba(77,255,145,0.14)"/></linearGradient>');
+  }
+  out.push('</defs>');
+  return out.join('');
+}
+
 const n = (v) => Number(v).toFixed(2);
 const seg = (c1, c2, to) => ({ c1, c2, to });
 
@@ -151,8 +247,10 @@ export const VARIANTS = {
   eyesStyle: ['round', 'happy', 'sparkle'],
   faceShape: ['oval', 'round', 'square'],
   // How the figure is drawn rather than what it is made of, so it composes
-  // with every axis above instead of multiplying the geometry.
-  style: ['inked', 'classic'],
+  // with every axis above instead of multiplying the geometry. Anime is the
+  // one that also changes shape — see animeEyes — because a face is where
+  // that style actually lives.
+  style: ['inked', 'anime', 'gouache', 'soft', 'neon', 'classic'],
 };
 
 // Shoulder/hip half-widths and a waist multiplier, by gender. Hips stay
@@ -279,7 +377,7 @@ function metrics(c) {
     // Carried on the metrics object rather than threaded through forty
     // signatures: every markup function below already receives M, so the
     // style reaches all of them without one of them changing shape.
-    ink: (c.style ?? 'inked') === 'inked',
+    ...(STYLE[c.style ?? 'inked'] ?? STYLE.inked),
     headRx,
     headRy,
     crownY: HEAD_CY - headRy,
@@ -468,8 +566,51 @@ function raceExtras(M) {
 
 /** Nose, mouth and the skin shading. Nine shapes, and the nose alone is the
  *  single biggest "reads as a face" gain over the old flat oval. */
+/** Anime shorthand for the nose and mouth: a single tick where the nostril
+ *  shadow would be, and a mouth small enough to sit under those large eyes
+ *  without competing with them. */
+function animeNoseMouth(M) {
+  const w = M.headRx * 0.1;
+  return [
+    shade(`M${n(CX - w * 0.4)},${n(M.noseY - 1.2)} Q${n(CX + w * 1.5)},${n(M.noseY + 0.4)} ` +
+      `${n(CX - w * 0.2)},${n(M.noseY + 1.4)} Q${n(CX + w * 0.3)},${n(M.noseY)} ` +
+      `${n(CX - w * 0.4)},${n(M.noseY - 1.2)} Z`, 0.22),
+    `<path d="M${n(CX - M.headRx * 0.15)},${n(M.mouthY + 0.6)} ` +
+      `Q${n(CX)},${n(M.mouthY + 2.8)} ${n(CX + M.headRx * 0.15)},${n(M.mouthY + 0.6)} ` +
+      `Q${n(CX)},${n(M.mouthY + 1.5)} ${n(CX - M.headRx * 0.15)},${n(M.mouthY + 0.6)} Z" ` +
+      `fill="rgba(150,74,74,0.66)" stroke="none"/>`,
+  ].join('');
+}
+
 function faceAndShading(M) {
   const noseW = M.headRx * 0.16;
+  if (M.anime) {
+    return animeNoseMouth(M) + [
+      shade(`M${n(CX - M.jawHalf * 0.8)},${n(M.chinY - 1)} ` +
+        `Q${n(CX)},${n(M.chinY + M.neckLen * 0.55)} ${n(CX + M.jawHalf * 0.8)},${n(M.chinY - 1)} ` +
+        `Q${n(CX)},${n(M.chinY + 1)} ${n(CX - M.jawHalf * 0.8)},${n(M.chinY - 1)} Z`, 0.15),
+      // A blush across the cheeks, which is doing the work the shading used to.
+      pair((d) => shade(`M${n(CX + d * M.cheekHalf * 0.42)},${n(M.cheekY + 1)} ` +
+        `Q${n(CX + d * M.cheekHalf * 0.78)},${n(M.cheekY - 1.6)} ` +
+        `${n(CX + d * M.cheekHalf * 0.92)},${n(M.cheekY + 1.4)} ` +
+        `Q${n(CX + d * M.cheekHalf * 0.7)},${n(M.cheekY + 3.4)} ` +
+        `${n(CX + d * M.cheekHalf * 0.42)},${n(M.cheekY + 1)} Z`, 0.08)),
+      shade(`M${n(CX + M.waistHalf * 0.98)},${n(M.armpitY)} ` +
+        `C${n(CX + M.waistHalf + 1)},${n(M.waistY)} ${n(CX + M.hipHalf)},${n(M.hipY - 12)} ` +
+        `${n(CX + M.hipHalf)},${n(M.hipY)} ` +
+        `L${n(CX + M.hipHalf - 5)},${n(M.hipY)} ` +
+        `C${n(CX + M.hipHalf - 5)},${n(M.hipY - 12)} ${n(CX + M.waistHalf - 4)},${n(M.waistY)} ` +
+        `${n(CX + M.waistHalf * 0.98 - 4)},${n(M.armpitY)} Z`, 0.09),
+      pair((d) => shade(`M${n(CX + d * (M.legCx - M.thighH * 0.55))},${n(M.crotchY)} ` +
+        `C${n(CX + d * (M.legCx - M.calfH * 0.6))},${n(M.kneeY)} ` +
+        `${n(CX + d * (M.legCx - M.ankleH * 0.7))},${n(M.ankleY - 10)} ` +
+        `${n(CX + d * (M.legCx - M.ankleH * 0.6))},${n(M.ankleY)} ` +
+        `L${n(CX + d * (M.legCx - M.ankleH * 0.6 + 3))},${n(M.ankleY)} ` +
+        `C${n(CX + d * (M.legCx - M.calfH * 0.5 + 3))},${n(M.kneeY)} ` +
+        `${n(CX + d * (M.legCx - M.thighH * 0.5 + 3))},${n(M.crotchY + 6)} ` +
+        `${n(CX + d * (M.legCx - M.thighH * 0.55 + 2))},${n(M.crotchY)} Z`, 0.07)),
+    ].join('');
+  }
   return [
     // nose — a soft wedge with a lit bridge beside it
     shade(`M${n(CX)},${n(M.noseY - M.headRy * 0.2)} ` +
@@ -598,7 +739,21 @@ function hairFront(style, M) {
         `L${n(CX + d * (cheekHalf - 1.5))},${n(M.cheekY - 2)} Z" stroke="none"/>`)
     : '';
   const beard = M.P.extras.includes('beard') ? beardMarkup(M) : '';
-  return capTag + sideburns + sheen + brows + beard;
+  // The "angel ring" — the band of shine anime hair carries across the crown.
+  // A wash like every other highlight here, so it works over any hair colour.
+  // Two short bands rather than one across the whole crown: the cap dips to a
+  // parting at the centreline, so a single band spills off the hair and lights
+  // up the forehead under it. Broken shine is what anime hair does anyway.
+  const ring = M.anime
+    ? pair((d) => {
+      const y = crownY + headRy * 0.2;
+      const x0 = CX + d * browHalf * 0.36;
+      const x1 = CX + d * browHalf * 0.84;
+      return light(`M${n(x0)},${n(y + 1.1)} Q${n((x0 + x1) / 2)},${n(y - 1.9)} ${n(x1)},${n(y + 1.4)} ` +
+        `Q${n((x0 + x1) / 2)},${n(y + 0.5)} ${n(x0)},${n(y + 1.1)} Z`, 0.32);
+    })
+    : '';
+  return capTag + sideburns + sheen + ring + brows + beard;
 }
 
 function beardMarkup(M) {
@@ -628,7 +783,49 @@ function beardMarkup(M) {
 
 /* ------------------------------------------------------------------ eyes */
 
+/**
+ * The anime eye: tall rather than round, iris nearly filling the opening,
+ * banded dark at the top and bright at the bottom, a big off-centre highlight
+ * and a small opposing one, under a lash line heavy enough to be the darkest
+ * mark on the face.
+ *
+ * Both bands sit wholly INSIDE the iris on purpose. The usual way to draw
+ * them is to clip an oversized shape to the iris, and a clipPath would need
+ * an id — which this file has none of, because the figure is live in two svg
+ * documents at once and nests inside the room's, where `url(#id)` resolves
+ * document-wide. Sizing them to fit needs no clip and no id.
+ */
+function animeEyes(M) {
+  const ex = M.browHalf * 0.58;
+  const ey = M.eyeY + 1.4;
+  const r = M.headRx * 0.29;
+  const h = r * 1.3;
+  return pair((d) => {
+    const x = CX + d * ex;
+    return `<ellipse cx="${n(x)}" cy="${n(ey)}" rx="${n(r)}" ry="${n(h)}" fill="#fdfdff"/>` +
+      `<ellipse cx="${n(x)}" cy="${n(ey + h * 0.04)}" rx="${n(r * 0.8)}" ry="${n(h * 0.88)}"/>` +
+      `<ellipse cx="${n(x)}" cy="${n(ey - h * 0.26)}" rx="${n(r * 0.78)}" ry="${n(h * 0.5)}" ` +
+      `fill="rgba(0,0,0,0.32)" stroke="none"/>` +
+      `<ellipse cx="${n(x)}" cy="${n(ey + h * 0.44)}" rx="${n(r * 0.6)}" ry="${n(h * 0.32)}" ` +
+      `fill="rgba(255,255,255,0.34)" stroke="none"/>` +
+      `<ellipse cx="${n(x)}" cy="${n(ey + h * 0.04)}" rx="${n(r * 0.3)}" ry="${n(h * 0.44)}" ` +
+      `fill="rgba(0,0,0,0.78)" stroke="none"/>` +
+      `<ellipse cx="${n(x - r * 0.33)}" cy="${n(ey - h * 0.4)}" rx="${n(r * 0.3)}" ` +
+      `ry="${n(h * 0.24)}" fill="#ffffff" stroke="none"/>` +
+      `<circle cx="${n(x + r * 0.36)}" cy="${n(ey + h * 0.42)}" r="${n(r * 0.14)}" ` +
+      `fill="rgba(255,255,255,0.9)" stroke="none"/>` +
+      // Lash line, then the outward flick that reads as the eye's outer corner.
+      seam(`M${n(x - r * 1.04)},${n(ey - h * 0.58)} Q${n(x)},${n(ey - h * 1.34)} ` +
+        `${n(x + r * 1.02)},${n(ey - h * 0.62)}`, 2.3, 0.84) +
+      seam(`M${n(x + d * r * 0.98)},${n(ey - h * 0.62)} L${n(x + d * r * 1.46)},${n(ey - h * 1.02)}`,
+        1.5, 0.72) +
+      seam(`M${n(x - r * 0.7)},${n(ey + h * 0.94)} Q${n(x)},${n(ey + h * 1.12)} ` +
+        `${n(x + r * 0.7)},${n(ey + h * 0.92)}`, 0.8, 0.3);
+  });
+}
+
 function eyesShapes(style, M) {
+  if (M.anime) return animeEyes(M);
   const ex = M.browHalf * 0.55;
   const ey = M.eyeY + 1;
   const r = M.headRx * 0.19;
@@ -1186,7 +1383,9 @@ export function avatarInner(customize) {
   const hairStyle = c.hair?.style ?? 'short';
   const dressed = !!c.dress?.itemId;
 
-  const ink = M.ink;
+  // Every part() call takes the whole metrics object, because which overlays
+  // and linework a slot gets is a property of the style, not of the slot.
+  const ink = M;
   const parts = [
     // Hair behind the head first — a separate group with the same data-slot,
     // which is safe because recolouring re-renders rather than patching.
@@ -1216,7 +1415,20 @@ export function avatarInner(customize) {
   parts.push(part('socks', c.socks?.colour, socksMarkup(M, styleOf(c.socks?.itemId)), ink));
   parts.push(part('shoes', c.shoes?.colour, shoesMarkup(M, styleOf(c.shoes?.itemId)), ink));
 
-  return parts.join('');
+  // Soft stands her on something: a contact shadow under the feet, which is
+  // most of what stops a figure looking pasted onto its background.
+  const ground = M.soft
+    ? `<ellipse cx="${n(CX)}" cy="${n(FOOT_Y + 4)}" rx="${n(M.hipHalf * 1.6)}" ry="4.6" ` +
+      `fill="url(#av-ground)"/>`
+    : '';
+  const body = parts.join('');
+  // One filter over the whole figure rather than per slot — the paint wobble
+  // has to cross a hem for a sleeve and the arm inside it to wander together,
+  // and the glow has to see the silhouette, not eight separate ones.
+  const wrapped = M.paint ? `<g filter="url(#av-paint)">${body}</g>`
+    : M.glass ? `<g filter="url(#av-glow)">${body}</g>`
+      : body;
+  return defsFor(M) + ground + wrapped;
 }
 
 /**
@@ -1236,10 +1448,25 @@ export function buildAvatarSVG(customize) {
  *     drawing. Safe here because the body is already ONE closed contour
  *     (see bodyOutline), so there are no limb joins to expose.
  */
-function part(slot, colour, inner, ink, { mode = 'union', weight = INK_W } = {}) {
+function part(slot, colour, inner, M, { mode = 'union', weight = INK_W } = {}) {
   if (!inner) return '';
   const open = `<g data-slot="${slot}" fill="${colour ?? '#999'}"`;
-  if (!ink) return `${open}>${inner}</g>`;
+  // Soft: a rim-lit copy offset up and left so only its lit fringe survives
+  // under the real one, and a form shadow over the top. Both are gradient
+  // fills over a copy of the slot's own forms, so the light follows the body
+  // rather than sitting on it as a decal — and both are still black and white
+  // over whatever colour the player picked.
+  if (M.soft) {
+    const forms = formsOnly(inner);
+    return `${open}>` +
+      `<g transform="translate(-0.7,-0.7)" fill="url(#av-rim)">${forms}</g>` +
+      inner +
+      `<g fill="url(#av-form)">${forms}</g></g>`;
+  }
+  if (M.glass) {
+    return `${open}>${inner}<g fill="url(#av-sheen)">${formsOnly(inner)}</g></g>`;
+  }
+  if (!M.ink) return `${open}>${inner}</g>`;
   return mode === 'rim'
     ? `${open}${inkAttrs(weight)}>${inner}</g>`
     : `${open}>${union(inner, weight)}</g>`;
