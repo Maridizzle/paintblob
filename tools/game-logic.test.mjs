@@ -448,18 +448,21 @@ const SLOTS = new Set(['skin', 'hair', 'eyes', 'shirt', 'bottoms', 'dress', 'soc
 
 /** Every meaningful combination of the customization axes. */
 function* everyAvatar() {
-  for (const race of VARIANTS.race) {
-    for (const gender of VARIANTS.gender) {
-      for (const shape of VARIANTS.faceShape) {
-        for (const hair of VARIANTS.hairStyle) {
-          for (const eyes of VARIANTS.eyesStyle) {
-            const c = defaultAvatarCustomize();
-            c.race = race;
-            c.gender = gender;
-            c.face.shape = shape;
-            c.hair.style = hair;
-            c.eyes.style = eyes;
-            yield [`${race}/${gender}/${shape}/${hair}/${eyes}`, c];
+  for (const style of VARIANTS.style) {
+    for (const race of VARIANTS.race) {
+      for (const gender of VARIANTS.gender) {
+        for (const shape of VARIANTS.faceShape) {
+          for (const hair of VARIANTS.hairStyle) {
+            for (const eyes of VARIANTS.eyesStyle) {
+              const c = defaultAvatarCustomize();
+              c.style = style;
+              c.race = race;
+              c.gender = gender;
+              c.face.shape = shape;
+              c.hair.style = hair;
+              c.eyes.style = eyes;
+              yield [`${style}/${race}/${gender}/${shape}/${hair}/${eyes}`, c];
+            }
           }
         }
       }
@@ -634,6 +637,90 @@ test('both DEFAULT_SAVE literals declare a race, and boot backfills it', () => {
   const game = readSource('src/game.js');
   assert.match(game, /customize\.race \?\?= 'human'/,
     'boot() must backfill customize.race or every returning player loses their avatar');
+});
+
+/* ------------------------------------------------------- avatar: the ink */
+
+// The Inked style adds contour linework by putting a stroke on the same <g>
+// that carries each slot's fill. These pin the two properties that keeps it
+// honest: it must never tint with the fill (or a recoloured part would drag
+// its outline with it), and a translucent wash must never come back outlined.
+
+test('a save predating the style field renders as inked, the new default', () => {
+  const c = defaultAvatarCustomize();
+  delete c.style;
+  const inked = defaultAvatarCustomize();
+  assert.equal(buildAvatarSVG(c), buildAvatarSVG(inked),
+    'a missing style must default to inked, matching the boot() backfill');
+});
+
+test('both DEFAULT_SAVE literals declare a style, and boot backfills it', () => {
+  for (const f of ['src/platform.js', 'electron/main.cjs']) {
+    assert.match(readSource(f), /style: 'inked'/, `${f} is missing style in DEFAULT_SAVE`);
+  }
+  assert.match(readSource('src/game.js'), /customize\.style \?\?= 'inked'/,
+    'boot() must backfill customize.style — an existing save replaces avatar wholesale');
+});
+
+test('setVariant accepts known styles and ignores anything else', () => {
+  const c = defaultAvatarCustomize();
+  setVariant(c, 'style', 'classic');
+  assert.equal(c.style, 'classic');
+  setVariant(c, 'style', 'watercolour');
+  assert.equal(c.style, 'classic', 'an unknown style must be ignored, not stored');
+});
+
+test('classic draws no linework at all, so it is the figure it always was', () => {
+  for (const [label, c] of everyAvatar()) {
+    if (c.style !== 'classic') continue;
+    assert.ok(!/ stroke="#/.test(buildAvatarSVG(c)),
+      `${label} leaked ink into the classic style`);
+  }
+});
+
+test('every slot carries linework under inked, and none of it is tinted', () => {
+  const c = defaultAvatarCustomize();
+  c.dress.itemId = 'dress-basic';
+  for (const customize of [defaultAvatarCustomize(), c]) {
+    const svg = buildAvatarSVG(customize);
+    for (const m of svg.matchAll(/<g data-slot="([a-z]+)"[^>]*>/g)) {
+      assert.ok(/ stroke="#/.test(m[0]) || svg.slice(m.index).startsWith(`${m[0]}<g fill="#`),
+        `the ${m[1]} slot draws no outline under inked`);
+    }
+    // The line is one fixed near-black everywhere. A stroke derived from the
+    // slot's own colour would look better on paper and be wrong here: every
+    // part recolours to any hue, and there is no colour maths in this file.
+    const inks = new Set([...svg.matchAll(/stroke="(#[0-9a-f]{6})"/gi)].map((m) => m[1]));
+    assert.equal(inks.size, 1, `expected one ink colour, got ${[...inks].join(', ')}`);
+  }
+});
+
+test('no translucent wash is ever outlined, in any combination', () => {
+  // A wash overrides the group's fill by carrying its own; under Inked it has
+  // to override the group's stroke the same way, or it comes back ringed in
+  // black. Adding a new shade()/light()/waistband and forgetting the opt-out
+  // is the exact mistake this catches.
+  for (const [label, c] of everyAvatar()) {
+    for (const m of buildAvatarSVG(c).matchAll(/fill="rgba\([^"]*\)"(?: stroke="([^"]*)")?/g)) {
+      assert.equal(m[1], 'none', `${label}: a wash is taking the outline — ${m[0]}`);
+    }
+  }
+});
+
+test('every wardrobe item is outlined as one garment, not as loose pieces', () => {
+  // Union inking draws each slot twice: a fattened ink copy, then the real
+  // one over it, so only the outer fringe survives and a sleeve's join with
+  // its shirt stays invisible. If a garment stops being double-emitted it has
+  // fallen back to outlining every piece, which is the "stacked slabs" look.
+  for (const item of WARDROBE_ITEMS) {
+    const c = defaultAvatarCustomize();
+    if (item.slot === 'dress') c.dress = { itemId: item.id, colour: '#c9799a' };
+    else c[item.slot] = { itemId: item.id, colour: '#808080' };
+    const svg = buildAvatarSVG(c);
+    assert.match(svg, new RegExp(`<g data-slot="${item.slot}" fill="[^"]*"><g fill="#`),
+      `${item.id} is not union-inked`);
+    assert.ok(!/NaN|undefined|Infinity/.test(svg), `${item.id} produced a poisoned path`);
+  }
 });
 
 /* ------------------------------------------------------------- paint blob */

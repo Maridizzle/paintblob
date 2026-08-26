@@ -7,7 +7,7 @@
 // safely carry the same data-slot: that's how hair gets a mass *behind* the
 // head as well as a cap in front of it.)
 //
-// Two conventions do most of the visual work:
+// Three conventions do most of the visual work:
 //
 //   * The figure is drawn only from smooth cubic Bézier outlines — no
 //     <rect>, no straight outer edges. Overlapping pieces share one flat
@@ -20,6 +20,13 @@
 //     shades, they read correctly over any colour the player picks:
 //     green orc skin, white socks and a neon shirt alike, with no colour
 //     maths and one code path.
+//   * `customize.style` picks how all of that is lined. Classic is the flat
+//     figure those first two conventions describe on their own. Inked adds
+//     cel contour linework, and adds it by stroking the very same groups and
+//     paths rather than authoring any outline geometry — see the `ink`
+//     section below. It is a third pass over the same drawing, not a second
+//     drawing, which is why no shape is defined twice and why a garment
+//     added tomorrow is inked without being told about it.
 //
 // Everything geometric comes from metrics() below. Race, gender, face
 // shape and the height/weight sliders all feed that one function, and every
@@ -52,8 +59,14 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 // its own fill overrides the parent group's, so a wash works over any colour
 // underneath with no colour maths.
 
-export const shade = (d, a = 0.12) => `<path d="${d}" fill="rgba(0,0,0,${a})"/>`;
-export const light = (d, a = 0.12) => `<path d="${d}" fill="rgba(255,255,255,${a})"/>`;
+// The `stroke="none"` on both is what keeps the inked style honest. A wash
+// overrides the group's fill by carrying its own; under Inked the group also
+// carries a stroke, and a wash that did not override THAT would come back
+// outlined — every shading blob ringed in black. Harmless under Classic,
+// where the group has no stroke to override, and harmless in house.js, whose
+// groups never set one either.
+export const shade = (d, a = 0.12) => `<path d="${d}" fill="rgba(0,0,0,${a})" stroke="none"/>`;
+export const light = (d, a = 0.12) => `<path d="${d}" fill="rgba(255,255,255,${a})" stroke="none"/>`;
 /** A thin seam/fold/lace, drawn as a stroke — `fill:none` is an explicit
  *  override too, and far cheaper than authoring a sliver polygon. */
 export const seam = (d, w = 1.2, a = 0.16) =>
@@ -63,6 +76,49 @@ export const seamLight = (d, w = 1.2, a = 0.2) =>
 /** Emits a shape and its mirror — for parts that come in pairs (ears, arms,
  *  legs, shoes) rather than crossing the centreline. */
 const pair = (make) => make(1) + make(-1);
+
+/* ------------------------------------------------------------------- ink */
+
+// The Inked style adds contour linework, and it does it by putting a stroke
+// on the SAME <g> that already carries the slot's fill. Stroke inherits
+// exactly like fill does, so every silhouette, garment shell, sleeve, leg
+// tube, shoe and ear picks up a contour from the geometry that is already
+// there — and so does every garment added in future. Nothing is authored
+// twice, and the line can never drift off the shape it outlines because it
+// IS the shape.
+//
+// It stays fully recolourable for the same reason the washes do: the line is
+// one fixed near-black, never a darker shade computed from the fill, so it
+// reads over green orc skin and a white sock alike with no colour maths.
+// Opaque rather than the translucent black the washes use, for a reason that
+// only shows up in `union` below: fattened copies of neighbouring pieces
+// overlap, and stacked translucent ink comes out patchily darker where they do.
+const INK = '#1d1826';
+const INK_W = 1.2;        // a garment's outline
+const INK_W_BODY = 1.7;   // the figure's own contour, heavier as cel wants
+const INK_W_EYES = 0.45;  // an eye is 5 units across; INK_W would swallow it
+
+const inkAttrs = (w) =>
+  ` stroke="${INK}" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round"`;
+
+/**
+ * Outlines the UNION of a slot's pieces rather than each piece separately.
+ *
+ * The naive thing — stroking every shape — undoes the convention this whole
+ * file is built on (see the header): overlapping pieces share one flat fill so
+ * their joins vanish, and a sleeve, a leg tube and a sock band each carrying
+ * its own outline brings every one of those joins back as a hard line. The
+ * figure stops reading as a dressed body and starts reading as stacked slabs.
+ *
+ * So the group is drawn twice: once fattened and flooded with ink, then again
+ * normally on top. The top pass covers everything but a `w`-wide fringe, which
+ * is the union's outer edge and nothing else. Two details make it exact:
+ * a wash carries its own `fill` and `stroke="none"`, so it refuses the flood
+ * and contributes nothing; and every fattened mark that lands inside the
+ * silhouette is painted over, so only the outside survives.
+ */
+const union = (inner, w) =>
+  `<g fill="${INK}"${inkAttrs(w * 2)}>${inner}</g>${inner}`;
 
 const n = (v) => Number(v).toFixed(2);
 const seg = (c1, c2, to) => ({ c1, c2, to });
@@ -94,6 +150,9 @@ export const VARIANTS = {
   hairStyle: ['short', 'long', 'ponytail'],
   eyesStyle: ['round', 'happy', 'sparkle'],
   faceShape: ['oval', 'round', 'square'],
+  // How the figure is drawn rather than what it is made of, so it composes
+  // with every axis above instead of multiplying the geometry.
+  style: ['inked', 'classic'],
 };
 
 // Shoulder/hip half-widths and a waist multiplier, by gender. Hips stay
@@ -167,7 +226,7 @@ export function raceSkinPalette(race) {
 
 export function defaultAvatarCustomize() {
   return {
-    race: 'human', gender: 'nb', height: 1, weight: 1,
+    race: 'human', gender: 'nb', height: 1, weight: 1, style: 'inked',
     hair: { style: 'short', colour: '#3b2a1a' },
     eyes: { style: 'round', colour: '#4a7a8c' },
     face: { shape: 'oval' },
@@ -217,6 +276,10 @@ function metrics(c) {
 
   return {
     P,
+    // Carried on the metrics object rather than threaded through forty
+    // signatures: every markup function below already receives M, so the
+    // style reaches all of them without one of them changing shape.
+    ink: (c.style ?? 'inked') === 'inked',
     headRx,
     headRy,
     crownY: HEAD_CY - headRy,
@@ -421,7 +484,7 @@ function faceAndShading(M) {
     `<path d="M${n(CX - M.headRx * 0.3)},${n(M.mouthY)} ` +
       `Q${n(CX)},${n(M.mouthY + 3.2)} ${n(CX + M.headRx * 0.3)},${n(M.mouthY)} ` +
       `Q${n(CX)},${n(M.mouthY + 1.4)} ${n(CX - M.headRx * 0.3)},${n(M.mouthY)} Z" ` +
-      `fill="rgba(150,74,74,0.62)"/>`,
+      `fill="rgba(150,74,74,0.62)" stroke="none"/>`,
     light(`M${n(CX - M.headRx * 0.2)},${n(M.mouthY + 2.4)} ` +
       `Q${n(CX)},${n(M.mouthY + 3.6)} ${n(CX + M.headRx * 0.2)},${n(M.mouthY + 2.4)} ` +
       `Q${n(CX)},${n(M.mouthY + 3)} ${n(CX - M.headRx * 0.2)},${n(M.mouthY + 2.4)} Z`, 0.14),
@@ -514,15 +577,25 @@ function hairFront(style, M) {
     `C${n(CX + browHalf * 0.1)},${n(crownY + 1.5)} ${n(CX - browHalf * 0.4)},${n(crownY + 2)} ` +
     `${n(CX - browHalf * 0.75)},${n(crownY + 4)} Z`, 0.15);
   // Brows live in the hair group so they always colour-match, as real ones do.
+  // `stroke="none"` opts them out of the Inked outline the same way a wash
+  // opts out: a brow is only about a unit and a half thick, so a line down
+  // both sides of one nearly triples it, and a tripled brow meeting a lined
+  // eye below turns the whole face into a mask.
   const brows = pair((d) => `<path d="M${n(CX + d * browHalf * 0.28)},${n(browY + 2.6)} ` +
     `Q${n(CX + d * browHalf * 0.6)},${n(browY + 0.4)} ${n(CX + d * browHalf * 0.92)},${n(browY + 2.2)} ` +
     `L${n(CX + d * browHalf * 0.92)},${n(browY + 3.6)} ` +
-    `Q${n(CX + d * browHalf * 0.6)},${n(browY + 2)} ${n(CX + d * browHalf * 0.28)},${n(browY + 4)} Z"/>`);
+    `Q${n(CX + d * browHalf * 0.6)},${n(browY + 2)} ${n(CX + d * browHalf * 0.28)},${n(browY + 4)} Z" ` +
+    `stroke="none"/>`);
   const capTag = `<path d="${cap}"/>`;
+  // Also out of the Inked outline, and for the same reason as the brows: a
+  // sideburn is a two-unit spike sitting at eye level, so a line round it
+  // fills it in and leaves a hard dark hook crowding the eye. Unlined it
+  // stays what it was drawn to be — hair, reading as part of the cap it
+  // touches.
   const sideburns = style === 'short'
     ? pair((d) => `<path d="M${n(CX + d * (cheekHalf + 0.5))},${n(browY + 1)} ` +
         `L${n(CX + d * (cheekHalf + 1.5))},${n(M.cheekY - 1)} ` +
-        `L${n(CX + d * (cheekHalf - 1.5))},${n(M.cheekY - 2)} Z"/>`)
+        `L${n(CX + d * (cheekHalf - 1.5))},${n(M.cheekY - 2)} Z" stroke="none"/>`)
     : '';
   const beard = M.P.extras.includes('beard') ? beardMarkup(M) : '';
   return capTag + sideburns + sheen + brows + beard;
@@ -560,19 +633,27 @@ function eyesShapes(style, M) {
   const ey = M.eyeY + 1;
   const r = M.headRx * 0.19;
   if (style === 'happy') {
+    // Already line art, so Inked only leans on it — a touch heavier and
+    // darker, to sit alongside the contour the rest of the figure now has.
     return pair((d) => seam(`M${n(CX + d * (ex - r * 1.3))},${n(ey + 0.6)} ` +
-      `Q${n(CX + d * ex)},${n(ey - r * 1.5)} ${n(CX + d * (ex + r * 1.3))},${n(ey + 0.6)}`, 1.6, 0.62)) +
-      pair((d) => `<ellipse cx="${n(CX + d * ex)}" cy="${n(ey + 1.6)}" rx="${n(r * 0.5)}" ry="${n(r * 0.3)}"/>`);
+      `Q${n(CX + d * ex)},${n(ey - r * 1.5)} ${n(CX + d * (ex + r * 1.3))},${n(ey + 0.6)}`,
+    M.ink ? 2 : 1.6, M.ink ? 0.72 : 0.62)) +
+      pair((d) => `<ellipse cx="${n(CX + d * ex)}" cy="${n(ey + 1.6)}" rx="${n(r * 0.5)}" ` +
+        `ry="${n(r * 0.3)}" stroke="none"/>`);
   }
   const big = style === 'sparkle';
   const irisR = big ? r * 1.15 : r * 0.86;
+  // The sclera and the iris take the group's (already fine) line — a rim on
+  // the white and on the iris is exactly what a cel eye wants. The pupil and
+  // the catchlights explicitly refuse it: the pupil is dark enough already,
+  // and a ring on a highlight barely a unit across erases the highlight.
   return pair((d) => {
     const x = CX + d * ex;
     return `<ellipse cx="${n(x)}" cy="${n(ey)}" rx="${n(r * 1.32)}" ry="${n(r * 1.12)}" fill="#fff"/>` +
       `<circle cx="${n(x)}" cy="${n(ey)}" r="${n(irisR)}"/>` +
-      `<circle cx="${n(x)}" cy="${n(ey)}" r="${n(irisR * 0.46)}" fill="rgba(0,0,0,0.75)"/>` +
-      `<circle cx="${n(x + 0.9)}" cy="${n(ey - 1)}" r="${n(irisR * 0.3)}" fill="#fff"/>` +
-      (big ? `<circle cx="${n(x - 1)}" cy="${n(ey + 1)}" r="${n(irisR * 0.16)}" fill="#fff"/>` : '') +
+      `<circle cx="${n(x)}" cy="${n(ey)}" r="${n(irisR * 0.46)}" fill="rgba(0,0,0,0.75)" stroke="none"/>` +
+      `<circle cx="${n(x + 0.9)}" cy="${n(ey - 1)}" r="${n(irisR * 0.3)}" fill="#fff" stroke="none"/>` +
+      (big ? `<circle cx="${n(x - 1)}" cy="${n(ey + 1)}" r="${n(irisR * 0.16)}" fill="#fff" stroke="none"/>` : '') +
       seam(`M${n(x - r * 1.32)},${n(ey - r * 0.5)} Q${n(x)},${n(ey - r * 1.5)} ${n(x + r * 1.32)},${n(ey - r * 0.5)}`,
         0.9, 0.32);
   });
@@ -678,7 +759,7 @@ function placket(M, topY, botY) {
   const n2 = 3;
   for (let i = 0; i < n2; i++) {
     const y = topY + 3 + i * (botY - topY - 5) / (n2 - 1);
-    out.push(`<circle cx="${n(CX)}" cy="${n(y)}" r="1.1" fill="rgba(255,255,255,0.4)"/>` +
+    out.push(`<circle cx="${n(CX)}" cy="${n(y)}" r="1.1" fill="rgba(255,255,255,0.4)" stroke="none"/>` +
       `<circle cx="${n(CX)}" cy="${n(y)}" r="1.1" fill="none" stroke="rgba(0,0,0,0.28)" stroke-width="0.5"/>`);
   }
   return out.join('');
@@ -716,7 +797,7 @@ function shirtMarkup(M, style) {
     // a fold-down collar: two triangular points meeting at the neck
     out.push(pair((d) => `<path d="M${n(CX)},${n(M.shoulderY + 2)} ` +
       `L${n(CX + d * sh * 0.34)},${n(M.shoulderY - 1)} L${n(CX + d * sh * 0.28)},${n(M.shoulderY + 8)} Z" ` +
-      `fill="rgba(0,0,0,0.12)"/>`));
+      `fill="rgba(0,0,0,0.12)" stroke="none"/>`));
     out.push(pair((d) => seamLight(`M${n(CX)},${n(M.shoulderY + 2)} ` +
       `L${n(CX + d * sh * 0.34)},${n(M.shoulderY - 1)} L${n(CX + d * sh * 0.28)},${n(M.shoulderY + 8)}`, 0.7, 0.16)));
   } else if (style === 'turtleneck') {
@@ -746,7 +827,7 @@ function shirtMarkup(M, style) {
   } else if (style === 'polo') {
     // short placket, two buttons
     out.push(seam(`M${n(CX)},${n(M.shoulderY + 6)} L${n(CX)},${n(M.chestY + 8)}`, 0.8, 0.12));
-    out.push([0, 1].map((i) => `<circle cx="${n(CX)}" cy="${n(M.shoulderY + 10 + i * 6)}" r="1" fill="rgba(255,255,255,0.4)"/>`).join(''));
+    out.push([0, 1].map((i) => `<circle cx="${n(CX)}" cy="${n(M.shoulderY + 10 + i * 6)}" r="1" fill="rgba(255,255,255,0.4)" stroke="none"/>`).join(''));
   }
 
   if (style === 'hoodie') {
@@ -766,7 +847,7 @@ function shirtMarkup(M, style) {
     // drawstrings
     out.push(pair((d) => seamLight(`M${n(CX + d * sh * 0.2)},${n(M.shoulderY + 6)} ` +
       `Q${n(CX + d * sh * 0.26)},${n(M.chestY + 4)} ${n(CX + d * sh * 0.18)},${n(M.chestY + 12)}`, 1.6, 0.24)));
-    out.push(pair((d) => `<circle cx="${n(CX + d * sh * 0.18)}" cy="${n(M.chestY + 13)}" r="1.1" fill="rgba(255,255,255,0.28)"/>`));
+    out.push(pair((d) => `<circle cx="${n(CX + d * sh * 0.18)}" cy="${n(M.chestY + 13)}" r="1.1" fill="rgba(255,255,255,0.28)" stroke="none"/>`));
     // kangaroo pocket
     const pkTop = M.waistY + (hemY - M.waistY) * 0.42;
     out.push(seam(`M${n(CX - M.hipHalf * 0.72)},${n(pkTop)} ` +
@@ -797,7 +878,7 @@ function shirtMarkup(M, style) {
 
 /** A ribbed band — the cuff/hem detail that makes knitwear read as knitwear. */
 function ribBand(x0, x1, y, h, ticks) {
-  let out = `<rect x="${n(x0)}" y="${n(y)}" width="${n(x1 - x0)}" height="${n(h)}" rx="1.4" fill="rgba(0,0,0,0.17)"/>`;
+  let out = `<rect x="${n(x0)}" y="${n(y)}" width="${n(x1 - x0)}" height="${n(h)}" rx="1.4" fill="rgba(0,0,0,0.17)" stroke="none"/>`;
   for (let i = 1; i < ticks; i++) {
     const x = x0 + ((x1 - x0) * i) / ticks;
     out += seam(`M${n(x)},${n(y + 0.6)} L${n(x)},${n(y + h - 0.6)}`, 0.7, 0.1);
@@ -825,7 +906,7 @@ function skirtMarkup(M) {
   ]);
   const out = [`<path d="${body}"/>`];
   // waistband
-  out.push(`<rect x="${n(CX - wa)}" y="${n(topY - 2)}" width="${n(wa * 2)}" height="5" rx="1.6" fill="rgba(0,0,0,0.18)"/>`);
+  out.push(`<rect x="${n(CX - wa)}" y="${n(topY - 2)}" width="${n(wa * 2)}" height="5" rx="1.6" fill="rgba(0,0,0,0.18)" stroke="none"/>`);
   // pleat folds radiating from the waist
   for (let i = 1; i < 5; i++) {
     const t = i / 5;
@@ -851,9 +932,9 @@ function bottomsMarkup(M, style) {
     `L${n(CX + M.hipHalf + puff - 1)},${n(M.crotchY + 2)} ` +
     `Q${n(CX)},${n(M.crotchY - 3)} ${n(CX - M.hipHalf - puff + 1)},${n(M.crotchY + 2)} Z"/>`);
   // waistband, fly, button
-  out.push(`<rect x="${n(CX - M.hipHalf - puff)}" y="${n(topY - 1)}" width="${n((M.hipHalf + puff) * 2)}" height="5" rx="1.6" fill="rgba(0,0,0,0.18)"/>`);
+  out.push(`<rect x="${n(CX - M.hipHalf - puff)}" y="${n(topY - 1)}" width="${n((M.hipHalf + puff) * 2)}" height="5" rx="1.6" fill="rgba(0,0,0,0.18)" stroke="none"/>`);
   out.push(seam(`M${n(CX)},${n(topY + 5)} L${n(CX)},${n(topY + 15)}`, 1.2, 0.25));
-  out.push(`<circle cx="${n(CX)}" cy="${n(topY + 1.5)}" r="1.2" fill="rgba(0,0,0,0.3)"/>`);
+  out.push(`<circle cx="${n(CX)}" cy="${n(topY + 1.5)}" r="1.2" fill="rgba(0,0,0,0.3)" stroke="none"/>`);
   // front pockets
   out.push(pair((d) => seam(`M${n(CX + d * (M.hipHalf * 0.52))},${n(topY + 5)} ` +
     `Q${n(CX + d * (M.hipHalf + puff - 1))},${n(topY + 9)} ${n(CX + d * (M.hipHalf + puff - 1.5))},${n(topY + 15)}`,
@@ -889,7 +970,7 @@ function bottomsMarkup(M, style) {
     // hem cuffs
     const cuffH = style === 'shorts' ? 3.6 : 3;
     out.push(pair((d) => `<rect x="${n(CX + d * M.legCx - M.ankleH - puff)}" y="${n(hemY - cuffH)}" ` +
-      `width="${n((M.ankleH + puff) * 2)}" height="${n(cuffH)}" rx="1.2" fill="rgba(0,0,0,0.15)"/>`));
+      `width="${n((M.ankleH + puff) * 2)}" height="${n(cuffH)}" rx="1.2" fill="rgba(0,0,0,0.15)" stroke="none"/>`));
   }
   return out.join('');
 }
@@ -930,7 +1011,7 @@ function dressMarkup(M, style) {
   out.push(pair((d) => seam(`M${n(CX + d * M.shoulderHalf * 0.5)},${n(M.shoulderY + 4)} ` +
     `Q${n(CX + d * M.waistHalf * 0.75)},${n(M.chestY)} ${n(CX + d * M.waistHalf * 0.6)},${n(M.waistY)}`, 1, 0.12)));
   out.push(`<rect x="${n(CX - M.waistHalf - puff)}" y="${n(M.waistY - 2)}" ` +
-    `width="${n((M.waistHalf + puff) * 2)}" height="4" rx="1.4" fill="rgba(0,0,0,0.18)"/>`);
+    `width="${n((M.waistHalf + puff) * 2)}" height="4" rx="1.4" fill="rgba(0,0,0,0.18)" stroke="none"/>`);
   if (style === 'wrap') {
     // The crossed-over front: one diagonal edge from shoulder to the waist knot,
     // its overlap shaded, and a little tie at the side.
@@ -947,7 +1028,7 @@ function dressMarkup(M, style) {
     const bw = M.shoulderHalf * 0.46;
     out.push(seam(`M${n(CX - bw)},${n(M.shoulderY + 5)} L${n(CX - bw)},${n(M.waistY - 2)} ` +
       `L${n(CX + bw)},${n(M.waistY - 2)} L${n(CX + bw)},${n(M.shoulderY + 5)}`, 1.4, 0.18));
-    out.push(pair((d) => `<circle cx="${n(CX + d * bw * 0.7)}" cy="${n(M.shoulderY + 6)}" r="1.1" fill="rgba(255,255,255,0.4)"/>`));
+    out.push(pair((d) => `<circle cx="${n(CX + d * bw * 0.7)}" cy="${n(M.shoulderY + 6)}" r="1.1" fill="rgba(255,255,255,0.4)" stroke="none"/>`));
   }
   // skirt folds radiating from the waist
   const hemHalf = M.hipHalf + puff + D.flare;
@@ -994,7 +1075,7 @@ function socksMarkup(M, style) {
   const topY = M.ankleY - M.legLen * (SOCK_TOP[style] ?? SOCK_TOP.basic);
   const out = [pair((d) => legTube(M, d, { puff: 0.9, topY, hemY: FOOT_Y }))];
   out.push(pair((d) => `<rect x="${n(CX + d * M.legCx - M.ankleH - 1.6)}" y="${n(topY)}" ` +
-    `width="${n((M.ankleH + 1.6) * 2)}" height="3.4" rx="1.2" fill="rgba(0,0,0,0.16)"/>`));
+    `width="${n((M.ankleH + 1.6) * 2)}" height="3.4" rx="1.2" fill="rgba(0,0,0,0.16)" stroke="none"/>`));
   out.push(pair((d) => seam(`M${n(CX + d * M.legCx - M.ankleH - 1)},${n(topY + 5.5)} ` +
     `L${n(CX + d * M.legCx + M.ankleH + 1)},${n(topY + 5.5)}`, 1, 0.12)));
   out.push(pair((d) => shade(`M${n(CX + d * (M.legCx - M.ankleH - 0.6))},${n(topY + 2)} ` +
@@ -1039,10 +1120,10 @@ function shoesMarkup(M, style) {
         `C${n(cx - an)},${n(solY + 1)} ${n(cx + toe)},${n(solY + 1)} ${n(cx + toe)},${n(solY - 3)} ` +
         `C${n(cx + toe - 1)},${n(solY - 6.5)} ${n(cx + an * 0.4)},${n(solY - 8)} ${n(cx - an * 0.2)},${n(solY - 7.5)} ` +
         `C${n(cx - an * 0.7)},${n(solY - 7)} ${n(cx - an)},${n(solY - 5)} ${n(cx - an)},${n(solY - 3)} Z"/>`);
-      out.push(`<rect x="${n(cx - an * 0.12)}" y="${n(solY - 7.8)}" width="${n(an * 0.7)}" height="3" rx="1" fill="rgba(0,0,0,0.24)"/>`);
+      out.push(`<rect x="${n(cx - an * 0.12)}" y="${n(solY - 7.8)}" width="${n(an * 0.7)}" height="3" rx="1" fill="rgba(0,0,0,0.24)" stroke="none"/>`);
       out.push(`<path d="M${n(cx - an)},${n(solY - 2)} C${n(cx - an)},${n(solY + 1.5)} ${n(cx + toe)},${n(solY + 1.5)} ` +
         `${n(cx + toe)},${n(solY - 2)} L${n(cx + toe)},${n(solY - 0.5)} C${n(cx + toe)},${n(solY + 2.5)} ` +
-        `${n(cx - an)},${n(solY + 2.5)} ${n(cx - an)},${n(solY - 0.5)} Z" fill="rgba(0,0,0,0.24)"/>`);
+        `${n(cx - an)},${n(solY + 2.5)} ${n(cx - an)},${n(solY - 0.5)} Z" fill="rgba(0,0,0,0.24)" stroke="none"/>`);
       out.push(seam(`M${n(cx - an * 0.2)},${n(solY - 6.8)} Q${n(cx + an * 0.7)},${n(solY - 5.2)} ${n(cx + toe * 0.9)},${n(solY - 3.4)}`, 1, 0.14));
       return out.join('');
     }
@@ -1054,11 +1135,11 @@ function shoesMarkup(M, style) {
         `C${n(cx - an * 0.7)},${n(solY - 6)} ${n(cx - an)},${n(solY - 5)} ${n(cx - an)},${n(solY - 3)} Z"/>`);
       // topline scoop + a thin sole line
       out.push(seam(`M${n(cx - an * 0.2)},${n(solY - 6.4)} Q${n(cx + an * 0.7)},${n(solY - 5)} ${n(cx + toe * 0.9)},${n(solY - 3.4)}`, 1, 0.14));
-      out.push(`<path d="M${n(cx - an)},${n(solY - 2)} C${n(cx - an)},${n(solY + 1.5)} ${n(cx + toe)},${n(solY + 1.5)} ${n(cx + toe)},${n(solY - 2)} L${n(cx + toe)},${n(solY - 0.5)} C${n(cx + toe)},${n(solY + 2.5)} ${n(cx - an)},${n(solY + 2.5)} ${n(cx - an)},${n(solY - 0.5)} Z" fill="rgba(0,0,0,0.22)"/>`);
+      out.push(`<path d="M${n(cx - an)},${n(solY - 2)} C${n(cx - an)},${n(solY + 1.5)} ${n(cx + toe)},${n(solY + 1.5)} ${n(cx + toe)},${n(solY - 2)} L${n(cx + toe)},${n(solY - 0.5)} C${n(cx + toe)},${n(solY + 2.5)} ${n(cx - an)},${n(solY + 2.5)} ${n(cx - an)},${n(solY - 0.5)} Z" fill="rgba(0,0,0,0.22)" stroke="none"/>`);
       if (style === 'maryjane') {
         // instep strap + button
-        out.push(`<rect x="${n(cx + an * 0.1)}" y="${n(solY - 8)}" width="2.6" height="6" rx="1" fill="rgba(0,0,0,0.32)"/>`);
-        out.push(`<circle cx="${n(cx + an * 0.1 + 1.3)}" cy="${n(solY - 8)}" r="1" fill="rgba(255,255,255,0.4)"/>`);
+        out.push(`<rect x="${n(cx + an * 0.1)}" y="${n(solY - 8)}" width="2.6" height="6" rx="1" fill="rgba(0,0,0,0.32)" stroke="none"/>`);
+        out.push(`<circle cx="${n(cx + an * 0.1 + 1.3)}" cy="${n(solY - 8)}" r="1" fill="rgba(255,255,255,0.4)" stroke="none"/>`);
       }
       return out.join('');
     }
@@ -1068,9 +1149,9 @@ function shoesMarkup(M, style) {
       `C${n(cx + toe)},${n(solY + 1)} ${n(cx - an)},${n(solY + 1)} ${n(cx - an)},${n(solY - 2)} Z"/>`);
     out.push(`<path d="M${n(cx - an)},${n(solY - 3)} C${n(cx - an)},${n(solY + 1)} ${n(cx + toe)},${n(solY + 1)} ` +
       `${n(cx + toe)},${n(solY - 3)} L${n(cx + toe)},${n(solY - 1)} ` +
-      `C${n(cx + toe)},${n(solY + 2)} ${n(cx - an)},${n(solY + 2)} ${n(cx - an)},${n(solY - 1)} Z" fill="rgba(0,0,0,0.2)"/>`);
+      `C${n(cx + toe)},${n(solY + 2)} ${n(cx - an)},${n(solY + 2)} ${n(cx - an)},${n(solY - 1)} Z" fill="rgba(0,0,0,0.2)" stroke="none"/>`);
     if (style === 'boots') {
-      out.push(`<rect x="${n(cx - an)}" y="${n(top)}" width="${n(an * 2)}" height="3.4" rx="1.2" fill="rgba(0,0,0,0.18)"/>`);
+      out.push(`<rect x="${n(cx - an)}" y="${n(top)}" width="${n(an * 2)}" height="3.4" rx="1.2" fill="rgba(0,0,0,0.18)" stroke="none"/>`);
       out.push(seam(`M${n(cx - an * 0.8)},${n(top + 7)} L${n(cx + an * 0.8)},${n(top + 9)}`, 1.2, 0.2));
       out.push(seam(`M${n(cx - an * 0.8)},${n(top + 12)} L${n(cx + an * 0.8)},${n(top + 14)}`, 1.2, 0.2));
       out.push(seam(`M${n(cx - an)},${n(solY - 7)} L${n(cx + toe * 0.8)},${n(solY - 7)}`, 1, 0.14));
@@ -1105,26 +1186,35 @@ export function avatarInner(customize) {
   const hairStyle = c.hair?.style ?? 'short';
   const dressed = !!c.dress?.itemId;
 
+  const ink = M.ink;
   const parts = [
     // Hair behind the head first — a separate group with the same data-slot,
     // which is safe because recolouring re-renders rather than patching.
-    part('hair', c.hair?.colour, hairBack(hairStyle, M)),
+    part('hair', c.hair?.colour, hairBack(hairStyle, M), ink),
+    // `rim`, and heavier: this is the figure's own contour, and the jaw over
+    // the neck and the ears behind the skull are lines worth having.
     part('skin', c.skin?.colour,
       `<path d="${bodyOutline(M)}"/><path d="${headOutline(M)}"/>` +
-      earMarkup(M) + raceExtras(M) + faceAndShading(M)),
-    part('eyes', c.eyes?.colour, eyesShapes(c.eyes?.style ?? 'round', M)),
-    part('hair', c.hair?.colour, hairFront(hairStyle, M)),
-    part('skin', c.skin?.colour, raceExtrasOverHair(M)),
+      earMarkup(M) + raceExtras(M) + faceAndShading(M),
+      ink, { mode: 'rim', weight: INK_W_BODY }),
+    // `union`, so the line lands on the outside of the white and nowhere
+    // else. `rim` here put a ring round the iris as well, and two concentric
+    // rings inside a shape five units across is not an eye, it is a target.
+    part('eyes', c.eyes?.colour, eyesShapes(c.eyes?.style ?? 'round', M),
+      ink, { weight: INK_W_EYES }),
+    part('hair', c.hair?.colour, hairFront(hairStyle, M), ink),
+    part('skin', c.skin?.colour, raceExtrasOverHair(M), ink,
+      { mode: 'rim', weight: INK_W_BODY }),
   ];
 
   if (dressed) {
-    parts.push(part('dress', c.dress?.colour, dressMarkup(M, styleOf(c.dress.itemId))));
+    parts.push(part('dress', c.dress?.colour, dressMarkup(M, styleOf(c.dress.itemId)), ink));
   } else {
-    parts.push(part('shirt', c.shirt?.colour, shirtMarkup(M, styleOf(c.shirt?.itemId))));
-    parts.push(part('bottoms', c.bottoms?.colour, bottomsMarkup(M, styleOf(c.bottoms?.itemId))));
+    parts.push(part('shirt', c.shirt?.colour, shirtMarkup(M, styleOf(c.shirt?.itemId)), ink));
+    parts.push(part('bottoms', c.bottoms?.colour, bottomsMarkup(M, styleOf(c.bottoms?.itemId)), ink));
   }
-  parts.push(part('socks', c.socks?.colour, socksMarkup(M, styleOf(c.socks?.itemId))));
-  parts.push(part('shoes', c.shoes?.colour, shoesMarkup(M, styleOf(c.shoes?.itemId))));
+  parts.push(part('socks', c.socks?.colour, socksMarkup(M, styleOf(c.socks?.itemId)), ink));
+  parts.push(part('shoes', c.shoes?.colour, shoesMarkup(M, styleOf(c.shoes?.itemId)), ink));
 
   return parts.join('');
 }
@@ -1137,9 +1227,22 @@ export function buildAvatarSVG(customize) {
   return `<svg viewBox="0 0 120 ${VIEW_H}" xmlns="http://www.w3.org/2000/svg">${avatarInner(customize)}</svg>`;
 }
 
-function part(slot, colour, inner) {
+/**
+ * @param mode  How the Inked style lines this slot.
+ *   `union` — outline the slot's outer edge only, joins invisible. What
+ *     clothing wants: a sleeve is part of a shirt, not a shape on top of one.
+ *   `rim` — line every shape, internal ones included. What a face and an eye
+ *     want: the jaw, the ears and the ring around an iris are all edges worth
+ *     drawing. Safe here because the body is already ONE closed contour
+ *     (see bodyOutline), so there are no limb joins to expose.
+ */
+function part(slot, colour, inner, ink, { mode = 'union', weight = INK_W } = {}) {
   if (!inner) return '';
-  return `<g data-slot="${slot}" fill="${colour ?? '#999'}">${inner}</g>`;
+  const open = `<g data-slot="${slot}" fill="${colour ?? '#999'}"`;
+  if (!ink) return `${open}>${inner}</g>`;
+  return mode === 'rim'
+    ? `${open}${inkAttrs(weight)}>${inner}</g>`
+    : `${open}>${union(inner, weight)}</g>`;
 }
 
 /** Mutates `customize` in place, ignoring a key/value pair that is not one of
@@ -1156,6 +1259,13 @@ export function setVariant(customize, slot, value) {
   if (slot === 'gender') {
     if (!VARIANTS.gender.includes(value)) return;
     customize.gender = value;
+    return;
+  }
+  // Top-level like race and gender, not a `.style` on a sub-object — it is
+  // about the whole figure, so it is not owned by any one part of it.
+  if (slot === 'style') {
+    if (!VARIANTS.style.includes(value)) return;
+    customize.style = value;
     return;
   }
   if (slot === 'face') {
