@@ -1832,44 +1832,37 @@ button {
 .ot-time { height: 3px; border-radius: 2px; background: rgba(var(--sheen-rgb), 0.12); overflow: hidden; }
 .ot-time i { display: block; height: 100%; width: 100%; background: var(--accent); }
 
-.ot-grid { display: grid; gap: 2px; width: 100%; }
-.ot-tile {
-  border: 0;
-  border-radius: 2px;
-  background: rgba(var(--sheen-rgb), 0.07);
-  color: var(--muted);
-  font: inherit;
-  font-size: 10px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background 140ms, color 140ms;
-}
-.ot-tile:hover { background: rgba(var(--accent-rgb), 0.18); color: var(--text); }
-.ot-tile.done { color: transparent; cursor: default; }
-.ot-tile.nudge { animation: nudge 240ms; }
-
-.ot-tray { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; }
-.ot-tub {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
+.ot-grid { display: grid; gap: 5px; width: 100%; }
+/* A chunk of the ramp. No number on it: the colour is the whole information,
+   and a digit would turn an ordering puzzle into reading a list. */
+.ot-chunk {
+  aspect-ratio: 1 / 1;
   border: 1px solid var(--edge);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
+  border-radius: 6px;
   cursor: pointer;
-  transition: transform 120ms, box-shadow 120ms;
+  transition: transform 140ms cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 140ms, background 200ms;
 }
-.ot-tub.on { transform: translateY(-2px); box-shadow: 0 0 0 2px var(--accent), var(--glow-cyan); }
+.ot-chunk:hover { transform: translateY(-2px); }
+.ot-chunk.picked {
+  transform: translateY(-4px) scale(1.06);
+  box-shadow: 0 0 0 2px var(--accent), var(--glow-cyan);
+}
+
+/* The answer, laid under the attempt when the clock beats you. */
+.ot-answer { display: flex; flex-direction: column; gap: 5px; }
+.ot-strip { display: flex; height: 22px; border-radius: 5px; overflow: hidden;
+            border: 1px solid var(--edge); }
+.ot-strip i { flex: 1 1 auto; }
+.ot-card.lost .ot-grid { opacity: 0.45; transition: opacity 300ms ease; }
+.ot-card.won .ot-grid { gap: 0; transition: gap 300ms ease; }
+.ot-card.won .ot-hint { opacity: 0.25; transition: opacity 300ms ease; }
 
 .ot-hint { font-size: 10px; color: var(--muted); text-align: center; }
 
+/* Hover sticks on a touchscreen: the last chunk you tapped would stay lifted
+   and read as selected long after the swap resolved it. */
 @media (pointer: coarse) {
-  .ot-tub { width: 46px; height: 46px; }
-  .ot-tile { font-size: 11px; }
+  .ot-chunk:hover { transform: none; }
+  .ot-chunk.picked:hover { transform: translateY(-4px) scale(1.06); }
 }
-/* The held beat on a win: the grid stops being a puzzle and is briefly just
-   the picture, squinted. */
-.ot-card.won .ot-grid { gap: 0; transition: gap 300ms ease; }
-.ot-card.won .ot-tray,
-.ot-card.won .ot-hint { opacity: 0.25; transition: opacity 300ms ease; }

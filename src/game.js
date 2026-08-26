@@ -19,7 +19,7 @@ import {
 import { WARDROBE_ITEMS } from './wardrobe.js';
 import { THEMES, DEFAULT_THEME, themeOr } from './themes.js';
 import {
-  SECONDS as OT_SECONDS, luma, gridFor, trayFor, rungsFor, worthOffering, partnerFor,
+  SECONDS as OT_SECONDS, CHUNKS, COLS, rampFrom, scramble, swap, isSolved, partnerFor,
 } from './overtime.js';
 import { outlineSVG, outlineWeight } from './thumbnail.js';
 import { computePlayStats } from './playstats.js';
@@ -66,7 +66,6 @@ const S = {
   // The running Overtime session, or null. UI-only and per-picture, like
   // history: it is played at the canvas and never saved.
   ot: null,
-  otTiles: null,   // the squinted picture, computed once per puzzle
   otOffered: false,
   avatarTab: 'customize', // UI-only, not persisted — resets to Customize each time the panel opens
   abilityFan: false,      // is the ability pop-up up? Also UI-only: always starts down
@@ -314,7 +313,6 @@ async function loadPuzzle(id) {
   S.history = [];
   S.bogo = false;
   S.ot = null;
-  S.otTiles = null;
   S.otOffered = false;
   closeOvertime();
   S.selected = -1;
@@ -2770,74 +2768,44 @@ function renderSettings(body) {
 function applyTheme() {
   document.documentElement.dataset.theme = themeOr(S.save.settings.theme);
 }
-
 /* ------------------------------------------------------------- overtime */
 
 /**
- * The picture squinted: rendered whole, downsampled to about thirty tiles,
- * and read for brightness. Computed from S.cells rather than from the live
- * canvas because the live canvas is mostly unpainted — Overtime shows the
- * picture as it WILL be, which is the whole reason winning it is worth
- * something. Cached per puzzle: it never changes as you paint.
- */
-function overtimeTiles() {
-  if (S.otTiles) return S.otTiles;
-  const { width, height } = S.puzzle;
-  const { cols, rows } = gridFor(width, height);
-  const full = document.createElement('canvas');
-  full.width = width;
-  full.height = height;
-  const fx = full.getContext('2d');
-  fx.fillStyle = '#fff';
-  fx.fillRect(0, 0, width, height);
-  for (const cell of S.cells) {
-    fx.fillStyle = S.puzzle.palette[cell.colour].hex;
-    fx.fill(cell.path);
-  }
-  const small = document.createElement('canvas');
-  small.width = cols;
-  small.height = rows;
-  const sx = small.getContext('2d');
-  sx.drawImage(full, 0, 0, cols, rows);
-  const d = sx.getImageData(0, 0, cols, rows).data;
-  const values = [];
-  for (let i = 0; i < cols * rows; i++) {
-    values.push(luma(d[i * 4], d[i * 4 + 1], d[i * 4 + 2]));
-  }
-  S.otTiles = { cols, rows, values };
-  return S.otTiles;
-}
-
-/**
- * The hue that floods the picture — the world's colour, not the picture's.
+ * The stops the ramp runs between, taken from the live theme so a round always
+ * looks like the room it is played in — magenta into gold under Tee Vibes,
+ * cyan into green under Void. Story mode will pass a chapter's colours here
+ * instead, and nothing else about the round has to change.
  *
- * Deriving it from the picture's most-used paint was the first try and it was
- * wrong twice over: on a picture whose commonest colour is near-black it hands
- * back a tray of five navies, and a navy tray dropped into a rose-and-gold
- * world looks like a bug rather than a mechanic. Taking it from the theme's
- * accent keeps Overtime part of the room it is played in — and it is the seam
- * story mode needs, where the flood is the chapter colour that has walked off
- * its job and is covering every shift at once.
+ * Only hue and saturation are read: rampFrom throws the stops' own lightness
+ * away and climbs evenly instead, which is what gives the puzzle a defensible
+ * answer.
  */
-function overtimeHue() {
-  const accent = getComputedStyle(document.documentElement)
-    .getPropertyValue('--accent').trim();
-  return /^#[0-9a-f]{6}$/i.test(accent) ? hexToHsl(accent).h : 320;
+function overtimeStops() {
+  const css = getComputedStyle(document.documentElement);
+  const stops = [];
+  for (const token of ['--accent', '--hot', '--accent2']) {
+    const hex = css.getPropertyValue(token).trim();
+    if (/^#[0-9a-f]{6}$/i.test(hex)) {
+      const { h, s } = hexToHsl(hex);
+      stops.push({ h, s: Math.max(0.35, s) });
+    }
+  }
+  return stops;
 }
 
 /**
  * Offers it, once per picture, and only ever as a chip. A sixty-second
  * takeover of a toy that floats on your desktop would be the most annoying
  * thing in it, so this never starts anything by itself.
+ *
+ * Unlike the version this replaces there is no gate on the picture and no
+ * exclusion for a blind one: the ramp is generated, so it is always playable
+ * and it gives nothing away about what is being painted.
  */
 function maybeOfferOvertime() {
   if (S.otOffered || S.ot || S.bogo || S.finished) return;
   if (S.save.settings.overtime === false) return;
-  // A blind picture's whole value is not knowing what it is, and thirty tiles
-  // give the composition away wholesale.
-  if (S.puzzle.blind) return;
   if (S.filled.size < 10) return;
-  if (!worthOffering(overtimeTiles().values)) return;
   S.otOffered = true;
   $('overtimeChip').classList.remove('hidden');
 }
@@ -2856,14 +2824,10 @@ function closeOvertime() {
 function startOvertime() {
   if (S.ot || !S.puzzle) return;
   $('overtimeChip').classList.add('hidden');
-  const { cols, rows, values } = overtimeTiles();
-  const hue = overtimeHue();
-  const tray = trayFor(values, { hue });
-  const rungs = rungsFor(values);
   S.ot = {
-    cols, rows, tray, rungs, hue,
-    filled: new Set(),
-    selected: tray[0].rung,
+    ramp: rampFrom(overtimeStops()),
+    order: scramble(CHUNKS),
+    picked: -1,
     endsAt: Date.now() + OT_SECONDS * 1000,
     timer: 0,
   };
@@ -2881,38 +2845,56 @@ function tickOvertime() {
   if (left <= 0) endOvertime(false);
 }
 
+/**
+ * Both endings hold for a beat before clearing, and both show the answer. A
+ * win holds the ramp you just rebuilt, because seeing it whole IS the reward —
+ * the doubled brush is only what you carry out of it. A loss lays the correct
+ * ramp under yours, which is the only teaching the round ever offers, since
+ * nothing is said while the clock runs.
+ */
 function endOvertime(won) {
   if (!S.ot) return;
-  if (won) {
-    // Hold the finished grid for a beat before clearing it. Closing on the
-    // last tap means you never once see the thing you just made, and the
-    // squinted picture arriving whole IS the reward — the doubled brush is
-    // only what you carry out of it.
-    clearInterval(S.ot.timer);
-    S.ot.timer = 0;
-    const card = $('overtime').querySelector('.ot-card');
-    card?.classList.add('won');
-    setTimeout(() => { closeOvertime(); awardOvertime(); }, 1200);
-    return;
-  }
-  closeOvertime();
-  sfx.play('nope');
+  clearInterval(S.ot.timer);
+  S.ot.timer = 0;
+  const card = $('overtime').querySelector('.ot-card');
+  card?.classList.add(won ? 'won' : 'lost');
+  if (!won) revealAnswer(card);
+  sfx.play(won ? 'achievement' : 'nope');
+  setTimeout(() => {
+    closeOvertime();
+    if (won) awardOvertime();
+  }, won ? 1400 : 2600);
 }
 
 function awardOvertime() {
   S.bogo = true;
-  sfx.play('achievement');
   toast({ icon: '◑', name: 'Doubled brush',
     desc: 'Every cell you fill now takes its nearest neighbour with it.' }, '', { sticky: true });
 }
 
-
+/** The ramp in its right order, under the player's attempt. */
+function revealAnswer(card) {
+  if (!card) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'ot-answer';
+  const label = document.createElement('div');
+  label.className = 'ot-hint';
+  label.textContent = 'It went like this.';
+  const strip = document.createElement('div');
+  strip.className = 'ot-strip';
+  for (const hex of S.ot.ramp) {
+    const i = document.createElement('i');
+    i.style.background = hex;
+    strip.append(i);
+  }
+  wrap.append(label, strip);
+  card.append(wrap);
+}
 
 function renderOvertime() {
   const el = $('overtime');
   el.textContent = '';
   el.classList.remove('hidden');
-  const { cols, rows, tray, rungs, hue } = S.ot;
 
   const card = document.createElement('div');
   card.className = 'ot-card';
@@ -2938,60 +2920,50 @@ function renderOvertime() {
 
   const grid = document.createElement('div');
   grid.className = 'ot-grid';
-  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-  grid.style.aspectRatio = `${cols} / ${rows}`;
-  rungs.forEach((rung, i) => {
-    const tile = document.createElement('button');
-    tile.className = 'ot-tile';
-    tile.dataset.i = String(i);
-    tile.textContent = String(tray.findIndex((t) => t.rung === rung) + 1);
-    tile.addEventListener('click', () => paintOvertimeTile(i, tile));
-    grid.append(tile);
-  });
-
-  const trayEl = document.createElement('div');
-  trayEl.className = 'ot-tray';
-  tray.forEach((tub, i) => {
+  grid.style.gridTemplateColumns = `repeat(${COLS}, 1fr)`;
+  for (let slot = 0; slot < S.ot.order.length; slot++) {
     const b = document.createElement('button');
-    b.className = 'ot-tub';
-    b.style.background = tub.hex;
-    b.style.color = readableOn(tub.hex);
-    b.textContent = String(i + 1);
-    b.classList.toggle('on', tub.rung === S.ot.selected);
-    b.addEventListener('click', () => {
-      S.ot.selected = tub.rung;
-      [...trayEl.children].forEach((c) => c.classList.toggle('on', c === b));
-      sfx.play('pick', i);
-    });
-    trayEl.append(b);
-  });
+    b.className = 'ot-chunk';
+    b.dataset.slot = String(slot);
+    b.addEventListener('click', () => tapChunk(slot));
+    grid.append(b);
+  }
 
   const hint = document.createElement('div');
   hint.className = 'ot-hint';
-  hint.textContent = 'Darkest is 1. Fill every block before the thread runs out.';
+  hint.textContent = 'Darkest first, left to right. Tap two to trade them.';
 
-  card.append(head, time, grid, trayEl, hint);
+  card.append(head, time, grid, hint);
   el.append(card);
-  // The flood colour rides on the card, so the tiles can inherit it.
-  card.style.setProperty('--ot-hue', String(Math.round(hue)));
+  paintChunks();
 }
 
-function paintOvertimeTile(i, tile) {
+/** Repaints the slots from S.ot.order. Cheap enough to redo on every tap,
+ *  which keeps the DOM and the array from ever drifting apart. */
+function paintChunks() {
+  const grid = $('overtime').querySelector('.ot-grid');
+  if (!grid) return;
+  [...grid.children].forEach((b, slot) => {
+    b.style.background = S.ot.ramp[S.ot.order[slot]];
+    b.classList.toggle('picked', slot === S.ot.picked);
+  });
+}
+
+function tapChunk(slot) {
   const ot = S.ot;
-  if (!ot || ot.filled.has(i)) return;
-  if (ot.rungs[i] !== ot.selected) {
-    tile.classList.remove('nudge');
-    void tile.offsetWidth;
-    tile.classList.add('nudge');
-    sfx.play('nope');
-    return;
+  if (!ot || !ot.timer) return;
+  if (ot.picked === -1) {
+    ot.picked = slot;
+    sfx.play('pick', 0);
+  } else if (ot.picked === slot) {
+    ot.picked = -1;
+  } else {
+    ot.order = swap(ot.order, ot.picked, slot);
+    ot.picked = -1;
+    sfx.play('pick', 3);
   }
-  ot.filled.add(i);
-  const tub = ot.tray.find((t) => t.rung === ot.rungs[i]);
-  tile.style.background = tub.hex;
-  tile.classList.add('done');
-  sfx.play('pick', ot.tray.indexOf(tub));
-  if (ot.filled.size === ot.rungs.length) endOvertime(true);
+  paintChunks();
+  if (isSolved(ot.order)) endOvertime(true);
 }
 
 function syncSoundIcon() {

@@ -20,8 +20,7 @@ import {
 } from '../src/abilities.js';
 import { WARDROBE_ITEMS } from '../src/wardrobe.js';
 import {
-  RUNGS, MAX_RUNG_SHARE, luma, gridFor, ladderFor, rungOf, lightnessOf, shadeHex,
-  trayFor, rungShare, worthOffering, partnerFor,
+  CHUNKS, MIN_STEP, labL, rampFrom, lerpHue, scramble, swap, isSolved, placedCount, partnerFor,
 } from '../src/overtime.js';
 // Aliased: THEMES is already taken further down by the picture-tag list.
 import { THEMES as APP_THEMES, DEFAULT_THEME, isTheme, themeOr } from '../src/themes.js';
@@ -856,71 +855,181 @@ test('both DEFAULT_SAVE literals declare a theme, and boot backfills it', () => 
 
 /* -------------------------------------------------------------- overtime */
 
-// Overtime collapses a puzzle to ~30 blocks of one hue for sixty seconds. The
-// arithmetic is pure and lives away from the canvas, so all of it runs here.
+// Overtime hands you a fifteen-step gradient in pieces and sixty seconds to
+// put it back in order. All of the arithmetic is pure and lives away from the
+// DOM, so all of it runs here.
 
-test('the grid lands near thirty tiles and follows the aspect ratio', () => {
-  for (const [w, h] of [[900, 900], [768, 621], [738, 719], [400, 1200], [1200, 400]]) {
-    const { cols, rows } = gridFor(w, h);
-    assert.ok(cols >= 2 && rows >= 2, `${w}x${h} collapsed to a stripe`);
-    const tiles = cols * rows;
-    assert.ok(tiles >= 18 && tiles <= 44, `${w}x${h} gave ${tiles} tiles`);
-    // Wider than tall must not come back taller than wide.
-    if (w > h) assert.ok(cols >= rows, `${w}x${h} came back portrait`);
-    if (h > w) assert.ok(rows >= cols, `${w}x${h} came back landscape`);
-  }
-  assert.deepEqual(gridFor(0, 0), { cols: 2, rows: 2 }, 'a degenerate size must not throw');
-});
+const hueOf = (hex) => {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const max = Math.max(r, g, b);
+  const d = max - Math.min(r, g, b);
+  if (!d) return 0; // grey has no hue; the caller has to know that
+  const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return ((h * 60) % 360 + 360) % 360;
+};
 
-test('the ladder stretches to the range the picture actually uses', () => {
-  // Midtones only: without stretching, all five rungs would be the same grey.
-  const mid = [110, 118, 126, 134, 142];
-  const ladder = ladderFor(mid);
-  assert.equal(rungOf(110, ladder), 0, 'the darkest tile must be the bottom rung');
-  assert.equal(rungOf(142, ladder), RUNGS - 1, 'the lightest tile must be the top rung');
-  const flat = ladderFor([90, 90, 90]);
-  assert.equal(rungOf(90, flat), 2, 'a flat picture must land mid-ladder, not throw');
-});
+/** mulberry32 — a seeded rng, so a shuffle can be swept the same way twice. */
+const seededRng = (seed) => () => {
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
 
-test('no two tubs in a tray are the same shade', () => {
-  // THE regression. The first build downsampled the picture but not its
-  // values, and handed back eight to eighteen near-identical shades — a
-  // gradient, not a tray. Whatever the input, the tubs must be tellable apart.
-  const inputs = [
-    Array.from({ length: 30 }, (_, i) => i * 8),          // an even ramp
-    Array.from({ length: 30 }, (_, i) => 110 + i * 1.1),  // a narrow midtone band
-    Array.from({ length: 30 }, (_, i) => (i % 7) * 36),   // repeating
-    [0, 255, 12, 240, 128, 130, 126, 60, 200, 44, 210, 90, 150, 30, 170],
+test('the ramp is orderable: fifteen distinct steps, always climbing', () => {
+  // THE invariant the round rests on. The puzzle asks for one specific order,
+  // so the ramp has to have one — a flat or a doubling-back stretch anywhere
+  // in it leaves two chunks with no way to tell which comes first, and a round
+  // that cannot honestly be won. Hue alone would not do it: it wraps, so there
+  // would be no defensible first chunk.
+  //
+  // Measured in L*, and the difference is not academic. An earlier version
+  // climbed evenly in HSL lightness and passed a test that measured HSL
+  // lightness, while Void's fully-saturated tokens came out at L* of
+  // ...88 89 90 91 92 93 94 94: eight chunks the eye could not separate and two
+  // it could not tell apart at all. A test on the wrong axis agreed with the
+  // code and both were wrong about the screen.
+  const cases = [
+    [{ h: 330, s: 0.62 }, { h: 35, s: 0.7 }],                    // Tee Vibes
+    [{ h: 187, s: 1 }, { h: 143, s: 1 }, { h: 20, s: 1 }],        // Void
+    [{ h: 330, s: 0.62 }, { h: 0, s: 0.8 }, { h: 35, s: 0.7 }],  // three stops
+    [{ h: 210, s: 0.05 }],                                       // one stop
+    [],                                                          // a theme missing its tokens
+    [{ h: 0, s: 0 }, { h: 0, s: 0 }],                            // no hue to help at all
   ];
-  for (const values of inputs) {
-    const tray = trayFor(values, { hue: 8 });
-    const hexes = new Set(tray.map((t) => t.hex));
-    assert.equal(hexes.size, tray.length, `duplicate tubs in ${JSON.stringify(tray)}`);
-    assert.ok(tray.length <= RUNGS, `tray of ${tray.length} exceeds ${RUNGS} rungs`);
-    assert.deepEqual([...tray].sort((a, b) => a.rung - b.rung), tray, 'tray must run dark to light');
-    assert.equal(tray.reduce((n, t) => n + t.count, 0), values.length, 'tiles went missing');
+  for (const stops of cases) {
+    const ramp = rampFrom(stops);
+    const label = JSON.stringify(stops);
+    assert.equal(ramp.length, CHUNKS, `${label} gave ${ramp.length} chunks`);
+    assert.equal(new Set(ramp).size, CHUNKS, `${label} repeats a colour`);
+    for (const hex of ramp) assert.match(hex, /^#[0-9a-f]{6}$/, `malformed ${hex} in ${label}`);
+    for (let i = 1; i < ramp.length; i++) {
+      const step = labL(ramp[i]) - labL(ramp[i - 1]);
+      assert.ok(step >= MIN_STEP,
+        `${label} climbs only ${step.toFixed(2)} of L* between ${i - 1} and ${i}`);
+    }
   }
 });
 
-test('rung lightness climbs, and every shade is a real hex', () => {
-  let last = -1;
-  for (let r = 0; r < RUNGS; r++) {
-    const l = lightnessOf(r, RUNGS);
-    assert.ok(l > last, 'rungs must get lighter, never darker');
-    last = l;
-    assert.match(shadeHex(8, 0.42, l), /^#[0-9a-f]{6}$/, 'malformed shade');
+test('L* is perceived lightness, not a byte average', () => {
+  // The anchors CIE defines: black is 0, white is 100, and mid-grey — sRGB
+  // #777777, half way up in bytes — sits at 50, not at the 47 a naive average
+  // would give. Fully saturated green and blue are the pair that matters here:
+  // they are the same distance from black in bytes and nowhere near it to look
+  // at, which is exactly what an HSL ramp got wrong.
+  assert.ok(Math.abs(labL('#000000')) < 0.01);
+  assert.ok(Math.abs(labL('#ffffff') - 100) < 0.01);
+  assert.ok(Math.abs(labL('#777777') - 50) < 1.5, `mid grey came out at ${labL('#777777')}`);
+  assert.ok(labL('#00ff00') > 85, 'pure green is nearly as light as white');
+  assert.ok(labL('#0000ff') < 35, 'pure blue is nearly as dark as black');
+  assert.ok(labL('#00ff00') - labL('#0000ff') > 50,
+    'green and blue are one byte apart and must not be one L* apart');
+});
+
+test('the ramp takes the short way round the wheel', () => {
+  // Magenta to gold is sixty-five degrees up through red. The long way is two
+  // hundred and ninety-five degrees through green — every colour in the wheel
+  // except the two the theme actually asked for, in a chapter whose whole rule
+  // is that nothing may be green-dominant.
+  for (const hex of rampFrom([{ h: 330, s: 0.62 }, { h: 35, s: 0.7 }])) {
+    const h = hueOf(hex);
+    assert.ok(h >= 329 || h <= 36, `${hex} sits at ${Math.round(h)}deg, off the magenta-gold arc`);
+  }
+  // And the interpolator itself, where the wrap is easiest to get wrong.
+  assert.ok(Math.abs(lerpHue(330, 35, 0.5) - 2.5) < 0.01, 'halfway from magenta to gold is red');
+  assert.equal(lerpHue(10, 350, 0.5), 0, 'the short way back has to cross zero too');
+  assert.equal(lerpHue(20, 20, 0.5), 20, 'a stop to itself must not drift');
+});
+
+test('the ramp never doubles back in hue', () => {
+  // Three stops can be declared in an order that sends hue out and back. Void
+  // declares cyan, green, gold, and walked in that order the ramp ran cyan ->
+  // gold -> green: chunk eight came out warmer than the chunks on either side
+  // of it, so hue was telling you the opposite of what lightness was. That is
+  // worse than hue saying nothing, and it survived the monotonic-lightness
+  // check above, because lightness was never the part that broke.
+  //
+  // Measured as total travel against end-to-end distance: a ramp that turns
+  // round covers more ground than it gets, and by a lot.
+  const arc = (a, b) => ((((b - a) % 360) + 540) % 360) - 180;
+  const cases = [
+    ['Void', [{ h: 187, s: 1 }, { h: 143, s: 1 }, { h: 20, s: 1 }]],
+    ['Tee Vibes', [{ h: 328, s: 0.63 }, { h: 32, s: 0.56 }, { h: 33, s: 0.5 }]],
+    ['out and back', [{ h: 0, s: 0.9 }, { h: 120, s: 0.9 }, { h: 30, s: 0.9 }]],
+    ['straddling zero', [{ h: 350, s: 0.9 }, { h: 40, s: 0.9 }, { h: 10, s: 0.9 }]],
+  ];
+  for (const [name, stops] of cases) {
+    const hues = rampFrom(stops).map(hueOf);
+    let travel = 0;
+    for (let i = 1; i < hues.length; i++) travel += Math.abs(arc(hues[i - 1], hues[i]));
+    const span = Math.abs(arc(hues[0], hues[hues.length - 1]));
+    // Six degrees of slack: neighbouring stops only a degree or two apart
+    // round to the same byte and jitter, which is not a turn.
+    assert.ok(travel <= span + 6,
+      `${name} travels ${travel.toFixed(1)}deg to get ${span.toFixed(1)}deg: it turns round`);
   }
 });
 
-test('a picture with nothing to choose from is never offered', () => {
-  assert.equal(worthOffering(Array(30).fill(120)), false, 'one flat shade is not a puzzle');
-  assert.equal(worthOffering([10, 250]), false, 'two tiles is not a puzzle');
-  // 80% of tiles on one rung — the shape the measured gate exists to catch.
-  const lopsided = [...Array(24).fill(250), 0, 10, 20, 30, 40, 50];
-  assert.ok(rungShare(lopsided) > MAX_RUNG_SHARE, 'the lopsided case must exceed the gate');
-  assert.equal(worthOffering(lopsided), false);
-  const spread = Array.from({ length: 30 }, (_, i) => i * 8);
-  assert.equal(worthOffering(spread), true, 'an even ramp must be offered');
+test('a scramble is never most of the way solved already', () => {
+  // A plain shuffle leaves a chunk in its right slot about once per run, and a
+  // board that opens with a third of it done is a gift rather than a puzzle.
+  for (let seed = 1; seed <= 400; seed++) {
+    const order = scramble(CHUNKS, seededRng(seed));
+    assert.deepEqual([...order].sort((a, b) => a - b), [...Array(CHUNKS).keys()],
+      `seed ${seed} is not a permutation: ${order}`);
+    assert.equal(isSolved(order), false, `seed ${seed} handed over a solved board`);
+    assert.ok(placedCount(order) <= 1,
+      `seed ${seed} opened with ${placedCount(order)} chunks already placed`);
+  }
+  // An rng that never varies has to give back something valid rather than
+  // spin out the retry loop.
+  const stuck = scramble(CHUNKS, () => 0);
+  assert.equal(placedCount(stuck), 0, 'a degenerate rng must still leave nothing in place');
+});
+
+test('a swap is pure, and undoes itself', () => {
+  const start = [...Array(CHUNKS).keys()];
+  const once = swap(start, 2, 9);
+  assert.deepEqual(start, [...Array(CHUNKS).keys()], 'swap mutated the array it was given');
+  assert.equal(once[2], 9);
+  assert.equal(once[9], 2);
+  assert.deepEqual(swap(once, 2, 9), start, 'swapping the same pair back must restore the order');
+  assert.deepEqual(swap(start, 4, 4), start, 'a chunk traded with itself must not move');
+  // The two readings of "how done is this" have to agree, or the round could
+  // end on a board that is not actually solved.
+  assert.ok(isSolved(start));
+  assert.equal(placedCount(start), CHUNKS);
+  assert.equal(isSolved(once), false);
+  assert.equal(placedCount(once), CHUNKS - 2);
+});
+
+test('the ramp is drawn from the theme and never from the picture', () => {
+  // The version this replaced took its hue from the picture's commonest paint,
+  // which under Tee Vibes put a navy tray in a magenta room. The theme tokens
+  // are the only source now, and getComputedStyle is the only way to read one
+  // that a [data-theme] block has overridden.
+  const game = readSource('src/game.js');
+  const body = game.slice(game.indexOf('function overtimeStops'),
+    game.indexOf('function maybeOfferOvertime'));
+  assert.ok(body.length > 100, 'overtimeStops has moved or gone');
+  assert.match(body, /getComputedStyle\(document\.documentElement\)/,
+    'the stops must be read off the live root, not off a constant');
+  const TOKENS = ['--accent', '--hot', '--accent2'];
+  for (const token of TOKENS) assert.ok(body.includes(token), `${token} is no longer a stop`);
+  assert.ok(!/getImageData|drawImage|canvas/i.test(body),
+    'the round must not go near the picture: it plays over blind ones too');
+  // overtimeStops drops anything that is not a six-digit hex, so a theme
+  // writing rgb() or #abc for one of these would silently lose a stop and the
+  // ramp would quietly fall back to a shorter one. Every theme owes all three.
+  const css = readSource('src/styles.css');
+  for (const t of APP_THEMES) {
+    const at = t.id === DEFAULT_THEME ? css.indexOf(':root {') : css.indexOf(`[data-theme="${t.id}"]`);
+    const block = css.slice(at, css.indexOf('\n}', at));
+    for (const token of TOKENS) {
+      assert.match(block, new RegExp(`\\${token}:\\s*#[0-9a-f]{6}\\s*;`, 'i'),
+        `theme "${t.id}" does not give ${token} as a six-digit hex`);
+    }
+  }
 });
 
 test('undo only takes back the cells that were counted', () => {
@@ -984,15 +1093,6 @@ test('a doubled fill takes the nearest unfilled cell of the same colour', () => 
     partnerFor(cells, cells[3], { colour: 2, filled: none, pending: none }), null,
     'a colour with only the origin cell has no partner',
   );
-});
-
-test('overtime measures lightness the same way the rest of the app does', () => {
-  // luma() and readableOn() disagreeing would mean "how light is this" means
-  // two different things one file apart.
-  assert.equal(luma(255, 255, 255), 255);
-  assert.equal(luma(0, 0, 0), 0);
-  assert.match(readSource('src/game.js'), /0\.299 \* r \+ 0\.587 \* g \+ 0\.114 \* b/,
-    'readableOn no longer uses the coefficients overtime.js matches');
 });
 
 /* ------------------------------------------------------------- paint blob */
