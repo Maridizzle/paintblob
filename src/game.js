@@ -17,6 +17,7 @@ import {
   NUMBER_RECOLOR_CYCLE, nextNumberRecolorIndex,
 } from './abilities.js';
 import { WARDROBE_ITEMS } from './wardrobe.js';
+import { THEMES, DEFAULT_THEME, themeOr } from './themes.js';
 import { outlineSVG, outlineWeight } from './thumbnail.js';
 import { computePlayStats } from './playstats.js';
 import { Tour } from './tour.js';
@@ -2647,6 +2648,38 @@ function renderSettings(body) {
     body.append(el);
   };
 
+  // First, because it repaints everything under it while you watch.
+  const themeRow = row();
+  const themeText = document.createElement('div');
+  themeText.className = 'grow';
+  const themeLabelEl = document.createElement('div');
+  themeLabelEl.className = 'label';
+  themeLabelEl.textContent = 'Theme';
+  const themeSub = document.createElement('div');
+  themeSub.className = 'sub';
+  const themeSeg = document.createElement('div');
+  themeSeg.className = 'segmented wrap';
+  const syncThemeSub = () => {
+    themeSub.textContent = THEMES.find((t) => t.id === themeOr(settings.theme))?.blurb ?? '';
+  };
+  for (const t of THEMES) {
+    const b = document.createElement('button');
+    b.textContent = t.label;
+    b.className = themeOr(settings.theme) === t.id ? 'on' : '';
+    b.addEventListener('click', () => {
+      settings.theme = t.id;
+      applyTheme();
+      syncThemeSub();
+      [...themeSeg.children].forEach((c) => c.classList.toggle('on', c === b));
+      persist();
+    });
+    themeSeg.append(b);
+  }
+  syncThemeSub();
+  themeText.append(themeLabelEl, themeSub);
+  themeRow.append(themeText, themeSeg);
+  body.append(themeRow);
+
   toggle('Sound', 'sound', (on) => {
     sfx.setEnabled(on);
     syncSoundIcon();
@@ -2682,6 +2715,12 @@ function renderSettings(body) {
   });
   body.append(reset);
   band(body);
+}
+
+/** The only place a theme is applied: every colour in the app comes from the
+ *  tokens this attribute swaps, so there is nothing else to keep in step. */
+function applyTheme() {
+  document.documentElement.dataset.theme = themeOr(S.save.settings.theme);
 }
 
 function syncSoundIcon() {
@@ -2888,6 +2927,10 @@ async function boot() {
   S.save.stats.dayStreak ??= 0;
   S.save.stats.bestDayStreak ??= 0;
   S.save.settings.detail ??= 'normal';
+  // A save from before themes existed has no id, and one carrying an id a
+  // later build dropped must fall back rather than leave the app unstyled —
+  // themeOr does that, so this only has to fill the blank.
+  S.save.settings.theme ??= DEFAULT_THEME;
 
   // A save from before this feature existed has no `avatar` key at all — the
   // DEFAULT_SAVE merge in platform.js/main.cjs already covers that case with
@@ -2995,6 +3038,7 @@ async function boot() {
     }
   }
 
+  applyTheme();
   document.querySelector('[data-act="pin"]')
     ?.classList.toggle('on', S.save.settings.alwaysOnTop !== false);
   syncSoundIcon();

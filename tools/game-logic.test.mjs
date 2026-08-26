@@ -23,6 +23,8 @@ import {
   RUNGS, MAX_RUNG_SHARE, luma, gridFor, ladderFor, rungOf, lightnessOf, shadeHex,
   trayFor, rungShare, worthOffering, partnerFor,
 } from '../src/overtime.js';
+// Aliased: THEMES is already taken further down by the picture-tag list.
+import { THEMES as APP_THEMES, DEFAULT_THEME, isTheme, themeOr } from '../src/themes.js';
 import { LIVING_EFFECTS } from '../src/render.js';
 import { Burst } from '../src/paint-fx.js';
 import {
@@ -745,6 +747,107 @@ test('every wardrobe item is outlined as one garment, not as loose pieces', () =
       `${item.id} is not union-inked`);
     assert.ok(!/NaN|undefined|Infinity/.test(svg), `${item.id} produced a poisoned path`);
   }
+});
+
+/* ---------------------------------------------------------------- themes */
+
+test('every theme in the catalogue is actually implemented', () => {
+  // A theme the picker offers but the stylesheet has no block for renders as
+  // the default with a wrong button lit — no error, no clue, just wrong.
+  const css = readSource('src/styles.css');
+  for (const t of APP_THEMES) {
+    if (t.id === DEFAULT_THEME) continue; // the default IS :root
+    assert.ok(css.includes(`[data-theme="${t.id}"]`), `no styles for theme "${t.id}"`);
+  }
+  assert.ok(isTheme(DEFAULT_THEME), 'the default must be in the catalogue');
+  const ids = APP_THEMES.map((t) => t.id);
+  assert.equal(new Set(ids).size, ids.length, 'duplicate theme id');
+  for (const t of APP_THEMES) {
+    assert.ok(t.label && t.blurb, `theme "${t.id}" needs a label and a blurb`);
+  }
+});
+
+test('an unknown theme falls back instead of leaving the app unstyled', () => {
+  assert.equal(themeOr('fae'), 'fae');
+  assert.equal(themeOr('chartreuse'), DEFAULT_THEME);
+  assert.equal(themeOr(undefined), DEFAULT_THEME);
+  assert.equal(themeOr(null), DEFAULT_THEME);
+});
+
+test('a theme overrides tokens and never reaches past them', () => {
+  const css = readSource('src/styles.css');
+  for (const t of APP_THEMES) {
+    if (t.id === DEFAULT_THEME) continue;
+    const start = css.indexOf(`[data-theme="${t.id}"]`);
+    const block = css.slice(start, css.indexOf('\n}', start));
+    // Only custom properties. A theme that starts writing real rules stops
+    // being swappable and starts being a second stylesheet.
+    for (const line of block.split('\n').slice(1)) {
+      const decl = line.trim();
+      if (!decl || decl.startsWith('/*') || decl.startsWith('*') || !decl.includes(':')) continue;
+      assert.ok(decl.startsWith('--'), `theme "${t.id}" sets something that is not a token: ${decl}`);
+    }
+  }
+});
+
+test('no rule below the token blocks names an accent colour', () => {
+  // What makes a theme a theme: every colour in the app comes from a token, so
+  // swapping the tokens swaps the app. Sixteen rules were tinting with literal
+  // cyan when Tee Vibes was first switched on, which left a cyan ring round the
+  // selected tub in a world with no cyan in it. Anything needing an accent at a
+  // custom alpha writes rgba(var(--accent-rgb), …) instead.
+  const css = readSource('src/styles.css');
+  const rules = css.slice(css.indexOf('* { box-sizing'));
+  for (const [name, rgb] of [['cyan', '53, 233, 255'], ['green', '77, 255, 145'],
+    ['orange', '255, 106, 31']]) {
+    assert.ok(!rules.includes(`rgba(${rgb}`), `a rule still tints with literal ${name}`);
+  }
+  for (const hex of ['#35e9ff', '#4dff91', '#ff6a1f']) {
+    assert.ok(!rules.includes(hex), `a rule still names ${hex} directly`);
+  }
+  // And every theme has to supply the channels, or those rules go transparent.
+  for (const t of APP_THEMES) {
+    const block = t.id === DEFAULT_THEME
+      ? css.slice(css.indexOf(':root {'), css.indexOf('\n}', css.indexOf(':root {')))
+      : css.slice(css.indexOf(`[data-theme="${t.id}"]`),
+        css.indexOf('\n}', css.indexOf(`[data-theme="${t.id}"]`)));
+    for (const tok of ['--accent-rgb', '--accent2-rgb', '--hot-rgb']) {
+      assert.ok(block.includes(tok), `theme "${t.id}" is missing ${tok}`);
+    }
+  }
+});
+
+test('Tee Vibes keeps its magenta-and-gold rule', () => {
+  // The hard rule of chapter one's look. One cyan token and it stops reading
+  // as somewhere you arrived and starts reading as a hue rotation.
+  const css = readSource('src/styles.css');
+  const start = css.indexOf('[data-theme="fae"]');
+  const block = css.slice(start, css.indexOf('\n}', start));
+  for (const hex of block.match(/#[0-9a-f]{6}/gi) ?? []) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    // Cyan and green are the void's voices: both are green-dominant. Nothing
+    // in this theme may be.
+    assert.ok(!(g > r && g > b), `${hex} is green-dominant, which Tee Vibes forbids`);
+  }
+  for (const rgba of block.match(/rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+/g) ?? []) {
+    const [r, g, b] = rgba.match(/\d+/g).map(Number);
+    if (r === g && g === b) continue; // neutrals are fine — grain, shadow, ink
+    assert.ok(!(g > r && g > b), `${rgba}) is green-dominant, which Tee Vibes forbids`);
+  }
+});
+
+test('both DEFAULT_SAVE literals declare a theme, and boot backfills it', () => {
+  for (const f of ['src/platform.js', 'electron/main.cjs']) {
+    assert.match(readSource(f), /theme: 'void'/, `${f} is missing theme in DEFAULT_SAVE`);
+  }
+  const game = readSource('src/game.js');
+  assert.match(game, /settings\.theme \?\?= DEFAULT_THEME/, 'boot() must backfill settings.theme');
+  // settings IS deep-merged by both backends, unlike avatar — but the backfill
+  // is still what reaches a save written before the field existed.
+  assert.match(game, /document\.documentElement\.dataset\.theme = themeOr\(/,
+    'the theme must reach the DOM through themeOr, so a stale id cannot strand the app');
 });
 
 /* -------------------------------------------------------------- overtime */
