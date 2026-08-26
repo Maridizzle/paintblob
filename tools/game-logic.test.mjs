@@ -19,6 +19,12 @@ import {
   activate, isActive, consumeActive, NUMBER_RECOLOR_CYCLE, nextNumberRecolorIndex,
 } from '../src/abilities.js';
 import { WARDROBE_ITEMS } from '../src/wardrobe.js';
+import {
+  RUNGS, MAX_RUNG_SHARE, luma, gridFor, ladderFor, rungOf, lightnessOf, shadeHex,
+  trayFor, rungShare, worthOffering, partnerFor,
+} from '../src/overtime.js';
+// Aliased: THEMES is already taken further down by the picture-tag list.
+import { THEMES as APP_THEMES, DEFAULT_THEME, isTheme, themeOr } from '../src/themes.js';
 import { LIVING_EFFECTS } from '../src/render.js';
 import { Burst } from '../src/paint-fx.js';
 import {
@@ -743,6 +749,252 @@ test('every wardrobe item is outlined as one garment, not as loose pieces', () =
   }
 });
 
+/* ---------------------------------------------------------------- themes */
+
+test('every theme in the catalogue is actually implemented', () => {
+  // A theme the picker offers but the stylesheet has no block for renders as
+  // the default with a wrong button lit — no error, no clue, just wrong.
+  const css = readSource('src/styles.css');
+  for (const t of APP_THEMES) {
+    if (t.id === DEFAULT_THEME) continue; // the default IS :root
+    assert.ok(css.includes(`[data-theme="${t.id}"]`), `no styles for theme "${t.id}"`);
+  }
+  assert.ok(isTheme(DEFAULT_THEME), 'the default must be in the catalogue');
+  const ids = APP_THEMES.map((t) => t.id);
+  assert.equal(new Set(ids).size, ids.length, 'duplicate theme id');
+  for (const t of APP_THEMES) {
+    assert.ok(t.label && t.blurb, `theme "${t.id}" needs a label and a blurb`);
+  }
+});
+
+test('an unknown theme falls back instead of leaving the app unstyled', () => {
+  assert.equal(themeOr('fae'), 'fae');
+  assert.equal(themeOr('chartreuse'), DEFAULT_THEME);
+  assert.equal(themeOr(undefined), DEFAULT_THEME);
+  assert.equal(themeOr(null), DEFAULT_THEME);
+});
+
+test('a theme overrides tokens and never reaches past them', () => {
+  const css = readSource('src/styles.css');
+  for (const t of APP_THEMES) {
+    if (t.id === DEFAULT_THEME) continue;
+    const start = css.indexOf(`[data-theme="${t.id}"]`);
+    const block = css.slice(start, css.indexOf('\n}', start));
+    // Comments come out wholesale first — a prose line can carry a colon
+    // ("No diagonals: the void's"), which a line-at-a-time guess reads as a
+    // declaration and fails on.
+    const bare = block.replace(/\/\*[\s\S]*?\*\//g, '');
+    // Only custom properties. A theme that starts writing real rules stops
+    // being swappable and starts being a second stylesheet.
+    for (const decl of bare.split(';')) {
+      const d = decl.trim();
+      if (!d || !d.includes(':') || d.includes('{')) continue;
+      assert.ok(d.startsWith('--'), `theme "${t.id}" sets something that is not a token: ${d.slice(0, 60)}`);
+    }
+  }
+});
+
+test('no rule below the token blocks names an accent colour', () => {
+  // What makes a theme a theme: every colour in the app comes from a token, so
+  // swapping the tokens swaps the app. Sixteen rules were tinting with literal
+  // cyan when Tee Vibes was first switched on, which left a cyan ring round the
+  // selected tub in a world with no cyan in it. Anything needing an accent at a
+  // custom alpha writes rgba(var(--accent-rgb), …) instead.
+  const css = readSource('src/styles.css');
+  const rules = css.slice(css.indexOf('* { box-sizing'));
+  for (const [name, rgb] of [['cyan', '53, 233, 255'], ['green', '77, 255, 145'],
+    ['orange', '255, 106, 31']]) {
+    assert.ok(!rules.includes(`rgba(${rgb}`), `a rule still tints with literal ${name}`);
+  }
+  for (const hex of ['#35e9ff', '#4dff91', '#ff6a1f']) {
+    assert.ok(!rules.includes(hex), `a rule still names ${hex} directly`);
+  }
+  // And every theme has to supply the channels, or those rules go transparent.
+  for (const t of APP_THEMES) {
+    const block = t.id === DEFAULT_THEME
+      ? css.slice(css.indexOf(':root {'), css.indexOf('\n}', css.indexOf(':root {')))
+      : css.slice(css.indexOf(`[data-theme="${t.id}"]`),
+        css.indexOf('\n}', css.indexOf(`[data-theme="${t.id}"]`)));
+    for (const tok of ['--accent-rgb', '--accent2-rgb', '--hot-rgb']) {
+      assert.ok(block.includes(tok), `theme "${t.id}" is missing ${tok}`);
+    }
+  }
+});
+
+test('Tee Vibes keeps its magenta-and-gold rule', () => {
+  // The hard rule of chapter one's look. One cyan token and it stops reading
+  // as somewhere you arrived and starts reading as a hue rotation.
+  const css = readSource('src/styles.css');
+  const start = css.indexOf('[data-theme="fae"]');
+  const block = css.slice(start, css.indexOf('\n}', start));
+  for (const hex of block.match(/#[0-9a-f]{6}/gi) ?? []) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    // Cyan and green are the void's voices: both are green-dominant. Nothing
+    // in this theme may be.
+    assert.ok(!(g > r && g > b), `${hex} is green-dominant, which Tee Vibes forbids`);
+  }
+  for (const rgba of block.match(/rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+/g) ?? []) {
+    const [r, g, b] = rgba.match(/\d+/g).map(Number);
+    if (r === g && g === b) continue; // neutrals are fine — grain, shadow, ink
+    assert.ok(!(g > r && g > b), `${rgba}) is green-dominant, which Tee Vibes forbids`);
+  }
+});
+
+test('both DEFAULT_SAVE literals declare a theme, and boot backfills it', () => {
+  for (const f of ['src/platform.js', 'electron/main.cjs']) {
+    assert.match(readSource(f), /theme: 'void'/, `${f} is missing theme in DEFAULT_SAVE`);
+  }
+  const game = readSource('src/game.js');
+  assert.match(game, /settings\.theme \?\?= DEFAULT_THEME/, 'boot() must backfill settings.theme');
+  // settings IS deep-merged by both backends, unlike avatar — but the backfill
+  // is still what reaches a save written before the field existed.
+  assert.match(game, /document\.documentElement\.dataset\.theme = themeOr\(/,
+    'the theme must reach the DOM through themeOr, so a stale id cannot strand the app');
+});
+
+/* -------------------------------------------------------------- overtime */
+
+// Overtime collapses a puzzle to ~30 blocks of one hue for sixty seconds. The
+// arithmetic is pure and lives away from the canvas, so all of it runs here.
+
+test('the grid lands near thirty tiles and follows the aspect ratio', () => {
+  for (const [w, h] of [[900, 900], [768, 621], [738, 719], [400, 1200], [1200, 400]]) {
+    const { cols, rows } = gridFor(w, h);
+    assert.ok(cols >= 2 && rows >= 2, `${w}x${h} collapsed to a stripe`);
+    const tiles = cols * rows;
+    assert.ok(tiles >= 18 && tiles <= 44, `${w}x${h} gave ${tiles} tiles`);
+    // Wider than tall must not come back taller than wide.
+    if (w > h) assert.ok(cols >= rows, `${w}x${h} came back portrait`);
+    if (h > w) assert.ok(rows >= cols, `${w}x${h} came back landscape`);
+  }
+  assert.deepEqual(gridFor(0, 0), { cols: 2, rows: 2 }, 'a degenerate size must not throw');
+});
+
+test('the ladder stretches to the range the picture actually uses', () => {
+  // Midtones only: without stretching, all five rungs would be the same grey.
+  const mid = [110, 118, 126, 134, 142];
+  const ladder = ladderFor(mid);
+  assert.equal(rungOf(110, ladder), 0, 'the darkest tile must be the bottom rung');
+  assert.equal(rungOf(142, ladder), RUNGS - 1, 'the lightest tile must be the top rung');
+  const flat = ladderFor([90, 90, 90]);
+  assert.equal(rungOf(90, flat), 2, 'a flat picture must land mid-ladder, not throw');
+});
+
+test('no two tubs in a tray are the same shade', () => {
+  // THE regression. The first build downsampled the picture but not its
+  // values, and handed back eight to eighteen near-identical shades — a
+  // gradient, not a tray. Whatever the input, the tubs must be tellable apart.
+  const inputs = [
+    Array.from({ length: 30 }, (_, i) => i * 8),          // an even ramp
+    Array.from({ length: 30 }, (_, i) => 110 + i * 1.1),  // a narrow midtone band
+    Array.from({ length: 30 }, (_, i) => (i % 7) * 36),   // repeating
+    [0, 255, 12, 240, 128, 130, 126, 60, 200, 44, 210, 90, 150, 30, 170],
+  ];
+  for (const values of inputs) {
+    const tray = trayFor(values, { hue: 8 });
+    const hexes = new Set(tray.map((t) => t.hex));
+    assert.equal(hexes.size, tray.length, `duplicate tubs in ${JSON.stringify(tray)}`);
+    assert.ok(tray.length <= RUNGS, `tray of ${tray.length} exceeds ${RUNGS} rungs`);
+    assert.deepEqual([...tray].sort((a, b) => a.rung - b.rung), tray, 'tray must run dark to light');
+    assert.equal(tray.reduce((n, t) => n + t.count, 0), values.length, 'tiles went missing');
+  }
+});
+
+test('rung lightness climbs, and every shade is a real hex', () => {
+  let last = -1;
+  for (let r = 0; r < RUNGS; r++) {
+    const l = lightnessOf(r, RUNGS);
+    assert.ok(l > last, 'rungs must get lighter, never darker');
+    last = l;
+    assert.match(shadeHex(8, 0.42, l), /^#[0-9a-f]{6}$/, 'malformed shade');
+  }
+});
+
+test('a picture with nothing to choose from is never offered', () => {
+  assert.equal(worthOffering(Array(30).fill(120)), false, 'one flat shade is not a puzzle');
+  assert.equal(worthOffering([10, 250]), false, 'two tiles is not a puzzle');
+  // 80% of tiles on one rung — the shape the measured gate exists to catch.
+  const lopsided = [...Array(24).fill(250), 0, 10, 20, 30, 40, 50];
+  assert.ok(rungShare(lopsided) > MAX_RUNG_SHARE, 'the lopsided case must exceed the gate');
+  assert.equal(worthOffering(lopsided), false);
+  const spread = Array.from({ length: 30 }, (_, i) => i * 8);
+  assert.equal(worthOffering(spread), true, 'an even ramp must be offered');
+});
+
+test('undo only takes back the cells that were counted', () => {
+  // commitFill counts one cell per click, but an entry can carry more than
+  // one: Half Fill's batch and Overtime's doubled partner both ride along
+  // free. Undo subtracting the whole length drove the lifetime tally below
+  // what had actually been painted — silently, and every average computed
+  // from it with it.
+  const game = readSource('src/game.js');
+  assert.match(game, /const paid = step\.cells\.length - \(step\.free \?\? 0\);/,
+    'undoLast must discount the free cells in an entry');
+  assert.match(game, /stats\.cells -= paid;/, 'the cell tally must come off by paid, not by length');
+  assert.match(game, /stats\.mutedCells = Math\.max\(0, \(stats\.mutedCells \?\? 0\) - paid\)/,
+    'the muted tally has the same shape and the same bug');
+  // And both producers of a multi-cell entry have to declare it.
+  const entries = [...game.matchAll(/S\.history\.push\(\{([\s\S]*?)\}\);/g)].map((m) => m[1]);
+  assert.ok(entries.length >= 2, 'expected both commitFill and half-fill to push history');
+  for (const body of entries) {
+    assert.ok(/\bfree:/.test(body), `a history entry does not declare free: ${body.slice(0, 70)}`);
+  }
+});
+
+test('the doubled fill is free, and rides in one undo', () => {
+  const game = readSource('src/game.js');
+  // Structurally: the partner is filled before the tub-empty check, or an
+  // emptied tub would not be noticed and finish() could be missed.
+  const body = game.slice(game.indexOf('function commitFill'), game.indexOf('function undoLast'));
+  const partnerAt = body.indexOf('const partner = S.bogo');
+  const emptyAt = body.indexOf('if (S.remaining[cell.colour] === 0)');
+  const pushAt = body.indexOf('S.history.push');
+  assert.ok(partnerAt > 0 && emptyAt > partnerAt,
+    'the partner must be filled before the tub-empty check reads the count');
+  assert.ok(pushAt > partnerAt, 'the partner must be known before the history entry is written');
+  assert.match(body, /cells: partner \? \[cell\.id, partner\.id\] : \[cell\.id\]/,
+    'one click has to be one undo entry, not two');
+  // The partner must not reach grantPoints. Everything between the two is the
+  // primary's award, so the partner block simply must not mention points.
+  const block = body.slice(partnerAt, body.indexOf('S.save.stats.cells++'));
+  assert.ok(!/grantPoints|award/.test(block), 'the doubled cell must not be paid for');
+});
+
+test('a doubled fill takes the nearest unfilled cell of the same colour', () => {
+  const cell = (id, colour, x, y) => ({ id, colour, anchor: { x, y } });
+  const cells = [
+    cell(0, 1, 0, 0), cell(1, 1, 5, 0), cell(2, 1, 50, 0),
+    cell(3, 2, 1, 1), cell(4, 1, 2, 0),
+  ];
+  const none = new Set();
+  const near = partnerFor(cells, cells[0], { colour: 1, filled: none, pending: none });
+  assert.equal(near.id, 4, 'the closest same-colour cell must win');
+  assert.equal(
+    partnerFor(cells, cells[0], { colour: 1, filled: new Set([4]), pending: new Set([1]) }).id, 2,
+    'filled and in-flight cells must both be skipped',
+  );
+  assert.equal(
+    partnerFor(cells, cells[0], { colour: 1, filled: new Set([1, 2, 4]), pending: none }), null,
+    'no candidate must give null, not a throw',
+  );
+  assert.equal(partnerFor(cells, null, { colour: 1 }), null);
+  assert.equal(
+    partnerFor(cells, cells[3], { colour: 2, filled: none, pending: none }), null,
+    'a colour with only the origin cell has no partner',
+  );
+});
+
+test('overtime measures lightness the same way the rest of the app does', () => {
+  // luma() and readableOn() disagreeing would mean "how light is this" means
+  // two different things one file apart.
+  assert.equal(luma(255, 255, 255), 255);
+  assert.equal(luma(0, 0, 0), 0);
+  assert.match(readSource('src/game.js'), /0\.299 \* r \+ 0\.587 \* g \+ 0\.114 \* b/,
+    'readableOn no longer uses the coefficients overtime.js matches');
+});
+
 /* ------------------------------------------------------------- paint blob */
 
 // Burst's constructor never touches the DOM (the scratch canvas is only
@@ -798,7 +1050,10 @@ test('every panel renderer bands its list', () => {
 test('the band tint is distinct from both the base row and the hover tint', () => {
   const css = readSource('src/styles.css');
   const tint = (selector) => {
-    const m = css.match(new RegExp(`${selector}\\s*\\{[^}]*background: (rgba\\([^)]*\\))`));
+    // Up to the semicolon, not to the first ')': a tint is now written
+    // rgba(var(--sheen-rgb), .06), so stopping at the first bracket truncates
+    // every one of them to the same string and the comparison always passes.
+    const m = css.match(new RegExp(`${selector}\\s*\\{[^}]*background: ([^;]+);`));
     assert.ok(m, `no background found for ${selector}`);
     return m[1];
   };
@@ -987,7 +1242,10 @@ test('undo reverses commitFill, and is structurally unavailable once finished', 
     ['the cell itself', /S\.filled\.delete\(id\)/],
     ['the board', /board\.markUnfilled\(id\)/],
     ["the tub's count", /S\.remaining\[step\.colour\] \+= step\.cells\.length/],
-    ['the cell tally', /stats\.cells -= step\.cells\.length/],
+    // `paid`, not `step.cells.length`: an entry can carry cells that were
+    // handed over free and never counted on the way in. See the free-cell
+    // test above — this line used to assert the version with that bug in it.
+    ['the cell tally', /stats\.cells -= paid;/],
     ['the points', /stats\.pointsEarned = Math\.max\(0, \(stats\.pointsEarned \?\? 0\) - step\.points\)/],
     ['the passive hint', /stats\.hintsEarned = Math\.max\(0/],
     ['the undo tally', /stats\.undos = \(stats\.undos \?\? 0\) \+ 1/],
