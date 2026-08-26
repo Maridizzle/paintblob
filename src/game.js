@@ -1809,6 +1809,12 @@ function renderAvatarCustomize(section, stage) {
     section.append(r);
   };
 
+  // First, because it changes how everything below it is drawn rather than
+  // what any one of them is.
+  // Wrapped, like Race: `.segmented` is overflow:hidden with no wrap, so six
+  // styles on one line silently lose the last two off the end.
+  pick('Style', VARIANTS.style, () => customize.style ?? 'inked',
+    (v) => setVariant(customize, 'style', v), true);
   pick('Race', VARIANTS.race, () => customize.race, (v) => setVariant(customize, 'race', v), true);
   pick('Gender', VARIANTS.gender, () => customize.gender, (v) => setVariant(customize, 'gender', v));
   pick('Hair', VARIANTS.hairStyle, () => customize.hair.style, (v) => setVariant(customize, 'hair', v));
@@ -2897,6 +2903,12 @@ async function boot() {
   // literals only ever reaches a brand-new save. This backfill is the only
   // thing that gets it to a returning player.
   S.save.avatar.customize.race ??= 'human';
+  // Same reason as `race`: a save written before the Inked style existed keeps
+  // its own customize object, so DEFAULT_SAVE's `style` never reaches it.
+  // Defaults to inked rather than classic on purpose — it is the better
+  // drawing, and Classic is one tap away in the Customize tab for anyone who
+  // preferred the old flat look.
+  S.save.avatar.customize.style ??= 'inked';
   S.save.avatar.unlocked ??= starterItems;
   S.save.avatar.abilities = { ...defaultAbilityState(), ...S.save.avatar.abilities };
   // Same reason as `race` above: a save written before the house existed keeps

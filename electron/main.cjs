@@ -54,7 +54,7 @@ const DEFAULT_SAVE = {
   bounds: null,
   avatar: {
     customize: {
-      race: 'human', gender: 'nb', height: 1, weight: 1,
+      race: 'human', gender: 'nb', height: 1, weight: 1, style: 'inked',
       hair: { style: 'short', colour: '#3b2a1a' },
       eyes: { style: 'round', colour: '#4a7a8c' },
       face: { shape: 'oval' },
