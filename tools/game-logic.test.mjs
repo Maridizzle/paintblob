@@ -923,6 +923,45 @@ test('a picture with nothing to choose from is never offered', () => {
   assert.equal(worthOffering(spread), true, 'an even ramp must be offered');
 });
 
+test('undo only takes back the cells that were counted', () => {
+  // commitFill counts one cell per click, but an entry can carry more than
+  // one: Half Fill's batch and Overtime's doubled partner both ride along
+  // free. Undo subtracting the whole length drove the lifetime tally below
+  // what had actually been painted — silently, and every average computed
+  // from it with it.
+  const game = readSource('src/game.js');
+  assert.match(game, /const paid = step\.cells\.length - \(step\.free \?\? 0\);/,
+    'undoLast must discount the free cells in an entry');
+  assert.match(game, /stats\.cells -= paid;/, 'the cell tally must come off by paid, not by length');
+  assert.match(game, /stats\.mutedCells = Math\.max\(0, \(stats\.mutedCells \?\? 0\) - paid\)/,
+    'the muted tally has the same shape and the same bug');
+  // And both producers of a multi-cell entry have to declare it.
+  const entries = [...game.matchAll(/S\.history\.push\(\{([\s\S]*?)\}\);/g)].map((m) => m[1]);
+  assert.ok(entries.length >= 2, 'expected both commitFill and half-fill to push history');
+  for (const body of entries) {
+    assert.ok(/\bfree:/.test(body), `a history entry does not declare free: ${body.slice(0, 70)}`);
+  }
+});
+
+test('the doubled fill is free, and rides in one undo', () => {
+  const game = readSource('src/game.js');
+  // Structurally: the partner is filled before the tub-empty check, or an
+  // emptied tub would not be noticed and finish() could be missed.
+  const body = game.slice(game.indexOf('function commitFill'), game.indexOf('function undoLast'));
+  const partnerAt = body.indexOf('const partner = S.bogo');
+  const emptyAt = body.indexOf('if (S.remaining[cell.colour] === 0)');
+  const pushAt = body.indexOf('S.history.push');
+  assert.ok(partnerAt > 0 && emptyAt > partnerAt,
+    'the partner must be filled before the tub-empty check reads the count');
+  assert.ok(pushAt > partnerAt, 'the partner must be known before the history entry is written');
+  assert.match(body, /cells: partner \? \[cell\.id, partner\.id\] : \[cell\.id\]/,
+    'one click has to be one undo entry, not two');
+  // The partner must not reach grantPoints. Everything between the two is the
+  // primary's award, so the partner block simply must not mention points.
+  const block = body.slice(partnerAt, body.indexOf('S.save.stats.cells++'));
+  assert.ok(!/grantPoints|award/.test(block), 'the doubled cell must not be paid for');
+});
+
 test('a doubled fill takes the nearest unfilled cell of the same colour', () => {
   const cell = (id, colour, x, y) => ({ id, colour, anchor: { x, y } });
   const cells = [
@@ -1203,7 +1242,10 @@ test('undo reverses commitFill, and is structurally unavailable once finished', 
     ['the cell itself', /S\.filled\.delete\(id\)/],
     ['the board', /board\.markUnfilled\(id\)/],
     ["the tub's count", /S\.remaining\[step\.colour\] \+= step\.cells\.length/],
-    ['the cell tally', /stats\.cells -= step\.cells\.length/],
+    // `paid`, not `step.cells.length`: an entry can carry cells that were
+    // handed over free and never counted on the way in. See the free-cell
+    // test above — this line used to assert the version with that bug in it.
+    ['the cell tally', /stats\.cells -= paid;/],
     ['the points', /stats\.pointsEarned = Math\.max\(0, \(stats\.pointsEarned \?\? 0\) - step\.points\)/],
     ['the passive hint', /stats\.hintsEarned = Math\.max\(0/],
     ['the undo tally', /stats\.undos = \(stats\.undos \?\? 0\) \+ 1/],

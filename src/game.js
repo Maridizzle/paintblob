@@ -18,6 +18,9 @@ import {
 } from './abilities.js';
 import { WARDROBE_ITEMS } from './wardrobe.js';
 import { THEMES, DEFAULT_THEME, themeOr } from './themes.js';
+import {
+  SECONDS as OT_SECONDS, luma, gridFor, trayFor, rungsFor, worthOffering, partnerFor,
+} from './overtime.js';
 import { outlineSVG, outlineWeight } from './thumbnail.js';
 import { computePlayStats } from './playstats.js';
 import { Tour } from './tour.js';
@@ -57,6 +60,14 @@ const S = {
   // unbounded array of every cell ever painted does not belong in a save file,
   // and reopening a picture is a fresh start on it anyway.
   history: [],
+  // Overtime's prize, for this picture only. Session state like history —
+  // won at the board and spent at the board, never saved.
+  bogo: false,
+  // The running Overtime session, or null. UI-only and per-picture, like
+  // history: it is played at the canvas and never saved.
+  ot: null,
+  otTiles: null,   // the squinted picture, computed once per puzzle
+  otOffered: false,
   avatarTab: 'customize', // UI-only, not persisted — resets to Customize each time the panel opens
   abilityFan: false,      // is the ability pop-up up? Also UI-only: always starts down
   // How the Pictures list is filtered. UI-only, like the two above: it resets
@@ -301,6 +312,11 @@ async function loadPuzzle(id) {
   S.finished = S.filled.size === S.cells.length;
   S.bursts = [];
   S.history = [];
+  S.bogo = false;
+  S.ot = null;
+  S.otTiles = null;
+  S.otOffered = false;
+  closeOvertime();
   S.selected = -1;
   S.revealFrom = S.finished ? 0 : -1;
   S.hintsThisPuzzle = 0;
@@ -560,6 +576,22 @@ function commitFill(burst) {
   board.markFilled(cell.id);
   if (wasGolden) board.goldenCell = null;
 
+  // Overtime's prize: for the rest of the picture, a fill takes the nearest
+  // unfilled cell of the same colour with it. Applied here, before anything
+  // below reads S.remaining, so the tub-empty check and finish() both see the
+  // real count. The partner grants nothing — no points, no cell tally, no
+  // streak — for the same reason Half Fill's batch does not: a free cell that
+  // paid would double the coin income of every picture it was won on, and the
+  // shop is priced against the level curve.
+  const partner = S.bogo
+    ? partnerFor(S.cells, cell, { colour: cell.colour, filled: S.filled, pending: S.pending })
+    : null;
+  if (partner) {
+    S.filled.add(partner.id);
+    S.remaining[partner.colour]--;
+    board.markFilled(partner.id);
+  }
+
   S.save.stats.cells++;
   const muted = !sfx.enabled;
   if (muted) S.save.stats.mutedCells = (S.save.stats.mutedCells || 0) + 1;
@@ -601,7 +633,9 @@ function commitFill(burst) {
   // recomputed later: `award` folds in a Golden Cell and a Colour Surge that
   // may both have expired by the time this is taken back.
   S.history.push({
-    cells: [cell.id],
+    cells: partner ? [cell.id, partner.id] : [cell.id],
+    // How many of those never counted towards stats — see `free` in undoLast.
+    free: partner ? 1 : 0,
     colour: cell.colour,
     points: award,
     muted,
@@ -614,6 +648,7 @@ function commitFill(burst) {
   persist();
 
   if (S.filled.size === S.cells.length) finish();
+  else maybeOfferOvertime();
 }
 
 /**
@@ -643,9 +678,15 @@ function undoLast() {
   }
   S.remaining[step.colour] += step.cells.length;
 
-  stats.cells -= step.cells.length;
+  // Only the cells that were counted come back off. A batch handed over for
+  // free — Half Fill's half, Overtime's doubled partner — never reached
+  // stats.cells on the way in, so subtracting its length here drove the
+  // lifetime tally down below what had actually been painted, and every
+  // average computed from it with it.
+  const paid = step.cells.length - (step.free ?? 0);
+  stats.cells -= paid;
   stats.undos = (stats.undos ?? 0) + 1;
-  if (step.muted) stats.mutedCells = Math.max(0, (stats.mutedCells ?? 0) - step.cells.length);
+  if (step.muted) stats.mutedCells = Math.max(0, (stats.mutedCells ?? 0) - paid);
   if (step.points) {
     stats.points = Math.max(0, (stats.points ?? 0) - step.points);
     stats.pointsEarned = Math.max(0, (stats.pointsEarned ?? 0) - step.points);
@@ -711,6 +752,8 @@ function autoFillHalfOfHeldColour() {
   if (n) {
     S.history.push({
       cells: candidates.slice(0, n).map((c) => c.id),
+      // Every one of them is free: none was counted in stats.cells above.
+      free: n,
       colour, points: 0, muted: false, hint: false, golden: null,
     });
   }
@@ -2689,6 +2732,11 @@ function renderSettings(body) {
   slider('Blob speed', 'speed', 0.6, 1.8, 0.1, (v) => `${v.toFixed(1)}×`);
   slider('Blob density', 'density', 0.4, 1.6, 0.1, (v) => `${v.toFixed(1)}×`);
   slider('Blob opacity', 'opacity', 0.25, 1, 0.05, (v) => `${Math.round(v * 100)}%`);
+  toggle('Overtime', 'overtime', (on) => {
+    // Turning it off mid-picture retires the offer but never yanks a session
+    // out from under someone already sixty seconds into one.
+    if (!on) $('overtimeChip')?.classList.add('hidden');
+  });
 
   const guide = row('clickable');
   guide.innerHTML = '<div class="grow"><div class="label">Squirrel tour</div>' +
@@ -2721,6 +2769,229 @@ function renderSettings(body) {
  *  tokens this attribute swaps, so there is nothing else to keep in step. */
 function applyTheme() {
   document.documentElement.dataset.theme = themeOr(S.save.settings.theme);
+}
+
+/* ------------------------------------------------------------- overtime */
+
+/**
+ * The picture squinted: rendered whole, downsampled to about thirty tiles,
+ * and read for brightness. Computed from S.cells rather than from the live
+ * canvas because the live canvas is mostly unpainted — Overtime shows the
+ * picture as it WILL be, which is the whole reason winning it is worth
+ * something. Cached per puzzle: it never changes as you paint.
+ */
+function overtimeTiles() {
+  if (S.otTiles) return S.otTiles;
+  const { width, height } = S.puzzle;
+  const { cols, rows } = gridFor(width, height);
+  const full = document.createElement('canvas');
+  full.width = width;
+  full.height = height;
+  const fx = full.getContext('2d');
+  fx.fillStyle = '#fff';
+  fx.fillRect(0, 0, width, height);
+  for (const cell of S.cells) {
+    fx.fillStyle = S.puzzle.palette[cell.colour].hex;
+    fx.fill(cell.path);
+  }
+  const small = document.createElement('canvas');
+  small.width = cols;
+  small.height = rows;
+  const sx = small.getContext('2d');
+  sx.drawImage(full, 0, 0, cols, rows);
+  const d = sx.getImageData(0, 0, cols, rows).data;
+  const values = [];
+  for (let i = 0; i < cols * rows; i++) {
+    values.push(luma(d[i * 4], d[i * 4 + 1], d[i * 4 + 2]));
+  }
+  S.otTiles = { cols, rows, values };
+  return S.otTiles;
+}
+
+/**
+ * The hue that floods the picture — the world's colour, not the picture's.
+ *
+ * Deriving it from the picture's most-used paint was the first try and it was
+ * wrong twice over: on a picture whose commonest colour is near-black it hands
+ * back a tray of five navies, and a navy tray dropped into a rose-and-gold
+ * world looks like a bug rather than a mechanic. Taking it from the theme's
+ * accent keeps Overtime part of the room it is played in — and it is the seam
+ * story mode needs, where the flood is the chapter colour that has walked off
+ * its job and is covering every shift at once.
+ */
+function overtimeHue() {
+  const accent = getComputedStyle(document.documentElement)
+    .getPropertyValue('--accent').trim();
+  return /^#[0-9a-f]{6}$/i.test(accent) ? hexToHsl(accent).h : 320;
+}
+
+/**
+ * Offers it, once per picture, and only ever as a chip. A sixty-second
+ * takeover of a toy that floats on your desktop would be the most annoying
+ * thing in it, so this never starts anything by itself.
+ */
+function maybeOfferOvertime() {
+  if (S.otOffered || S.ot || S.bogo || S.finished) return;
+  if (S.save.settings.overtime === false) return;
+  // A blind picture's whole value is not knowing what it is, and thirty tiles
+  // give the composition away wholesale.
+  if (S.puzzle.blind) return;
+  if (S.filled.size < 10) return;
+  if (!worthOffering(overtimeTiles().values)) return;
+  S.otOffered = true;
+  $('overtimeChip').classList.remove('hidden');
+}
+
+function closeOvertime() {
+  const el = $('overtime');
+  if (el) {
+    el.classList.add('hidden');
+    el.textContent = '';
+  }
+  $('overtimeChip')?.classList.add('hidden');
+  if (S.ot?.timer) clearInterval(S.ot.timer);
+  S.ot = null;
+}
+
+function startOvertime() {
+  if (S.ot || !S.puzzle) return;
+  $('overtimeChip').classList.add('hidden');
+  const { cols, rows, values } = overtimeTiles();
+  const hue = overtimeHue();
+  const tray = trayFor(values, { hue });
+  const rungs = rungsFor(values);
+  S.ot = {
+    cols, rows, tray, rungs, hue,
+    filled: new Set(),
+    selected: tray[0].rung,
+    endsAt: Date.now() + OT_SECONDS * 1000,
+    timer: 0,
+  };
+  renderOvertime();
+  S.ot.timer = setInterval(tickOvertime, 200);
+}
+
+function tickOvertime() {
+  if (!S.ot) return;
+  const left = Math.max(0, S.ot.endsAt - Date.now());
+  const bar = $('overtime').querySelector('.ot-time i');
+  if (bar) bar.style.width = `${(left / (OT_SECONDS * 1000)) * 100}%`;
+  const clock = $('overtime').querySelector('.ot-clock');
+  if (clock) clock.textContent = `${Math.ceil(left / 1000)}s`;
+  if (left <= 0) endOvertime(false);
+}
+
+function endOvertime(won) {
+  if (!S.ot) return;
+  if (won) {
+    // Hold the finished grid for a beat before clearing it. Closing on the
+    // last tap means you never once see the thing you just made, and the
+    // squinted picture arriving whole IS the reward — the doubled brush is
+    // only what you carry out of it.
+    clearInterval(S.ot.timer);
+    S.ot.timer = 0;
+    const card = $('overtime').querySelector('.ot-card');
+    card?.classList.add('won');
+    setTimeout(() => { closeOvertime(); awardOvertime(); }, 1200);
+    return;
+  }
+  closeOvertime();
+  sfx.play('nope');
+}
+
+function awardOvertime() {
+  S.bogo = true;
+  sfx.play('achievement');
+  toast({ icon: '◑', name: 'Doubled brush',
+    desc: 'Every cell you fill now takes its nearest neighbour with it.' }, '', { sticky: true });
+}
+
+
+
+function renderOvertime() {
+  const el = $('overtime');
+  el.textContent = '';
+  el.classList.remove('hidden');
+  const { cols, rows, tray, rungs, hue } = S.ot;
+
+  const card = document.createElement('div');
+  card.className = 'ot-card';
+
+  const head = document.createElement('div');
+  head.className = 'ot-head';
+  const title = document.createElement('div');
+  title.className = 'ot-title';
+  title.textContent = 'Overtime';
+  const clock = document.createElement('div');
+  clock.className = 'ot-clock';
+  clock.textContent = `${OT_SECONDS}s`;
+  const quit = document.createElement('button');
+  quit.className = 'icon';
+  quit.textContent = '✕';
+  quit.title = 'Leave it';
+  quit.addEventListener('click', () => endOvertime(false));
+  head.append(title, clock, quit);
+
+  const time = document.createElement('div');
+  time.className = 'ot-time';
+  time.append(document.createElement('i'));
+
+  const grid = document.createElement('div');
+  grid.className = 'ot-grid';
+  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  grid.style.aspectRatio = `${cols} / ${rows}`;
+  rungs.forEach((rung, i) => {
+    const tile = document.createElement('button');
+    tile.className = 'ot-tile';
+    tile.dataset.i = String(i);
+    tile.textContent = String(tray.findIndex((t) => t.rung === rung) + 1);
+    tile.addEventListener('click', () => paintOvertimeTile(i, tile));
+    grid.append(tile);
+  });
+
+  const trayEl = document.createElement('div');
+  trayEl.className = 'ot-tray';
+  tray.forEach((tub, i) => {
+    const b = document.createElement('button');
+    b.className = 'ot-tub';
+    b.style.background = tub.hex;
+    b.style.color = readableOn(tub.hex);
+    b.textContent = String(i + 1);
+    b.classList.toggle('on', tub.rung === S.ot.selected);
+    b.addEventListener('click', () => {
+      S.ot.selected = tub.rung;
+      [...trayEl.children].forEach((c) => c.classList.toggle('on', c === b));
+      sfx.play('pick', i);
+    });
+    trayEl.append(b);
+  });
+
+  const hint = document.createElement('div');
+  hint.className = 'ot-hint';
+  hint.textContent = 'Darkest is 1. Fill every block before the thread runs out.';
+
+  card.append(head, time, grid, trayEl, hint);
+  el.append(card);
+  // The flood colour rides on the card, so the tiles can inherit it.
+  card.style.setProperty('--ot-hue', String(Math.round(hue)));
+}
+
+function paintOvertimeTile(i, tile) {
+  const ot = S.ot;
+  if (!ot || ot.filled.has(i)) return;
+  if (ot.rungs[i] !== ot.selected) {
+    tile.classList.remove('nudge');
+    void tile.offsetWidth;
+    tile.classList.add('nudge');
+    sfx.play('nope');
+    return;
+  }
+  ot.filled.add(i);
+  const tub = ot.tray.find((t) => t.rung === ot.rungs[i]);
+  tile.style.background = tub.hex;
+  tile.classList.add('done');
+  sfx.play('pick', ot.tray.indexOf(tub));
+  if (ot.filled.size === ot.rungs.length) endOvertime(true);
 }
 
 function syncSoundIcon() {
@@ -2768,6 +3039,9 @@ document.addEventListener('click', async (e) => {
         S.abilityFan = true;
         syncAbilityFan();
       }
+      break;
+    case 'overtime':
+      startOvertime();
       break;
     case 'pictures': case 'trophies': case 'settings': case 'avatar':
       if (S.panel === act) closePanel();
@@ -2931,6 +3205,9 @@ async function boot() {
   // later build dropped must fall back rather than leave the app unstyled —
   // themeOr does that, so this only has to fill the blank.
   S.save.settings.theme ??= DEFAULT_THEME;
+  // The bonus round is opt-out, not opt-in: it never takes the canvas without
+  // being asked, so there is nothing to protect a first-time player from.
+  S.save.settings.overtime ??= true;
 
   // A save from before this feature existed has no `avatar` key at all — the
   // DEFAULT_SAVE merge in platform.js/main.cjs already covers that case with

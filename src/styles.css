@@ -1758,3 +1758,118 @@ button {
 
 /* The little seal on the Settings row that replays the tour. */
 .tour-seal { font-size: 18px; opacity: 0.9; }
+
+/* ------------------------------------------------------------- overtime */
+
+/* The offer. A chip, never a takeover: this app floats on a desktop and a
+   sixty-second hijack of the canvas would be the worst thing in it. */
+.ot-chip {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px 7px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--edge-strong);
+  background: rgba(var(--chip-rgb), 0.94);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  box-shadow: var(--cut), var(--glow-cyan);
+  animation: ot-arrive 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.ot-chip.hidden { display: none; }
+.ot-chip-mark { font-size: 15px; color: var(--accent); }
+.ot-chip-text { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.25; }
+.ot-chip-text i { font-style: normal; font-size: 9px; color: var(--muted); }
+.ot-chip:hover { border-color: var(--accent); }
+
+@keyframes ot-arrive {
+  from { opacity: 0; transform: translateY(10px) scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The session itself covers the picture, because the point is that you cannot
+   see it — you are squinting at it, not painting it. */
+.overtime {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  background: rgba(var(--shade-rgb), 0.55);
+  backdrop-filter: blur(3px);
+}
+.overtime.hidden { display: none; }
+
+.ot-card {
+  width: min(100%, 420px);
+  max-height: 100%;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--edge);
+  background: var(--card-solid);
+  box-shadow: var(--cut);
+  animation: ot-arrive 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.ot-head { display: flex; align-items: center; gap: 10px; }
+.ot-title { flex: 1 1 auto; font-weight: 700; letter-spacing: 0.4px; }
+.ot-clock {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--accent);
+}
+/* The thread running out. */
+.ot-time { height: 3px; border-radius: 2px; background: rgba(var(--sheen-rgb), 0.12); overflow: hidden; }
+.ot-time i { display: block; height: 100%; width: 100%; background: var(--accent); }
+
+.ot-grid { display: grid; gap: 2px; width: 100%; }
+.ot-tile {
+  border: 0;
+  border-radius: 2px;
+  background: rgba(var(--sheen-rgb), 0.07);
+  color: var(--muted);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 140ms, color 140ms;
+}
+.ot-tile:hover { background: rgba(var(--accent-rgb), 0.18); color: var(--text); }
+.ot-tile.done { color: transparent; cursor: default; }
+.ot-tile.nudge { animation: nudge 240ms; }
+
+.ot-tray { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; }
+.ot-tub {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--edge);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 120ms, box-shadow 120ms;
+}
+.ot-tub.on { transform: translateY(-2px); box-shadow: 0 0 0 2px var(--accent), var(--glow-cyan); }
+
+.ot-hint { font-size: 10px; color: var(--muted); text-align: center; }
+
+@media (pointer: coarse) {
+  .ot-tub { width: 46px; height: 46px; }
+  .ot-tile { font-size: 11px; }
+}
+/* The held beat on a win: the grid stops being a puzzle and is briefly just
+   the picture, squinted. */
+.ot-card.won .ot-grid { gap: 0; transition: gap 300ms ease; }
+.ot-card.won .ot-tray,
+.ot-card.won .ot-hint { opacity: 0.25; transition: opacity 300ms ease; }
