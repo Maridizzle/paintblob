@@ -97,6 +97,8 @@ export class Board {
     this.goldenCell = null;     // { id, end } — kept for compat; unused now
     this.focus = null;          // { colour, end } — Focus ability: grey all but this colour
     this.shock = null;          // { x, y, start } — Explode's expanding ring
+    this.bossLocks = null;      // { cells:Set, end } — boss freeze: these cells wear X's mark and can't be filled
+    this.bossPulse = 0;         // performance.now() of the last regen — a red flinch when X takes cells back
 
     this.sourceBitmap = null; // the real photo, once decoded — see setPuzzle()
     this.showSource = false;  // true = showing it instead of the painted cells
@@ -161,6 +163,8 @@ export class Board {
     this.goldenCell = null;
     this.focus = null;
     this.shock = null;
+    this.bossLocks = null;
+    this.bossPulse = 0;
 
     this.showSource = false;
     this.living = null;
@@ -788,6 +792,44 @@ export class Board {
         ctx.beginPath();
         ctx.arc(this.shock.x, this.shock.y, t * Math.max(this.puzzle.width, this.puzzle.height) * 0.6, 0, Math.PI * 2);
         ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    // Boss freeze: X's own mark — a grey cross — over every cell it has locked
+    // and that is still unpainted, pulsing so it reads as a live spell rather
+    // than decor. game.js clears bossLocks the instant the freeze lifts.
+    if (this.bossLocks && timeMs < this.bossLocks.end) {
+      this.applyTransform(ctx, sx, sy);
+      ctx.save();
+      ctx.strokeStyle = `rgba(150, 148, 165, ${0.55 + 0.28 * Math.sin(timeMs / 260)})`;
+      ctx.lineWidth = 3 / this.scale;
+      ctx.lineCap = 'round';
+      for (const id of this.bossLocks.cells) {
+        const cell = this.cells[id];
+        if (!cell || this.filled.has(cell.id)) continue;
+        const r = cell.inradius * 0.55;
+        const { x, y } = cell.anchor;
+        ctx.beginPath();
+        ctx.moveTo(x - r, y - r); ctx.lineTo(x + r, y + r);
+        ctx.moveTo(x + r, y - r); ctx.lineTo(x - r, y + r);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // The board flinches red when X takes cells back — a quick full-board wash
+    // in device space, gone in under half a second.
+    if (this.bossPulse) {
+      const t = (timeMs - this.bossPulse) / 450;
+      if (t >= 1) {
+        this.bossPulse = 0;
+      } else {
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = (1 - t) * 0.16;
+        ctx.fillStyle = '#c81834';
+        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         ctx.restore();
       }
     }

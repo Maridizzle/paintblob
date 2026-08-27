@@ -16,7 +16,7 @@ import {
   activate as activateAbility, isActive as isAbilityActive, consumeActive,
 } from './abilities.js';
 import { WARDROBE_ITEMS } from './wardrobe.js';
-import { THEMES, DEFAULT_THEME, themeOr } from './themes.js';
+import { THEMES, DEFAULT_THEME, themeOr, themeUnlocked } from './themes.js';
 import {
   SECONDS as OT_SECONDS, CHUNKS, COLS, rampFrom, randomStops, scramble, swap, isSolved, partnerFor,
 } from './overtime.js';
@@ -28,9 +28,14 @@ import { outlineSVG, outlineWeight } from './thumbnail.js';
 import { computePlayStats } from './playstats.js';
 import { Tour } from './tour.js';
 import {
-  getChapter, chapterOr, defaultStory, nodeState, isStoryPuzzle,
+  getChapter, chapterOr, defaultStory, nodeState, isStoryPuzzle, isBossPuzzle,
   onEnterScene, beforeStoneScene, pendingBoardScene, sceneKey, sceneSeen,
 } from './story.js';
+import {
+  regenCount, pickWipeTargets, pickLockTargets, chooseAttack, difficultyMult,
+  healthFraction, REGEN_INTERVAL_MS, ATTACK_INTERVAL_MS, FIRST_ATTACK_MS,
+  COLOUR_DISABLE_MS, CELL_LOCK_MS,
+} from './boss.js';
 import { letterSVG } from './letters.js';
 import {
   ROOMS, HOUSE_ITEMS, LIGHTING, PETS, PROP_SLOTS, SLOT_LABEL,
@@ -81,6 +86,11 @@ const S = {
   swap: null,
   swapOffered: false,
   named: 0,
+  // The boss fight — X taking painted cells back and throwing spells while you
+  // paint the last stone. Same per-picture, never-saved shape as ot/swap: it
+  // runs only while a boss stone is loaded and unfinished, and holds its own
+  // interval handles, the currently disabled colour, and the frozen cells.
+  boss: null,
   // Are we in the story surface right now? Runtime-only — which SCREEN they last
   // chose is persisted as save.story.mode; this is whether the board/pill/theme
   // are currently the story's, and it drives applyTheme().
@@ -210,6 +220,7 @@ function syncTubs() {
     const left = S.remaining[i];
     tub.classList.toggle('spent', left === 0);
     tub.classList.toggle('selected', i === S.selected);
+    tub.classList.toggle('frozen', isColourDisabled(i)); // X's colour-freeze spell
     tub.querySelector('.count').textContent = String(left);
   });
 
@@ -253,6 +264,7 @@ function syncCompare() {
 function selectTub(i, fromUser = false) {
   if (i < 0 || i >= S.puzzle.palette.length) return;
   if (S.remaining[i] === 0 || i === S.selected) return;
+  if (isColourDisabled(i)) { if (fromUser) sfx.play('nope'); return; } // X has this colour frozen
 
   if (fromUser && S.selected >= 0) {
     S.save.stats.colourSwitches++;
@@ -352,6 +364,7 @@ async function loadPuzzle(id) {
   S.named = 0;
   closeSwap();
   syncNamed();
+  stopBoss(); // tear down any fight from the picture we are leaving
   S.selected = -1;
   S.revealFrom = S.finished ? 0 : -1;
   S.hintsThisPuzzle = 0;
@@ -384,6 +397,9 @@ async function loadPuzzle(id) {
     applyTheme();
   }
   syncStoryPill(); // a story stone gets the way-back-to-the-path pill
+  // The last stone is a fight: X takes cells back and throws spells while you
+  // paint it. Only a boss stone, and only while it is unfinished.
+  if (isBossPuzzle(id) && !S.finished) startBoss(id);
 
   S.save.settings.lastPuzzle = id;
   persist();
@@ -579,6 +595,11 @@ function tryPaint(clientX, clientY, pointerType) {
     });
   }
   if (!target) return;
+
+  // X's spells are real walls: a cell it froze cannot be filled, and a colour it
+  // froze cannot be laid down. Either just buzzes — the ✕ on the cell and the
+  // frozen tub already say why.
+  if (cellLocked(target.id) || isColourDisabled(target.colour)) { sfx.play('nope'); return; }
 
   launch(target, point);
 }
@@ -875,6 +896,7 @@ function finish() {
   S.finished = true;
   S.revealFrom = performance.now();
   $('board').classList.add('done');
+  stopBoss(); // the boss dies the instant the last cell lands — no more regen, no spells
   syncUndo();
 
   S.save.stats.puzzles++;
@@ -884,6 +906,15 @@ function finish() {
   if (S.cells.length >= 100) achievements.award('fine-print');
   if (S.cells.length < 12) achievements.award('minimalist');
   achievements.sync(S.save.stats);
+
+  // Beating a boss earns the chapter's reward look. The unlock itself is
+  // automatic — themeUnlocked reads progress, which the persist() below writes —
+  // so this is only the announcement, pointing at Settings where it can be worn.
+  const rewardTheme = THEMES.find((t) => t.unlockedBy === S.puzzle.id);
+  if (rewardTheme) {
+    toast({ icon: '✨', name: `${rewardTheme.label} unlocked`,
+      desc: 'The colours answer again — a new look is waiting in Settings.' }, '', { sticky: true });
+  }
 
   const secs = Math.round(S.elapsedMs / 1000);
   $('finishName').textContent = S.puzzle.title;
@@ -2813,16 +2844,24 @@ function renderSettings(body) {
     themeSub.textContent = THEMES.find((t) => t.id === themeOr(settings.theme))?.blurb ?? '';
   };
   for (const t of THEMES) {
+    const unlocked = themeUnlocked(t.id, S.save);
     const b = document.createElement('button');
-    b.textContent = t.label;
-    b.className = themeOr(settings.theme) === t.id ? 'on' : '';
-    b.addEventListener('click', () => {
-      settings.theme = t.id;
-      applyTheme();
-      syncThemeSub();
-      [...themeSeg.children].forEach((c) => c.classList.toggle('on', c === b));
-      persist();
-    });
+    b.textContent = unlocked ? t.label : `🔒 ${t.label}`;
+    b.classList.toggle('on', unlocked && themeOr(settings.theme) === t.id);
+    b.classList.toggle('locked', !unlocked);
+    if (unlocked) {
+      b.addEventListener('click', () => {
+        settings.theme = t.id;
+        applyTheme();
+        syncThemeSub();
+        [...themeSeg.children].forEach((c) => c.classList.toggle('on', c === b));
+        persist();
+      });
+    } else {
+      // Earned, not chosen — inert until its puzzle is finished.
+      b.disabled = true;
+      b.title = 'Beat chapter one’s boss to unlock this look.';
+    }
     themeSeg.append(b);
   }
   syncThemeSub();
@@ -3362,6 +3401,122 @@ function syncNamed() {
 function syncSoundIcon() {
   document.querySelector('[data-act="settings"]')
     ?.classList.toggle('on', !!S.save.settings.sound);
+}
+
+/* ------------------------------------------------------------------- boss */
+
+// X's side of the last stone. Started when a boss stone loads unfinished, torn
+// down the instant it finishes or you leave. All of it is per-picture session
+// state on S.boss and board.bossLocks — never saved. The arithmetic lives in
+// boss.js; this is the clock and the consequences.
+
+function bossActive() {
+  return !!S.boss && !!S.puzzle && !S.finished && !document.hidden;
+}
+
+function isColourDisabled(i) {
+  const d = S.boss?.disabled;
+  return !!d && d.colour === i && performance.now() < d.end;
+}
+
+function cellLocked(id) {
+  const l = board.bossLocks;
+  return !!l && l.cells.has(id) && performance.now() < l.end;
+}
+
+function startBoss(id) {
+  stopBoss(); // never two fights at once
+  const entry = S.manifest.find((p) => p.id === id);
+  S.boss = { mult: difficultyMult(entry?.difficulty), disabled: null, timers: [] };
+  board.bossLocks = null;
+  // Regen ticks from the off; the hud counts down twice a second; the first
+  // spell holds back a grace beat so the fight opens on the drain alone, then
+  // settles into its own cadence.
+  S.boss.timers.push(setInterval(bossRegenTick, REGEN_INTERVAL_MS));
+  S.boss.timers.push(setInterval(syncBossHud, 500));
+  S.boss.timers.push(setTimeout(function armAttacks() {
+    if (!S.boss) return;
+    bossAttackTick();
+    S.boss.timers.push(setInterval(bossAttackTick, ATTACK_INTERVAL_MS));
+  }, FIRST_ATTACK_MS));
+  syncBossHud();
+}
+
+function stopBoss() {
+  if (!S.boss) return;
+  for (const t of S.boss.timers) { clearInterval(t); clearTimeout(t); }
+  S.boss = null;
+  board.bossLocks = null;
+  $('bossHud')?.classList.add('hidden');
+  syncTubs();
+}
+
+// X takes some painted cells back — chosen at random, un-filled, so the board
+// comes un-named all over rather than X reaching for your last stroke. The
+// count fades to nothing as the picture nears done (see boss.js), so this can
+// never outrun the ending.
+function bossRegenTick() {
+  if (!bossActive()) return;
+  const n = regenCount(S.cells.length, S.filled.size, S.boss.mult);
+  if (!n) return;
+  for (const id of pickWipeTargets([...S.filled], n)) {
+    const cell = S.cells[id];
+    if (!cell) continue;
+    S.filled.delete(id);
+    S.remaining[cell.colour]++;
+    board.markUnfilled(id);
+  }
+  board.bossPulse = performance.now(); // the board flinches when X takes cells back
+  // A colour that had been finished is back in play; if nothing paintable is in
+  // hand any more, reach for a tub that is.
+  if (S.selected < 0 || S.remaining[S.selected] === 0 || isColourDisabled(S.selected)) nextTub();
+  syncTubs();
+  persist(); // X's damage should survive a reload, not un-happen
+  ensureFrame();
+}
+
+// One spell: freeze the colour in hand, or freeze a third of what is left to
+// paint. X will not freeze your only remaining colour, or one already frozen,
+// so you are never left with nothing you can do.
+function bossAttackTick() {
+  if (!bossActive()) return;
+  const now = performance.now();
+  const others = S.remaining.filter((r, i) => r > 0 && i !== S.selected).length;
+  const canDisable = S.selected >= 0 && !isColourDisabled(S.selected) && others > 0;
+  if (chooseAttack(Math.random, canDisable) === 'colour') {
+    S.boss.disabled = { colour: S.selected, end: now + COLOUR_DISABLE_MS };
+    nextTub(); // step off the colour X just froze
+    toast({ icon: '✕', name: 'X takes a colour', desc: 'That paint won’t answer for a moment — use another.' });
+  } else {
+    const unfilled = S.cells.filter((c) => !S.filled.has(c.id) && !S.pending.has(c.id)).map((c) => c.id);
+    const locked = pickLockTargets(unfilled);
+    board.bossLocks = { cells: new Set(locked), end: now + CELL_LOCK_MS };
+    board.dirty = true;
+    toast({ icon: '✕', name: 'X freezes the board', desc: `${locked.length} cells crossed out — they thaw in a moment.` });
+  }
+  sfx.play('nope');
+  syncTubs();
+  ensureFrame();
+}
+
+// The health bar and the countdowns, twice a second. Also where the two spells
+// expire: reading their end here keeps the wiring in one place, and re-syncs the
+// tubs and the board the moment a freeze lifts.
+function syncBossHud() {
+  if (!S.boss) return;
+  const now = performance.now();
+  if (S.boss.disabled && now >= S.boss.disabled.end) { S.boss.disabled = null; syncTubs(); }
+  if (board.bossLocks && now >= board.bossLocks.end) { board.bossLocks = null; board.dirty = true; ensureFrame(); }
+
+  const hud = $('bossHud');
+  if (!hud) return;
+  hud.classList.remove('hidden');
+  const health = healthFraction(S.filled.size, S.cells.length);
+  hud.querySelector('.boss-health-fill').style.width = `${health * 100}%`;
+  const parts = [];
+  if (S.boss.disabled && now < S.boss.disabled.end) parts.push(`colour frozen ${Math.ceil((S.boss.disabled.end - now) / 1000)}s`);
+  if (board.bossLocks && now < board.bossLocks.end) parts.push(`board frozen ${Math.ceil((board.bossLocks.end - now) / 1000)}s`);
+  hud.querySelector('.boss-status').textContent = parts.join(' · ');
 }
 
 /* -------------------------------------------------------------- story mode */

@@ -23,12 +23,15 @@ import {
   CHUNKS, MIN_STEP, labL, rampFrom, randomStops, lerpHue, scramble, swap, isSolved, placedCount, partnerFor,
 } from '../src/overtime.js';
 // Aliased: THEMES is already taken further down by the picture-tag list.
-import { THEMES as APP_THEMES, DEFAULT_THEME, isTheme, themeOr } from '../src/themes.js';
+import { THEMES as APP_THEMES, DEFAULT_THEME, isTheme, themeOr, themeUnlocked } from '../src/themes.js';
 import {
   CHAPTERS, DEFAULT_CHAPTER, getChapter, chapterOr, defaultStory, nodeState,
-  isStoryPuzzle, openingSeen, sceneSeen, sceneKey,
+  isStoryPuzzle, isBossPuzzle, openingSeen, sceneSeen, sceneKey,
   onEnterScene, beforeStoneScene, pendingBoardScene,
 } from '../src/story.js';
+import {
+  healthFraction, regenCount, pickWipeTargets, pickLockTargets, chooseAttack, difficultyMult,
+} from '../src/boss.js';
 import { letterSVG, isSpeaker } from '../src/letters.js';
 import {
   COLOURS as SWAP_COLOURS, PAIRS as SWAP_PAIRS, scramble as swapScramble,
@@ -1086,6 +1089,112 @@ test('game.js plays a scene through the tour, and marks it seen up front', () =>
   assert.ok(seenAt > 0 && playAt > seenAt, 'a scene must be marked seen before it is played');
   assert.match(body, /persist\(true\)/, 'seen must be flushed immediately, not on the debounce');
   assert.ok(body.includes('notour'), 'the scene must be skipped under ?notour for the harnesses');
+});
+
+/* -------------------------------------------------------------- the boss */
+
+// The boss fight's arithmetic is pure — how healthy X is, how many cells it
+// takes, which it takes, which spell it throws — so all of it runs here. The
+// clock and the canvas are game.js's and checked structurally.
+
+const bossRng = (seed) => () => {
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+test('the boss stone is the boss, and nothing else is', () => {
+  assert.ok(isBossPuzzle('wrong-colour-day'), 'the chapter-one boss puzzle must read as the boss');
+  assert.equal(isBossPuzzle('blue-reportedly'), false, 'a normal stone is not the boss');
+  assert.equal(isBossPuzzle('koi-pond'), false, 'a free picture is not the boss');
+  // The boss id is the boss NODE's puzzle, not just any story puzzle.
+  const boss = getChapter(1).nodes.find((n) => n.kind === 'boss');
+  assert.ok(isBossPuzzle(boss.puzzle));
+});
+
+test('health is the fraction still unpainted', () => {
+  assert.equal(healthFraction(0, 100), 1, 'a blank picture is a boss at full health');
+  assert.equal(healthFraction(100, 100), 0, 'a finished picture is a dead boss');
+  assert.equal(healthFraction(25, 100), 0.75);
+  assert.equal(healthFraction(5, 0), 0, 'no cells → no health, no throw');
+});
+
+test('X weakens as it dies, and can never outrun the ending', () => {
+  // The load-bearing curve. Regen fades to nothing as the picture nears done,
+  // so the fight always converges — it can't strand you one tile short.
+  assert.equal(regenCount(100, 100, 1), 0, 'a nearly-finished board loses no more cells');
+  assert.equal(regenCount(100, 0, 1), 0, 'and a blank one has nothing to lose yet');
+  // Weakens as it dies: the closer to done, the fewer it takes (second half).
+  assert.ok(regenCount(200, 180, 1) < regenCount(200, 120, 1),
+    'X takes fewer cells the closer you are to winning');
+  // Never takes more than are actually painted.
+  for (let filled = 1; filled <= 100; filled++) {
+    assert.ok(regenCount(100, filled, 3) <= filled, `regen exceeded ${filled} painted cells`);
+  }
+  // Difficulty scales the bite.
+  assert.ok(difficultyMult('insane') > difficultyMult('normal'));
+  assert.ok(difficultyMult('normal') > difficultyMult('chunky'));
+  assert.equal(difficultyMult('what'), 1, 'an unknown tag is normal');
+  assert.ok(regenCount(400, 200, difficultyMult('insane')) >= regenCount(400, 200, difficultyMult('normal')));
+});
+
+test('X takes and freezes a bounded, distinct sample', () => {
+  const filled = Array.from({ length: 40 }, (_, i) => i);
+  const wipe = pickWipeTargets(filled, 6, bossRng(1));
+  assert.equal(wipe.length, 6);
+  assert.equal(new Set(wipe).size, 6, 'never the same cell twice');
+  for (const id of wipe) assert.ok(filled.includes(id));
+  assert.equal(pickWipeTargets(filled, 999, bossRng(2)).length, 40, 'asking for more than exist takes all');
+  assert.deepEqual(pickWipeTargets(filled, 0, bossRng(3)), []);
+
+  const unfilled = Array.from({ length: 30 }, (_, i) => i + 100);
+  const locked = pickLockTargets(unfilled, bossRng(4)); // default ~1/3
+  assert.equal(locked.length, 10, 'a freeze hits about a third');
+  assert.equal(new Set(locked).size, 10);
+});
+
+test('X cannot freeze a colour you are not holding', () => {
+  // With no colour to disable it always freezes cells; with one, either is fair.
+  assert.equal(chooseAttack(bossRng(5), false), 'cells');
+  const seen = new Set();
+  for (let s = 0; s < 40; s++) seen.add(chooseAttack(bossRng(s), true));
+  assert.ok(seen.has('colour') && seen.has('cells'), 'both spells come up when a colour is in hand');
+});
+
+test('the boss fight is wired: starts on the boss stone, ends when it dies, blocks its spells', () => {
+  const game = readSource('src/game.js');
+  assert.match(game, /if \(isBossPuzzle\(id\) && !S\.finished\) startBoss\(id\);/,
+    'loadPuzzle must start the fight on a boss stone, and only while unfinished');
+  const fin = game.slice(game.indexOf('function finish()'), game.indexOf('function nextPuzzle'));
+  assert.match(fin, /stopBoss\(\)/, 'finishing the picture must end the fight');
+  // The two spells are real walls in the paint path, and the frozen colour can't be picked.
+  assert.match(game, /if \(cellLocked\(target\.id\) \|\| isColourDisabled\(target\.colour\)\)/,
+    'tryPaint must refuse a frozen cell or a frozen colour');
+  assert.match(game, /if \(isColourDisabled\(i\)\)/, 'selectTub must refuse a frozen colour');
+  // Regen respects a hidden tab, so X can't wipe the board while you are away.
+  assert.match(game, /function bossActive\(\)[\s\S]*?!document\.hidden/,
+    'the fight must pause when the tab is hidden');
+});
+
+test('the earned theme is locked until its boss is beaten', () => {
+  // void and fae are always on; chorus is earned. themeUnlocked reads progress —
+  // the one source of truth — so a fresh save cannot wear it and a save with the
+  // boss done can.
+  const chorus = APP_THEMES.find((t) => t.unlockedBy);
+  assert.ok(chorus, 'a theme should be gated behind a puzzle');
+  assert.equal(themeUnlocked('void'), true, 'the default look is always available');
+  assert.equal(themeUnlocked('fae', { progress: {} }), true, 'the chapter look is not gated');
+  assert.equal(themeUnlocked(chorus.id, { progress: {} }), false, 'the earned look is locked on a fresh save');
+  assert.equal(themeUnlocked(chorus.id, undefined), false, 'a missing save reads as nothing earned');
+  const won = { progress: { [chorus.unlockedBy]: { done: true } } };
+  assert.equal(themeUnlocked(chorus.id, won), true, 'beating its boss unlocks it');
+  // The stylesheet actually implements it, and the picker gates it.
+  const css = readSource('src/styles.css');
+  assert.ok(css.includes(`[data-theme="${chorus.id}"]`), `styles.css has no block for "${chorus.id}"`);
+  const game = readSource('src/game.js');
+  assert.match(game, /themeUnlocked\(t\.id, S\.save\)/, 'the theme picker must gate on themeUnlocked');
+  assert.match(game, /THEMES\.find\(\(t\) => t\.unlockedBy === S\.puzzle\.id\)/, 'finishing a boss must announce its reward theme');
 });
 
 /* ------------------------------------------------------------- the swap */

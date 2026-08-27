@@ -130,6 +130,16 @@ const STORY_PUZZLES = new Set(
   CHAPTERS.flatMap((c) => c.nodes.map((n) => n.puzzle).filter(Boolean)),
 );
 
+// The boss stones' puzzle ids — the ones the boss fight runs on. A chapter has
+// exactly one, but a Set keeps the lookup the same shape as STORY_PUZZLES.
+const BOSS_PUZZLES = new Set(
+  CHAPTERS.flatMap((c) => c.nodes.filter((n) => n.kind === 'boss').map((n) => n.puzzle).filter(Boolean)),
+);
+
+export function isBossPuzzle(id) {
+  return BOSS_PUZZLES.has(id);
+}
+
 export function isChapter(id) {
   return BY_ID.has(id);
 }
