@@ -111,14 +111,14 @@
   {
     "id": "blue-reportedly",
     "title": "Blue, Reportedly",
-    "cells": 500,
-    "colours": 35,
+    "cells": 130,
+    "colours": 32,
     "thumb": [
-      "#884d13",
-      "#ba6d1e",
-      "#d79a40",
-      "#f7ba51",
-      "#fac55b"
+      "#874c13",
+      "#b86b1d",
+      "#d3953b",
+      "#f5b450",
+      "#f4cf7f"
     ],
     "difficulty": "normal",
     "themes": [
@@ -308,8 +308,8 @@
   {
     "id": "ees-doorway",
     "title": "Ee’s Doorway",
-    "cells": 577,
-    "colours": 40,
+    "cells": 168,
+    "colours": 34,
     "thumb": [
       "#652410",
       "#ce5832",

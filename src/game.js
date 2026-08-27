@@ -21,6 +21,10 @@ import { THEMES, DEFAULT_THEME, themeOr } from './themes.js';
 import {
   SECONDS as OT_SECONDS, CHUNKS, COLS, rampFrom, scramble, swap, isSolved, partnerFor,
 } from './overtime.js';
+import {
+  COLOURS as SWAP_COLOURS, PAIRS as SWAP_PAIRS, SECONDS as SWAP_SECONDS, COLS as SWAP_COLS,
+  scramble as swapScramble, swap as swapNames, isSolved as swapSolved,
+} from './swap.js';
 import { outlineSVG, outlineWeight } from './thumbnail.js';
 import { computePlayStats } from './playstats.js';
 import { Tour } from './tour.js';
@@ -71,6 +75,12 @@ const S = {
   // history: it is played at the canvas and never saved.
   ot: null,
   otOffered: false,
+  // The Swap — story mode's bonus round, Overtime's sibling. Same per-picture,
+  // never-saved shape. `named` is the boon it grants: a countdown of cells that
+  // fill themselves with their own colour, the colours answering again.
+  swap: null,
+  swapOffered: false,
+  named: 0,
   // Are we in the story surface right now? Runtime-only — which SCREEN they last
   // chose is persisted as save.story.mode; this is whether the board/pill/theme
   // are currently the story's, and it drives applyTheme().
@@ -104,6 +114,9 @@ function persist(immediate = false) {
         filled: [...S.filled],
         done: S.finished,
         seconds: Math.round(S.elapsedMs / 1000),
+        // The cell count this progress was taken at, so a later re-bake of the
+        // picture can tell the ids no longer line up and start it fresh.
+        cells: S.cells.length,
       };
     }
     S.save.unlocked = [...achievements.unlocked];
@@ -311,7 +324,17 @@ function sortPaletteByShade(puzzle) {
 async function loadPuzzle(id) {
   const puzzle = await api.loadPuzzle(id);
   sortPaletteByShade(puzzle);
-  const saved = S.save.progress[id] || { filled: [], done: false, seconds: 0 };
+  let saved = S.save.progress[id] || { filled: [], done: false, seconds: 0 };
+  // A re-baked picture renumbers every cell, so progress recorded against a
+  // different one is meaningless — a filled id now points at a different cell.
+  // Start fresh rather than paint phantom cells. New saves carry the count they
+  // were taken at; a save from before this field is caught when any filled id
+  // has fallen out of range, which a shrink to fewer, chunkier cells always does.
+  const count = puzzle.cells.length;
+  if ((saved.cells != null && saved.cells !== count) || saved.filled.some((n) => n >= count)) {
+    saved = { filled: [], done: false, seconds: 0 };
+    delete S.save.progress[id];
+  }
 
   S.puzzle = puzzle;
   S.cells = prepareCells(puzzle);
@@ -324,6 +347,11 @@ async function loadPuzzle(id) {
   S.ot = null;
   S.otOffered = false;
   closeOvertime();
+  S.swap = null;
+  S.swapOffered = false;
+  S.named = 0;
+  closeSwap();
+  syncNamed();
   S.selected = -1;
   S.revealFrom = S.finished ? 0 : -1;
   S.hintsThisPuzzle = 0;
@@ -497,6 +525,16 @@ function tryPaint(clientX, clientY, pointerType) {
   if (S.finished) return;
   const { point, cell } = pointerToCell(clientX, clientY);
 
+  // Named, the Swap's boon: the colours answer to their numbers again. A tap on
+  // any unfilled cell fills that cell's OWN colour, whatever tub is in hand —
+  // so retune the selection to the cell under the pointer and spend one charge.
+  // The wrong-colour buzz below then never fires, because the colours match.
+  if (S.named > 0 && cell && !S.filled.has(cell.id) && !S.pending.has(cell.id)) {
+    S.selected = cell.colour;
+    S.named--;
+    syncNamed();
+  }
+
   // Aimed squarely at an unpainted cell of another colour: that is a genuine
   // mistake and deserves the buzz, not a silent correction — unless Streak
   // Shield is up, which exists precisely to absorb one of these.
@@ -656,6 +694,7 @@ function commitFill(burst) {
   persist();
 
   if (S.filled.size === S.cells.length) finish();
+  else if (S.inStory && isStoryPuzzle(S.puzzle.id)) maybeOfferSwap();
   else maybeOfferOvertime();
 }
 
@@ -2994,6 +3033,253 @@ function tapChunk(slot) {
   if (isSolved(ot.order)) endOvertime(true);
 }
 
+/* ---------------------------------------------------------------- the swap */
+
+// Story mode's bonus round, offered by a chip the way Overtime is — but only on
+// a story stone, and never at the same time as Overtime (the call site in
+// commitFill picks one). Same once-per-picture, opt-out-able, ten-cells-in
+// gate.
+function maybeOfferSwap() {
+  if (S.swapOffered || S.swap || S.named > 0 || S.finished) return;
+  if (S.save.settings.overtime === false) return; // the shared bonus-round opt-out
+  if (S.filled.size < 10) return;
+  S.swapOffered = true;
+  $('swapChip').classList.remove('hidden');
+}
+
+function closeSwap() {
+  const el = $('swap');
+  if (el) {
+    el.classList.add('hidden');
+    el.textContent = '';
+  }
+  $('swapChip')?.classList.add('hidden');
+  if (S.swap?.timer) clearInterval(S.swap.timer);
+  S.swap = null;
+}
+
+// Opening the round shows the how-to panel first and does NOT start the clock —
+// the two minutes begin only when the player taps Begin (see beginSwap). The
+// panel is `started: false`; renderSwap draws whichever the flag calls for.
+function startSwap() {
+  if (S.swap || !S.puzzle) return;
+  $('swapChip').classList.add('hidden');
+  S.swap = {
+    order: swapScramble(SWAP_PAIRS),
+    picked: -1,
+    endsAt: 0,
+    timer: 0,
+    started: false,
+  };
+  renderSwap();
+}
+
+function beginSwap() {
+  if (!S.swap || S.swap.started) return;
+  S.swap.started = true;
+  S.swap.endsAt = Date.now() + SWAP_SECONDS * 1000;
+  renderSwap();
+  S.swap.timer = setInterval(tickSwap, 200);
+}
+
+function tickSwap() {
+  if (!S.swap) return;
+  const left = Math.max(0, S.swap.endsAt - Date.now());
+  const bar = $('swap').querySelector('.ot-time i');
+  if (bar) bar.style.width = `${(left / (SWAP_SECONDS * 1000)) * 100}%`;
+  const clock = $('swap').querySelector('.ot-clock');
+  if (clock) clock.textContent = clockText(left);
+  if (left <= 0) endSwap(false);
+}
+
+/** m:ss — the Swap runs long enough (two minutes) that a bare seconds count
+ *  would read as a meaninglessly large number. */
+function clockText(ms) {
+  const s = Math.ceil(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/**
+ * A win holds the board a beat, then arms Named. A loss lays each colour's own
+ * name under the board for the same beat — the only teaching the round offers,
+ * since nothing is said while the clock runs.
+ */
+function endSwap(won) {
+  if (!S.swap) return;
+  clearInterval(S.swap.timer);
+  S.swap.timer = 0;
+  const card = $('swap').querySelector('.ot-card');
+  card?.classList.add(won ? 'won' : 'lost');
+  if (!won) revealSwapAnswer(card);
+  sfx.play(won ? 'achievement' : 'nope');
+  setTimeout(() => {
+    closeSwap();
+    if (won) awardSwap();
+  }, won ? 1500 : 2600);
+}
+
+// Named: for the next stretch of cells, a tap on any of them fills its own
+// colour — the colours answering to their numbers again. Consumed in tryPaint.
+const NAMED_CELLS = 30;
+function awardSwap() {
+  S.named = NAMED_CELLS;
+  syncNamed();
+  toast({ icon: '✦', name: 'Named',
+    desc: `The colours answer again. The next ${NAMED_CELLS} cells you tap fill themselves.` },
+  '', { sticky: true });
+}
+
+/** The right pairing — each colour with its own name — under the attempt. */
+function revealSwapAnswer(card) {
+  if (!card) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'ot-answer';
+  const label = document.createElement('div');
+  label.className = 'ot-hint';
+  label.textContent = 'Their own names.';
+  const strip = document.createElement('div');
+  strip.className = 'swap-answer';
+  for (const colour of SWAP_COLOURS) {
+    const tag = document.createElement('div');
+    tag.className = 'swap-answer-tag';
+    tag.style.background = colour.hex;
+    const name = document.createElement('span');
+    name.textContent = colour.name;
+    tag.append(name);
+    strip.append(tag);
+  }
+  wrap.append(label, strip);
+  card.append(wrap);
+}
+
+function renderSwap() {
+  const el = $('swap');
+  el.textContent = '';
+  el.classList.remove('hidden');
+
+  const card = document.createElement('div');
+  card.className = 'ot-card swap-card';
+
+  // The how-to panel, shown before the clock. A story minigame the player has
+  // never seen needs its rules once, up front — the user asked for exactly this.
+  if (!S.swap.started) {
+    const h = document.createElement('div');
+    h.className = 'swap-how';
+    h.innerHTML =
+      '<div class="swap-how-title">The Swap</div>' +
+      '<div class="swap-how-body"></div>' +
+      '<div class="swap-how-demo"></div>' +
+      '<div class="swap-how-body two"></div>';
+    h.querySelector('.swap-how-body').textContent =
+      'The colours have forgotten their names. Every one is wearing another’s.';
+    h.querySelector('.swap-how-body.two').textContent =
+      'Tap two colours to trade the names they wear. Get every colour back to its own name before two minutes are up, and they’ll answer to you again.';
+    // A tiny two-swatch demo so the verb is shown, not only told.
+    const demo = h.querySelector('.swap-how-demo');
+    for (const [hex, nm] of [['#d83a2e', 'Blue'], ['#2f6fd6', 'Red']]) {
+      const s = document.createElement('div');
+      s.className = 'swatch demo';
+      s.style.background = hex;
+      const t = document.createElement('span');
+      t.className = 'swatch-tag';
+      t.textContent = nm;
+      s.append(t);
+      demo.append(s);
+    }
+    const begin = document.createElement('button');
+    begin.className = 'primary';
+    begin.textContent = 'Begin';
+    begin.addEventListener('click', beginSwap);
+    const quit = document.createElement('button');
+    quit.className = 'tour-skip';
+    quit.textContent = 'Not now';
+    quit.addEventListener('click', closeSwap);
+    const foot = document.createElement('div');
+    foot.className = 'swap-how-foot';
+    foot.append(quit, begin);
+    card.append(h, foot);
+    el.append(card);
+    return;
+  }
+
+  const head = document.createElement('div');
+  head.className = 'ot-head';
+  const title = document.createElement('div');
+  title.className = 'ot-title';
+  title.textContent = 'The Swap';
+  const clock = document.createElement('div');
+  clock.className = 'ot-clock';
+  clock.textContent = clockText(SWAP_SECONDS * 1000);
+  const quit = document.createElement('button');
+  quit.className = 'icon';
+  quit.textContent = '✕';
+  quit.title = 'Leave it';
+  quit.addEventListener('click', () => endSwap(false));
+  head.append(title, clock, quit);
+
+  const time = document.createElement('div');
+  time.className = 'ot-time';
+  time.append(document.createElement('i'));
+
+  const grid = document.createElement('div');
+  grid.className = 'swap-grid';
+  grid.style.gridTemplateColumns = `repeat(${SWAP_COLS}, 1fr)`;
+  for (let i = 0; i < S.swap.order.length; i++) {
+    const b = document.createElement('button');
+    b.className = 'swatch';
+    b.dataset.slot = String(i);
+    b.style.background = SWAP_COLOURS[i].hex;
+    const tag = document.createElement('span');
+    tag.className = 'swatch-tag';
+    b.append(tag);
+    b.addEventListener('click', () => tapSwatch(i));
+    grid.append(b);
+  }
+
+  const hint = document.createElement('div');
+  hint.className = 'ot-hint';
+  hint.textContent = 'Tap two colours to trade their names.';
+
+  card.append(head, time, grid, hint);
+  el.append(card);
+  paintSwatches();
+}
+
+/** Repaints the name tags from S.swap.order. Cheap enough to redo every tap. */
+function paintSwatches() {
+  const grid = $('swap').querySelector('.swap-grid');
+  if (!grid) return;
+  [...grid.children].forEach((b, i) => {
+    b.querySelector('.swatch-tag').textContent = SWAP_COLOURS[S.swap.order[i]].name;
+    b.classList.toggle('picked', i === S.swap.picked);
+  });
+}
+
+function tapSwatch(i) {
+  const sw = S.swap;
+  if (!sw || !sw.timer) return;
+  if (sw.picked === -1) {
+    sw.picked = i;
+    sfx.play('pick', 0);
+  } else if (sw.picked === i) {
+    sw.picked = -1;
+  } else {
+    sw.order = swapNames(sw.order, sw.picked, i);
+    sw.picked = -1;
+    sfx.play('pick', 3);
+  }
+  paintSwatches();
+  if (swapSolved(sw.order)) endSwap(true);
+}
+
+/** The little counter that shows Named is running, and hides when it is spent. */
+function syncNamed() {
+  const pill = $('namedPill');
+  if (!pill) return;
+  pill.classList.toggle('hidden', S.named <= 0);
+  if (S.named > 0) pill.textContent = `✦ Named ×${S.named}`;
+}
+
 function syncSoundIcon() {
   document.querySelector('[data-act="settings"]')
     ?.classList.toggle('on', !!S.save.settings.sound);
@@ -3222,6 +3508,9 @@ document.addEventListener('click', async (e) => {
       break;
     case 'overtime':
       startOvertime();
+      break;
+    case 'swap':
+      startSwap();
       break;
     case 'pictures': case 'trophies': case 'settings': case 'avatar':
       if (S.panel === act) closePanel();

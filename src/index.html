@@ -70,6 +70,16 @@
       </button>
       <div id="overtime" class="overtime hidden"></div>
 
+      <!-- The Swap: story mode's bonus. Give six colours back their names before
+           the clock runs out and they answer to you again. -->
+      <button id="swapChip" class="ot-chip swap-chip hidden" data-act="swap">
+        <span class="ot-chip-mark">✦</span>
+        <span class="ot-chip-text">The Swap<i>give the colours their names back</i></span>
+      </button>
+      <div id="swap" class="overtime swap-overlay hidden"></div>
+      <!-- Named counter: shows while the Swap's boon is being spent. -->
+      <div id="namedPill" class="named-pill hidden"></div>
+
       <!-- Shown only while a story stone is being painted: the way back to the
            path without leaving story mode. Mirrors the undo pill. -->
       <button id="storyPill" class="story-pill hidden" data-act="story-board"

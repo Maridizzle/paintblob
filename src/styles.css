@@ -2084,3 +2084,97 @@ button {
 }
 .story-pill:hover { background: rgba(var(--accent-rgb), 0.16); }
 .story-pill.hidden { display: none; }
+
+/* ================================================================ the swap */
+
+/* The Swap reuses Overtime's overlay, card, head, timer, hint and .won/.lost
+   holds. What's its own: the swatch board, the how-to panel, the answer strip,
+   and the Named counter. */
+
+.swap-grid { display: grid; gap: 8px; width: 100%; }
+/* A colour that has forgotten its name. The colour never moves — only the name
+   tag on it does — so it is a fixed tile, not a draggable one. */
+.swatch {
+  position: relative;
+  aspect-ratio: 3 / 2;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: transform 140ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 160ms;
+}
+.swatch:hover { transform: translateY(-2px); }
+.swatch.picked {
+  transform: translateY(-3px) scale(1.04);
+  box-shadow: 0 0 0 3px var(--accent), var(--glow-cyan);
+}
+/* The name it currently wears — a legible pill that reads over any hue. */
+.swatch-tag {
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.3px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 4px 12px;
+  border-radius: 999px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.swatch.demo { aspect-ratio: 3 / 2; width: 96px; cursor: default; }
+.swatch.demo:hover { transform: none; }
+
+/* The how-to panel, shown once before the clock starts. */
+.swap-how { display: flex; flex-direction: column; gap: 10px; align-items: center; text-align: center; padding: 4px 2px; }
+.swap-how-title {
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: 0.5px;
+  color: var(--accent);
+}
+.swap-how-body { font-size: 12.5px; line-height: 1.5; color: var(--muted); max-width: 320px; }
+.swap-how-demo { display: flex; gap: 12px; margin: 4px 0; }
+.swap-how-foot { display: flex; gap: 10px; justify-content: flex-end; align-items: center; margin-top: 6px; }
+
+/* The answer laid under a lost attempt: each colour beside its own name. */
+.swap-answer { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; }
+.swap-answer-tag {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 4px 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--edge);
+}
+.swap-answer-tag span {
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+/* The Named counter, parked opposite the story pill while the boon is spent. */
+.named-pill {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 15;
+  padding: 7px 13px;
+  border-radius: 999px;
+  border: 1px solid var(--accent2);
+  background: rgba(var(--chip-rgb), 0.86);
+  color: var(--accent2);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  box-shadow: var(--glow-cyan);
+  pointer-events: none;
+}
+.named-pill.hidden { display: none; }
+
+/* On a touchscreen the last swatch tapped would stay lifted and read as picked. */
+@media (pointer: coarse) {
+  .swatch:hover { transform: none; }
+  .swatch.picked:hover { transform: translateY(-3px) scale(1.04); }
+}

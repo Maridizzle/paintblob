@@ -29,6 +29,10 @@ import {
   isStoryPuzzle, openingSeen,
 } from '../src/story.js';
 import { letterSVG, isSpeaker } from '../src/letters.js';
+import {
+  COLOURS as SWAP_COLOURS, PAIRS as SWAP_PAIRS, scramble as swapScramble,
+  swap as swapNames, isSolved as swapSolved, placedCount as swapPlaced,
+} from '../src/swap.js';
 import { LIVING_EFFECTS } from '../src/render.js';
 import { Burst } from '../src/paint-fx.js';
 import {
@@ -1006,6 +1010,102 @@ test('game.js plays the opening through the tour, and marks it seen up front', (
   assert.ok(seenAt > 0 && playAt > seenAt, 'the opening must be marked seen before it is played');
   assert.match(body, /persist\(true\)/, 'seen must be flushed immediately, not on the debounce');
   assert.ok(body.includes('notour'), 'the scene must be skipped under ?notour for the harnesses');
+});
+
+/* ------------------------------------------------------------- the swap */
+
+// The Swap — story mode's minigame. Six colours each wearing another's name;
+// you trade them back. All the arithmetic is pure, like Overtime's, so it runs
+// here; the board and clock are drawn in game.js and checked structurally.
+
+const seededRngSwap = (seed) => () => {
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+test('the six colours are distinct, named, and unmistakable', () => {
+  assert.equal(SWAP_COLOURS.length, SWAP_PAIRS);
+  assert.equal(new Set(SWAP_COLOURS.map((c) => c.name)).size, SWAP_PAIRS, 'names must be unique');
+  assert.equal(new Set(SWAP_COLOURS.map((c) => c.hex)).size, SWAP_PAIRS, 'hues must be unique');
+  for (const c of SWAP_COLOURS) {
+    assert.match(c.hex, /^#[0-9a-f]{6}$/i, `${c.name} has a malformed hex`);
+    assert.ok(c.name && c.name.length, 'a colour has no name');
+  }
+});
+
+test('a scramble leaves not one colour wearing its own name', () => {
+  // The premise the how-to panel states: every colour is wrong. A single colour
+  // opening already correct would quietly contradict it — so, unlike Overtime,
+  // the shuffle must be a FULL derangement, not merely near-unsolved.
+  for (let seed = 1; seed <= 400; seed++) {
+    const order = swapScramble(SWAP_PAIRS, seededRngSwap(seed));
+    assert.deepEqual([...order].sort((a, b) => a - b), [...Array(SWAP_PAIRS).keys()],
+      `seed ${seed} is not a permutation: ${order}`);
+    assert.equal(swapPlaced(order), 0, `seed ${seed} opened with a colour already named: ${order}`);
+    assert.equal(swapSolved(order), false);
+  }
+  // A degenerate rng must still hand back a valid derangement, not spin out.
+  assert.equal(swapPlaced(swapScramble(SWAP_PAIRS, () => 0)), 0);
+});
+
+test('a swap is pure and undoes itself; solved and placed agree', () => {
+  const start = [...Array(SWAP_PAIRS).keys()];
+  const once = swapNames(start, 1, 4);
+  assert.deepEqual(start, [...Array(SWAP_PAIRS).keys()], 'swap mutated its input');
+  assert.equal(once[1], 4);
+  assert.equal(once[4], 1);
+  assert.deepEqual(swapNames(once, 1, 4), start, 'swapping the same pair back restores it');
+  assert.ok(swapSolved(start));
+  assert.equal(swapPlaced(start), SWAP_PAIRS);
+  assert.equal(swapSolved(once), false);
+  assert.equal(swapPlaced(once), SWAP_PAIRS - 2);
+});
+
+test('the Swap is story mode’s bonus, and Overtime is free mode’s', () => {
+  const game = readSource('src/game.js');
+  // One or the other is offered, never both, and the split is on the story.
+  assert.match(game, /else if \(S\.inStory && isStoryPuzzle\(S\.puzzle\.id\)\) maybeOfferSwap\(\);\s*\n\s*else maybeOfferOvertime\(\);/,
+    'commitFill must offer the Swap on a story stone and Overtime otherwise');
+  const offer = game.slice(game.indexOf('function maybeOfferSwap'), game.indexOf('function closeSwap'));
+  assert.match(offer, /S\.filled\.size < 10/, 'the Swap waits until the player is into the picture');
+  assert.match(offer, /S\.save\.settings\.overtime === false/, 'the Swap honours the bonus-round opt-out');
+});
+
+test('the Swap shows its rules before the clock, and reveals on a loss', () => {
+  const game = readSource('src/game.js');
+  // The how-to panel the user asked for: opening the round does NOT start the
+  // clock — beginSwap does, and only from the panel.
+  assert.match(game, /started: false/, 'startSwap must open on the how-to panel, clock not yet running');
+  const begin = game.slice(game.indexOf('function beginSwap'), game.indexOf('function tickSwap'));
+  assert.match(begin, /endsAt = Date\.now\(\) \+ SWAP_SECONDS \* 1000/, 'beginSwap starts the two minutes');
+  assert.match(begin, /setInterval\(tickSwap/, 'the clock only ticks once begun');
+  // A loss lays each colour beside its own name.
+  assert.match(game, /function revealSwapAnswer/, 'a lost round must show the right pairing');
+});
+
+test('Named answers a tap with the cell’s own colour, and is spent per cell', () => {
+  const game = readSource('src/game.js');
+  const body = game.slice(game.indexOf('function tryPaint'), game.indexOf('function launch'));
+  // The boon retunes the selection to the cell under the pointer (so no buzz)
+  // and spends one charge — before the wrong-colour check, or it would buzz.
+  assert.match(body, /if \(S\.named > 0 && cell && !S\.filled\.has\(cell\.id\) && !S\.pending\.has\(cell\.id\)\) \{\s*\n\s*S\.selected = cell\.colour;\s*\n\s*S\.named--;/,
+    'a Named tap must fill the cell’s own colour and cost one charge');
+  const namedAt = body.indexOf('S.named--');
+  const buzzAt = body.indexOf('deserves the buzz');
+  assert.ok(namedAt > 0 && namedAt < buzzAt, 'Named must resolve before the wrong-colour buzz');
+});
+
+test('a re-baked picture starts fresh instead of painting phantom cells', () => {
+  // The bug behind a story stone re-cut chunkier: progress is a list of cell
+  // ids, and a re-bake renumbers every cell, so the old ids point at different
+  // ones. loadPuzzle must notice and reset, and persist must record the count
+  // it can notice by.
+  const game = readSource('src/game.js');
+  assert.match(game, /saved\.cells != null && saved\.cells !== count\) \|\| saved\.filled\.some\(\(n\) => n >= count\)/,
+    'loadPuzzle must drop progress taken at a different cell count');
+  assert.match(game, /cells: S\.cells\.length,/, 'persist must record the cell count progress was taken at');
 });
 
 test('finishing a story stone leads back to the path, not out to the gallery', () => {
