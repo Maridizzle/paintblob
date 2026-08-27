@@ -16,7 +16,7 @@ import {
 import { grantPoints, spendPoints, levelForPoints, cumulativeForLevel } from '../src/points.js';
 import {
   ABILITIES, getDef, isUnlocked, defaultAbilityState, grantLevelUpCharges,
-  activate, isActive, consumeActive, NUMBER_RECOLOR_CYCLE, nextNumberRecolorIndex,
+  activate, isActive, consumeActive,
 } from '../src/abilities.js';
 import { WARDROBE_ITEMS } from '../src/wardrobe.js';
 import {
@@ -322,7 +322,7 @@ test('defaultAbilityState gives every ability a full charge pool up front', () =
 
 test('activate spends exactly one charge and refuses at zero', () => {
   const state = defaultAbilityState();
-  const def = getDef('precision-ping');
+  const def = getDef('colour-flash'); // Beacon
   for (let i = 0; i < def.maxCharges; i++) assert.equal(activate(state, def.id, 0), true);
   assert.equal(state[def.id].charges, 0);
   assert.equal(activate(state, def.id, 0), false);
@@ -330,38 +330,52 @@ test('activate spends exactly one charge and refuses at zero', () => {
 
 test('activate on an ability with a duration opens an active window isActive sees', () => {
   const state = defaultAbilityState();
-  activate(state, 'colour-surge', 1000);
-  assert.equal(isActive(state, 'colour-surge', 1500), true);
-  assert.equal(isActive(state, 'colour-surge', 1000 + getDef('colour-surge').durationMs + 1), false);
+  activate(state, 'focus', 1000);
+  assert.equal(isActive(state, 'focus', 1500), true);
+  assert.equal(isActive(state, 'focus', 1000 + getDef('focus').durationMs + 1), false);
 });
 
 test('activate on a zero-duration ability (an instant effect) opens no active window', () => {
   const state = defaultAbilityState();
-  activate(state, 'precision-ping', 1000);
-  assert.equal(isActive(state, 'precision-ping', 1000), false);
+  activate(state, 'prism', 1000); // instant fill
+  assert.equal(isActive(state, 'prism', 1000), false);
 });
 
-test('consumeActive ends a window early, e.g. Streak Shield used up by the click it protected', () => {
+test('consumeActive ends a window early', () => {
   const state = defaultAbilityState();
-  activate(state, 'streak-shield', 0);
-  assert.equal(isActive(state, 'streak-shield', 10), true);
-  consumeActive(state, 'streak-shield');
-  assert.equal(isActive(state, 'streak-shield', 10), false);
+  activate(state, 'focus', 0);
+  assert.equal(isActive(state, 'focus', 10), true);
+  consumeActive(state, 'focus');
+  assert.equal(isActive(state, 'focus', 10), false);
 });
 
 test('isUnlocked gates purely on level vs unlockLevel', () => {
-  const def = getDef('half-fill');
+  const def = getDef('half-fill'); // Floodgate
   assert.equal(isUnlocked(def, def.unlockLevel - 1), false);
   assert.equal(isUnlocked(def, def.unlockLevel), true);
 });
 
-test('abilities unlock one per level across 1..8, not clumped in the first few', () => {
-  // Guards the reported "level 3 with almost every ability" problem: the
-  // eight abilities must arrive one at a time, not six of them by level 3.
+test('abilities unlock one per level across 1..5, not clumped in the first few', () => {
+  // The five that survived the cull arrive one at a time as you climb, not all
+  // at once. (Guards the old "level 3 with almost every ability" complaint.)
   const levels = ABILITIES.map((a) => a.unlockLevel).sort((x, y) => x - y);
-  assert.deepEqual(levels, [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.deepEqual(levels, [1, 2, 3, 4, 5]);
   const atLevel3 = ABILITIES.filter((a) => isUnlocked(a, 3)).length;
   assert.equal(atLevel3, 3, 'level 3 should grant 3 abilities, not most of them');
+});
+
+test('the cut abilities are gone, and every survivor is a reveal, filter or fill', () => {
+  const ids = new Set(ABILITIES.map((a) => a.id));
+  for (const gone of ['precision-ping', 'number-recolor', 'steady-hand', 'golden-cell', 'colour-surge', 'streak-shield']) {
+    assert.ok(!ids.has(gone), `${gone} should have been cut`);
+  }
+  assert.deepEqual([...ids].sort(), ['colour-flash', 'explode', 'focus', 'half-fill', 'prism'].sort());
+  // And game.js wires each visible effect, and no longer reaches for the cut ones.
+  const game = readSource('src/game.js');
+  assert.match(game, /case 'focus':\s*\n\s*if \(S\.selected >= 0\) board\.setFocus\(/, 'Focus must grey the board');
+  assert.match(game, /case 'prism':[\s\S]*?fillOnePerColour\(\)/, 'Prism must fill one of every colour');
+  assert.match(game, /case 'explode':[\s\S]*?explodeHeldColour\(\)/, 'Explode must burst a third of the colour');
+  assert.ok(!/NUMBER_RECOLOR_CYCLE|markGolden|colour-surge/.test(game), 'no reference to a cut ability should remain');
 });
 
 test('grantLevelUpCharges refills one charge per level-up, capped at max, only once unlocked', () => {
@@ -390,16 +404,6 @@ test('half-fill only regains a charge every second level-up, per its slower leve
   assert.equal(state[def.id].charges, 0, 'one level-up since unlock is not enough yet');
   grantLevelUpCharges(state, L + 1);
   assert.equal(state[def.id].charges, 1, 'the second level-up since unlock grants the charge');
-});
-
-test('nextNumberRecolorIndex starts at red and wraps violet back to red', () => {
-  let i;
-  i = nextNumberRecolorIndex(i);
-  assert.equal(i, 0, 'first-ever activation lands on red');
-  for (let step = 1; step < NUMBER_RECOLOR_CYCLE.length; step++) i = nextNumberRecolorIndex(i);
-  assert.equal(i, NUMBER_RECOLOR_CYCLE.length - 1, 'cycled through every colour once');
-  i = nextNumberRecolorIndex(i);
-  assert.equal(i, 0, 'violet wraps back to red');
 });
 
 /* --------------------------------------------------------------- wardrobe */

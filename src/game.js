@@ -14,7 +14,6 @@ import { grantPoints, spendPoints, levelForPoints, pointsIntoLevel } from './poi
 import {
   ABILITIES, defaultAbilityState, getDef, isUnlocked, grantLevelUpCharges,
   activate as activateAbility, isActive as isAbilityActive, consumeActive,
-  NUMBER_RECOLOR_CYCLE, nextNumberRecolorIndex,
 } from './abilities.js';
 import { WARDROBE_ITEMS } from './wardrobe.js';
 import { THEMES, DEFAULT_THEME, themeOr } from './themes.js';
@@ -362,14 +361,6 @@ async function loadPuzzle(id) {
 
   streaks.reset();
   board.setPuzzle(puzzle, S.cells, S.filled);
-  // setPuzzle() just cleared numberOverride (correct — Colour Flash/Golden
-  // Cell reference the outgoing picture's own cells) but Number Recolor's
-  // colour choice is deliberately persistent across a puzzle switch, so it
-  // needs one explicit re-apply here.
-  const recolour = S.save.avatar.abilities['number-recolor'];
-  if (recolour?.colourIndex >= 0) {
-    board.setNumberOverride(NUMBER_RECOLOR_CYCLE[recolour.colourIndex].hex, 0, performance.now());
-  }
   board.reveal = S.finished ? 1 : 0;
   $('board').classList.toggle('done', S.finished);
   $('finish').classList.add('hidden');
@@ -614,13 +605,10 @@ function launch(cell, point) {
 
 function commitFill(burst) {
   const cell = burst.cell;
-  const wasGolden = board.goldenCell?.id === cell.id;
-  const goldenWas = wasGolden ? board.goldenCell : null;
   S.filled.add(cell.id);
   S.pending.delete(cell.id);
   S.remaining[cell.colour]--;
   board.markFilled(cell.id);
-  if (wasGolden) board.goldenCell = null;
 
   // Overtime's prize: for the rest of the picture, a fill takes the nearest
   // unfilled cell of the same colour with it. Applied here, before anything
@@ -649,9 +637,9 @@ function commitFill(burst) {
 
   // Points/levels: only a real successful click ever reaches commitFill —
   // tryPaint() returns early on every kind of miss — so this is structurally
-  // the one and only place points get granted.
-  const surging = isAbilityActive(S.save.avatar.abilities, 'colour-surge', Date.now());
-  const award = (wasGolden ? 5 : 1) * (surging ? 2 : 1);
+  // the one and only place points get granted. One point per cell, flat: the
+  // old 5x/2x multipliers went out with the abilities that granted them.
+  const award = 1;
   const beforeLevel = levelForPoints(S.save.stats.pointsEarned);
   grantPoints(S.save.stats, award);
   const afterLevel = levelForPoints(S.save.stats.pointsEarned);
@@ -686,7 +674,6 @@ function commitFill(burst) {
     points: award,
     muted,
     hint: hinted,
-    golden: wasGolden && goldenWas ? goldenWas : null,
   });
 
   syncTubs();
@@ -747,9 +734,6 @@ function undoLast() {
     stats.hints = Math.max(0, (stats.hints ?? 0) - 1);
     syncHints();
   }
-  // Golden Cell was cleared when the cell it marked got filled. If its window
-  // has not run out, that cell is still worth five points.
-  if (step.golden && step.golden.end > Date.now()) board.goldenCell = step.golden;
 
   // You are left holding the colour you just took back, which is nearly always
   // the one you were about to use again — and the fill may have emptied that
@@ -801,7 +785,7 @@ function autoFillHalfOfHeldColour() {
       cells: candidates.slice(0, n).map((c) => c.id),
       // Every one of them is free: none was counted in stats.cells above.
       free: n,
-      colour, points: 0, muted: false, hint: false, golden: null,
+      colour, points: 0, muted: false, hint: false,
     });
   }
   if (n && S.remaining[S.selected] === 0) {
@@ -814,6 +798,65 @@ function autoFillHalfOfHeldColour() {
   ensureFrame();
   if (S.filled.size === S.cells.length) finish();
   return n;
+}
+
+/**
+ * Fills a batch of cells outright, the way Floodgate does: no points, no cell
+ * credit, no streak — direct progress, one undo. Shared by the Prism and
+ * Explode abilities, which fill across several colours / a chosen third, so
+ * unlike half-fill it watches every colour it touches for a tub emptying.
+ */
+function fillCellsFree(cells) {
+  if (!cells.length || S.finished) return 0;
+  const emptied = new Set();
+  for (const cell of cells) {
+    S.filled.add(cell.id);
+    S.remaining[cell.colour]--;
+    board.markFilled(cell.id);
+    if (S.remaining[cell.colour] === 0) emptied.add(cell.colour);
+  }
+  S.history.push({
+    cells: cells.map((c) => c.id),
+    free: cells.length, // none was counted in stats.cells, so none comes back
+    colour: S.selected, points: 0, muted: false, hint: false,
+  });
+  if (emptied.size) achievements.award('tub-empty');
+  if (emptied.has(S.selected)) nextTub();
+  syncTubs();
+  syncUndo();
+  persist();
+  ensureFrame();
+  if (S.filled.size === S.cells.length) finish();
+  return cells.length;
+}
+
+/** Prism: one unfilled cell of every colour, so the whole picture takes a step
+ *  forward at once. */
+function fillOnePerColour() {
+  if (S.finished) return 0;
+  const picked = [];
+  for (let c = 0; c < S.puzzle.palette.length; c++) {
+    const cell = S.cells.find((x) => x.colour === c && !S.filled.has(x.id) && !S.pending.has(x.id));
+    if (cell) picked.push(cell);
+  }
+  return fillCellsFree(picked);
+}
+
+/** Explode: a third of the held colour's remaining cells, taken nearest-the-
+ *  middle first so the fill radiates outward rather than landing at random. */
+function explodeHeldColour() {
+  if (S.finished || S.selected < 0) return 0;
+  const pool = S.cells.filter(
+    (c) => c.colour === S.selected && !S.filled.has(c.id) && !S.pending.has(c.id),
+  );
+  if (!pool.length) return 0;
+  const cx = S.puzzle.width / 2;
+  const cy = S.puzzle.height / 2;
+  pool.sort((a, b) => Math.hypot(a.anchor.x - cx, a.anchor.y - cy)
+    - Math.hypot(b.anchor.x - cx, b.anchor.y - cy));
+  const n = Math.max(1, Math.ceil(pool.length / 3));
+  board.shockwave(cx, cy, performance.now()); // the burst the fill radiates from
+  return fillCellsFree(pool.slice(0, n));
 }
 
 function finish() {
@@ -964,7 +1007,7 @@ function frame(now) {
   // it eases to a stop by itself, so the loop drops back to the idle cadence
   // rather than being pinned at full rate forever.
   const busy = S.bursts.length > 0 || S.revealFrom > 0 || board.hintTarget
-    || board.colourFlash || board.goldenCell || board.living || board.liftMoving();
+    || board.colourFlash || board.focus || board.shock || board.living || board.liftMoving();
   if (busy || now - lastDraw > 33) {
     lastDraw = now;
     board.draw(S.bursts, now);
@@ -2403,36 +2446,27 @@ function triggerAbility(id) {
   }
 
   switch (id) {
-    case 'precision-ping': {
-      const target = pickHintTarget(S.cells, S.filled, S.selected);
-      if (target) board.showHint(target.id, performance.now());
-      break;
-    }
-    case 'number-recolor': {
-      const s = S.save.avatar.abilities['number-recolor'];
-      s.colourIndex = nextNumberRecolorIndex(s.colourIndex);
-      board.setNumberOverride(NUMBER_RECOLOR_CYCLE[s.colourIndex].hex, 0, performance.now());
-      break;
-    }
-    case 'colour-flash':
+    case 'colour-flash': // Beacon
       if (S.selected >= 0) board.flashColour(S.selected, performance.now(), def.durationMs);
       break;
-    case 'golden-cell': {
-      const pool = S.cells.filter((c) => c.colour === S.selected && !S.filled.has(c.id));
-      if (pool.length) {
-        const cell = pool[Math.floor(Math.random() * pool.length)];
-        board.markGolden(cell.id, def.durationMs, performance.now());
-      }
+    case 'focus':
+      if (S.selected >= 0) board.setFocus(S.selected, def.durationMs, performance.now());
+      break;
+    case 'prism': {
+      const n = fillOnePerColour();
+      toast({ icon: def.icon, name: def.name, desc: `One of every colour — ${n} cells` });
       break;
     }
-    case 'half-fill': {
+    case 'explode': {
+      const n = explodeHeldColour();
+      toast({ icon: def.icon, name: def.name, desc: n ? `${n} cells burst outward` : 'Nothing of that colour left' });
+      break;
+    }
+    case 'half-fill': { // Floodgate
       const n = autoFillHalfOfHeldColour();
-      toast({ icon: def.icon, name: def.name, desc: `Auto-painted ${n} cells` });
+      toast({ icon: def.icon, name: def.name, desc: `Half your colour — ${n} cells` });
       break;
     }
-    // steady-hand, colour-surge, streak-shield: the activation window set by
-    // activateAbility() above IS the whole effect — tryPaint()/commitFill()
-    // read it back directly via isAbilityActive()/consumeActive().
     default:
       break;
   }
