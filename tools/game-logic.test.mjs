@@ -20,7 +20,7 @@ import {
 } from '../src/abilities.js';
 import { WARDROBE_ITEMS } from '../src/wardrobe.js';
 import {
-  CHUNKS, MIN_STEP, labL, rampFrom, lerpHue, scramble, swap, isSolved, placedCount, partnerFor,
+  CHUNKS, MIN_STEP, labL, rampFrom, randomStops, lerpHue, scramble, swap, isSolved, placedCount, partnerFor,
 } from '../src/overtime.js';
 // Aliased: THEMES is already taken further down by the picture-tag list.
 import { THEMES as APP_THEMES, DEFAULT_THEME, isTheme, themeOr } from '../src/themes.js';
@@ -1089,6 +1089,23 @@ test('the Swap shows its rules before the clock, and reveals on a loss', () => {
   assert.match(game, /function revealSwapAnswer/, 'a lost round must show the right pairing');
 });
 
+test('Overtime shows its rules before the clock too', () => {
+  const game = readSource('src/game.js');
+  // Same how-to contract as the Swap: startOvertime opens the panel and starts
+  // NOTHING — no clock until Begin. The timer lived inside startOvertime before;
+  // it must have moved out to beginOvertime, or the sixty seconds run behind the
+  // instructions and the panel is a lie.
+  const start = game.slice(game.indexOf('function startOvertime'), game.indexOf('function beginOvertime'));
+  assert.ok(start.length > 50, 'startOvertime has moved or gone');
+  assert.match(start, /started: false/, 'startOvertime must open on the how-to panel');
+  assert.ok(!/setInterval/.test(start), 'the clock must not start until Begin');
+  const begin = game.slice(game.indexOf('function beginOvertime'), game.indexOf('function tickOvertime'));
+  assert.match(begin, /endsAt = Date\.now\(\) \+ OT_SECONDS \* 1000/, 'beginOvertime starts the sixty seconds');
+  assert.match(begin, /setInterval\(tickOvertime/, 'the clock only ticks once begun');
+  // renderOvertime draws the panel off the started flag.
+  assert.match(game, /function renderOvertime[\s\S]*?if \(!S\.ot\.started\)/, 'renderOvertime must branch on the how-to panel');
+});
+
 test('Named answers a tap with the cell’s own colour, and is spent per cell', () => {
   const game = readSource('src/game.js');
   const body = game.slice(game.indexOf('function tryPaint'), game.indexOf('function launch'));
@@ -1184,6 +1201,34 @@ test('the ramp is orderable: fifteen distinct steps, always climbing', () => {
   }
 });
 
+test('a random gradient is a different puzzle but never an unsolvable one', () => {
+  // The point of randomStops is variety — a fresh colour family every round
+  // instead of the theme's one gradient forever. The thing that must NOT vary
+  // is the answer key: however the hue and saturation come out, the fifteen
+  // steps still have to climb in L* by at least MIN_STEP, or the round has no
+  // findable order. Sweep a few hundred seeds and hold every one to the same
+  // invariant the themed ramps are held to above.
+  const seen = new Set();
+  for (let seed = 0; seed < 400; seed++) {
+    const stops = randomStops(seededRng(seed));
+    assert.ok(stops.length === 2 || stops.length === 3, `seed ${seed} gave ${stops.length} stops`);
+    for (const s of stops) {
+      assert.ok(Number.isFinite(s.h) && s.h >= 0 && s.h < 360, `seed ${seed} hue ${s.h}`);
+      assert.ok(s.s >= 0.46 && s.s <= 0.8, `seed ${seed} sat ${s.s}`);
+    }
+    const ramp = rampFrom(stops);
+    assert.equal(ramp.length, CHUNKS);
+    assert.equal(new Set(ramp).size, CHUNKS, `seed ${seed} repeats a colour`);
+    for (let i = 1; i < ramp.length; i++) {
+      const step = labL(ramp[i]) - labL(ramp[i - 1]);
+      assert.ok(step >= MIN_STEP, `seed ${seed} climbs only ${step.toFixed(2)} between ${i - 1} and ${i}`);
+    }
+    seen.add(Math.round(hueOf(ramp[7]))); // the middle chunk's hue stands in for the family
+  }
+  // Variety actually happened: the swept rounds did not all land on one hue.
+  assert.ok(seen.size > 40, `only ${seen.size} distinct mid-hues across 400 rounds — not varied enough`);
+});
+
 test('L* is perceived lightness, not a byte average', () => {
   // The anchors CIE defines: black is 0, white is 100, and mid-grey — sRGB
   // #777777, half way up in bytes — sits at 50, not at the 47 a naive average
@@ -1276,33 +1321,31 @@ test('a swap is pure, and undoes itself', () => {
   assert.equal(placedCount(once), CHUNKS - 2);
 });
 
-test('the ramp is drawn from the theme and never from the picture', () => {
-  // The version this replaced took its hue from the picture's commonest paint,
-  // which under Tee Vibes put a navy tray in a magenta room. The theme tokens
-  // are the only source now, and getComputedStyle is the only way to read one
-  // that a [data-theme] block has overridden.
+test('the ramp is drawn fresh each round, never from the theme or the picture', () => {
+  // Two earlier sources are both gone. The first took its hue from the
+  // picture's commonest paint, which put a navy tray in a magenta room; the
+  // second took it from the theme tokens, which was steady but meant the same
+  // gradient every single round under a given room. Now startOvertime builds
+  // the ramp from randomStops, so it varies play to play and belongs to
+  // neither the room nor the picture.
   const game = readSource('src/game.js');
-  const body = game.slice(game.indexOf('function overtimeStops'),
-    game.indexOf('function maybeOfferOvertime'));
-  assert.ok(body.length > 100, 'overtimeStops has moved or gone');
-  assert.match(body, /getComputedStyle\(document\.documentElement\)/,
-    'the stops must be read off the live root, not off a constant');
-  const TOKENS = ['--accent', '--hot', '--accent2'];
-  for (const token of TOKENS) assert.ok(body.includes(token), `${token} is no longer a stop`);
-  assert.ok(!/getImageData|drawImage|canvas/i.test(body),
+  const start = game.slice(game.indexOf('function startOvertime'),
+    game.indexOf('function tickOvertime'));
+  assert.match(start, /ramp:\s*rampFrom\(randomStops\(\)\)/,
+    'the ramp must be built from randomStops, fresh each round');
+  assert.ok(!/getComputedStyle|--accent|--hot|--accent2/.test(start),
+    'the round no longer reads the theme tokens — that was the every-round-the-same bug');
+  assert.ok(!/getImageData|drawImage|canvas/i.test(start),
     'the round must not go near the picture: it plays over blind ones too');
-  // overtimeStops drops anything that is not a six-digit hex, so a theme
-  // writing rgb() or #abc for one of these would silently lose a stop and the
-  // ramp would quietly fall back to a shorter one. Every theme owes all three.
-  const css = readSource('src/styles.css');
-  for (const t of APP_THEMES) {
-    const at = t.id === DEFAULT_THEME ? css.indexOf(':root {') : css.indexOf(`[data-theme="${t.id}"]`);
-    const block = css.slice(at, css.indexOf('\n}', at));
-    for (const token of TOKENS) {
-      assert.match(block, new RegExp(`\\${token}:\\s*#[0-9a-f]{6}\\s*;`, 'i'),
-        `theme "${t.id}" does not give ${token} as a six-digit hex`);
-    }
-  }
+  // randomStops is arithmetic, not chrome — it has to run in node beside the
+  // rest of overtime.js, so it may not reach for the DOM the way the old
+  // theme-reading stops did.
+  const ot = readSource('src/overtime.js');
+  const fn = ot.slice(ot.indexOf('export function randomStops'),
+    ot.indexOf('/* --------------------------------------------------------------- ordering */'));
+  assert.ok(fn.length > 100, 'randomStops has moved or gone');
+  assert.ok(!/document|getComputedStyle|window/.test(fn),
+    'randomStops must stay pure — no DOM');
 });
 
 test('undo only takes back the cells that were counted', () => {

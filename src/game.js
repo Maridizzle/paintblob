@@ -18,7 +18,7 @@ import {
 import { WARDROBE_ITEMS } from './wardrobe.js';
 import { THEMES, DEFAULT_THEME, themeOr } from './themes.js';
 import {
-  SECONDS as OT_SECONDS, CHUNKS, COLS, rampFrom, scramble, swap, isSolved, partnerFor,
+  SECONDS as OT_SECONDS, CHUNKS, COLS, rampFrom, randomStops, scramble, swap, isSolved, partnerFor,
 } from './overtime.js';
 import {
   COLOURS as SWAP_COLOURS, PAIRS as SWAP_PAIRS, SECONDS as SWAP_SECONDS, COLS as SWAP_COLS,
@@ -2872,29 +2872,6 @@ function applyTheme() {
 /* ------------------------------------------------------------- overtime */
 
 /**
- * The stops the ramp runs between, taken from the live theme so a round always
- * looks like the room it is played in — magenta into gold under Tee Vibes,
- * cyan into green under Void. Story mode will pass a chapter's colours here
- * instead, and nothing else about the round has to change.
- *
- * Only hue and saturation are read: rampFrom throws the stops' own lightness
- * away and climbs evenly instead, which is what gives the puzzle a defensible
- * answer.
- */
-function overtimeStops() {
-  const css = getComputedStyle(document.documentElement);
-  const stops = [];
-  for (const token of ['--accent', '--hot', '--accent2']) {
-    const hex = css.getPropertyValue(token).trim();
-    if (/^#[0-9a-f]{6}$/i.test(hex)) {
-      const { h, s } = hexToHsl(hex);
-      stops.push({ h, s: Math.max(0.35, s) });
-    }
-  }
-  return stops;
-}
-
-/**
  * Offers it, once per picture, and only ever as a chip. A sixty-second
  * takeover of a toy that floats on your desktop would be the most annoying
  * thing in it, so this never starts anything by itself.
@@ -2922,16 +2899,28 @@ function closeOvertime() {
   S.ot = null;
 }
 
+// Opening the round shows the how-to panel first and does NOT start the clock —
+// the sixty seconds begin only when the player taps Begin (see beginOvertime),
+// exactly as the Swap does. `started: false` is the flag renderOvertime draws
+// off; a fresh ramp is generated here so the how-to's own demo can show it.
 function startOvertime() {
   if (S.ot || !S.puzzle) return;
   $('overtimeChip').classList.add('hidden');
   S.ot = {
-    ramp: rampFrom(overtimeStops()),
+    ramp: rampFrom(randomStops()),
     order: scramble(CHUNKS),
     picked: -1,
-    endsAt: Date.now() + OT_SECONDS * 1000,
+    endsAt: 0,
     timer: 0,
+    started: false,
   };
+  renderOvertime();
+}
+
+function beginOvertime() {
+  if (!S.ot || S.ot.started) return;
+  S.ot.started = true;
+  S.ot.endsAt = Date.now() + OT_SECONDS * 1000;
   renderOvertime();
   S.ot.timer = setInterval(tickOvertime, 200);
 }
@@ -2999,6 +2988,50 @@ function renderOvertime() {
 
   const card = document.createElement('div');
   card.className = 'ot-card';
+
+  // The how-to panel, shown before the clock. Overtime is a puzzle whose rules
+  // are not obvious from looking at it — a wall of one colour, no numbers — so
+  // like the Swap it explains itself once, up front, and only starts the sixty
+  // seconds when the player taps Begin. The user asked for exactly this.
+  if (!S.ot.started) {
+    const h = document.createElement('div');
+    h.className = 'ot-how';
+    h.innerHTML =
+      '<div class="ot-how-title">Overtime</div>' +
+      '<div class="ot-how-body"></div>' +
+      '<div class="ot-how-demo"></div>' +
+      '<div class="ot-how-body two"></div>';
+    h.querySelector('.ot-how-body').textContent =
+      'Fifteen shades of one colour, shuffled out of order.';
+    h.querySelector('.ot-how-body.two').textContent =
+      'Put them back darkest-to-lightest — darkest on the left. Tap two to trade '
+      + 'them. Get the whole run right before sixty seconds are up and every cell '
+      + 'you fill next takes its neighbour with it.';
+    // The demo is the round's own ramp, in order and cut down to a handful — the
+    // goal shown as a picture, dark climbing to light, not only described.
+    const demo = h.querySelector('.ot-how-demo');
+    const pick = [0, 3, 6, 9, 12, 14]; // ends included, evenly through the middle
+    for (const i of pick) {
+      const chip = document.createElement('div');
+      chip.className = 'ot-how-chip';
+      chip.style.background = S.ot.ramp[i];
+      demo.append(chip);
+    }
+    const begin = document.createElement('button');
+    begin.className = 'primary';
+    begin.textContent = 'Begin';
+    begin.addEventListener('click', beginOvertime);
+    const quit = document.createElement('button');
+    quit.className = 'tour-skip';
+    quit.textContent = 'Not now';
+    quit.addEventListener('click', closeOvertime);
+    const foot = document.createElement('div');
+    foot.className = 'ot-how-foot';
+    foot.append(quit, begin);
+    card.append(h, foot);
+    el.append(card);
+    return;
+  }
 
   const head = document.createElement('div');
   head.className = 'ot-head';

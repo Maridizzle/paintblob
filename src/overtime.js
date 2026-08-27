@@ -171,6 +171,29 @@ export function rampFrom(stops, n = CHUNKS) {
   return out;
 }
 
+/**
+ * A fresh gradient every round, so the ordering task is a new one each time
+ * rather than the same magenta-into-gold under Tee Vibes forever. What varies
+ * is the only thing that can: hue and saturation. The lightness climb is fixed
+ * by rampFrom — that is the answer key, and it has to stay put — so a round is
+ * a different colour family, a wider or tighter hue sweep, sometimes bent
+ * through a third stop, but always the same even climb the eye is asked to read.
+ *
+ * Every combination is safe by construction: rampFrom solves each chunk onto
+ * its exact target L* whatever the hue and saturation, so the MIN_STEP
+ * separation the round rests on holds for any stops this returns. `rng` is
+ * injectable so the tests can sweep it.
+ */
+export function randomStops(rng = Math.random) {
+  const base = rng() * 360;                 // which colour family this round lives in
+  const arc = 42 + rng() * 96;              // 42..138° of hue travelled across the ramp
+  const dir = rng() < 0.5 ? 1 : -1;         // up or down the wheel
+  const three = rng() < 0.5;                // half the rounds bend through a middle stop
+  const sat = () => 0.46 + rng() * 0.34;    // vivid, never washed out — its own value per stop
+  const at = (f) => ({ h: (((base + dir * arc * f) % 360) + 360) % 360, s: sat() });
+  return three ? [at(0), at(0.5), at(1)] : [at(0), at(1)];
+}
+
 /* --------------------------------------------------------------- ordering */
 
 // An `order` is slot -> chunk: order[3] is the chunk currently sitting in the
