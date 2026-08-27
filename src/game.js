@@ -25,6 +25,10 @@ import { outlineSVG, outlineWeight } from './thumbnail.js';
 import { computePlayStats } from './playstats.js';
 import { Tour } from './tour.js';
 import {
+  getChapter, chapterOr, defaultStory, nodeState, isStoryPuzzle, openingSeen,
+} from './story.js';
+import { letterSVG } from './letters.js';
+import {
   ROOMS, HOUSE_ITEMS, LIGHTING, PETS, PROP_SLOTS, SLOT_LABEL,
   defaultHouse, itemsFor, starterFor, buildRoomSVG, colourablesIn, colourKey,
   PET_NEEDS, defaultPetStats, applyPetDecay, carePet, petMood,
@@ -67,6 +71,10 @@ const S = {
   // history: it is played at the canvas and never saved.
   ot: null,
   otOffered: false,
+  // Are we in the story surface right now? Runtime-only — which SCREEN they last
+  // chose is persisted as save.story.mode; this is whether the board/pill/theme
+  // are currently the story's, and it drives applyTheme().
+  inStory: false,
   avatarTab: 'customize', // UI-only, not persisted — resets to Customize each time the panel opens
   abilityFan: false,      // is the ability pop-up up? Also UI-only: always starts down
   // How the Pictures list is filtered. UI-only, like the two above: it resets
@@ -105,6 +113,7 @@ function persist(immediate = false) {
       settings: S.save.settings,
       unlocked: S.save.unlocked,
       avatar: S.save.avatar,
+      story: S.save.story,
     });
   };
   if (immediate) flush();
@@ -343,6 +352,7 @@ async function loadPuzzle(id) {
   syncCompare(); // ditto showSource
   syncUndo(); // history was just cleared, so this always hides it
   if (!S.finished) nextTub();
+  syncStoryPill(); // a story stone gets the way-back-to-the-path pill
 
   S.save.settings.lastPuzzle = id;
   persist();
@@ -810,7 +820,10 @@ function finish() {
 
 async function nextPuzzle() {
   if (!S.manifest.length) return;
-  const order = S.manifest.map((p) => p.id);
+  // Free mode's "next" walks the gallery, so it skips story stones the way the
+  // gallery does — the board is the only way into one.
+  const order = S.manifest.map((p) => p.id).filter((id) => !isStoryPuzzle(id));
+  if (!order.length) return;
   const start = order.indexOf(S.puzzle?.id);
   const unfinished = order.find((id, i) =>
     i !== start && !(S.save.progress[id]?.done));
@@ -1141,6 +1154,11 @@ function renderPictures(body) {
   body.append(bar, list, empty);
 
   for (const p of S.manifest) {
+    // A story stone is not a free-play picture: it belongs to the board, and
+    // showing it in the gallery would both spoil the chapter's order and let you
+    // paint it out of story. It joins the gallery once you have finished it,
+    // which is a small reward and lets you paint it again.
+    if (isStoryPuzzle(p.id) && !S.save.progress[p.id]?.done) continue;
     const progress = S.save.progress[p.id];
     const done = progress?.done;
     const painted = progress?.filled?.length ?? 0;
@@ -2766,7 +2784,11 @@ function renderSettings(body) {
 /** The only place a theme is applied: every colour in the app comes from the
  *  tokens this attribute swaps, so there is nothing else to keep in step. */
 function applyTheme() {
-  document.documentElement.dataset.theme = themeOr(S.save.settings.theme);
+  // In the story, the chapter's own look wins over the player's chosen theme —
+  // without overwriting it, so free mode goes back to what they picked. Out of
+  // the story, their setting rules.
+  const id = S.inStory ? getChapter(S.save.story.chapter).theme : S.save.settings.theme;
+  document.documentElement.dataset.theme = themeOr(id);
 }
 /* ------------------------------------------------------------- overtime */
 
@@ -2971,6 +2993,186 @@ function syncSoundIcon() {
     ?.classList.toggle('on', !!S.save.settings.sound);
 }
 
+/* -------------------------------------------------------------- story mode */
+
+// The login menu. Continue is offered only to a player who has been here
+// before — a first launch simply chooses between the two modes — and it is
+// first, as the returning player's one-tap way back in.
+function showTitle() {
+  $('titleTag').textContent = S.save.story.mode
+    ? 'Welcome back.'
+    : 'The colours stopped answering to their names.';
+
+  const actions = $('titleActions');
+  actions.textContent = '';
+  const add = (label, sub, primary, fn) => {
+    const b = document.createElement('button');
+    b.className = `title-btn${primary ? ' primary' : ''}`;
+    b.innerHTML = '<span class="title-btn-label"></span><span class="title-btn-sub"></span>';
+    b.querySelector('.title-btn-label').textContent = label;
+    b.querySelector('.title-btn-sub').textContent = sub;
+    b.addEventListener('click', fn);
+    actions.append(b);
+  };
+
+  if (S.save.story.mode) {
+    const story = S.save.story.mode === 'story';
+    add('Continue', story ? 'Back to the Sampler' : 'Back to painting', true,
+      () => (story ? enterStory() : enterFree()));
+  }
+  add('Story mode', 'The colours are on strike', !S.save.story.mode, () => enterStory());
+  add('Free mode', 'Just paint', false, () => enterFree());
+
+  $('title').classList.remove('hidden');
+}
+
+function hideTitle() { $('title').classList.add('hidden'); }
+
+// Free mode: the classic gallery over whatever picture is loaded.
+function enterFree() {
+  S.inStory = false;
+  S.save.story.mode = 'free';
+  hideTitle();
+  closeStoryBoard();
+  applyTheme();
+  syncStoryPill();
+  persist(true);
+  // The painting tutorial belongs to free mode — story has Y and the opening
+  // scene instead. Guarded inside, so it only ever runs on a genuine first run.
+  maybeFirstRunTour();
+}
+
+// Story mode: the chapter's look, its opening the first time, then the board.
+async function enterStory() {
+  S.inStory = true;
+  S.save.story.mode = 'story';
+  hideTitle();
+  applyTheme();
+  persist(true);
+  await maybeStoryOpening(S.save.story.chapter);
+  openStoryBoard();
+}
+
+// Plays a chapter's opening the first time it is entered, then resolves. Marked
+// seen up front — like the tour — so a reload mid-scene cannot replay it, and
+// skipped under ?notour so the headless harnesses are never sat on.
+function maybeStoryOpening(chapter) {
+  return new Promise((resolve) => {
+    if (/[?&]notour\b/.test(location.search) || openingSeen(S.save.story, chapter)) {
+      resolve();
+      return;
+    }
+    S.save.story.seen[chapter] = true;
+    persist(true);
+    startStoryScene(chapter, resolve);
+  });
+}
+
+// The opening as a run of centred tour cards, the squirrel swapped for whoever
+// is speaking. Reuses the whole tour mechanism — dots, Skip, keyboard, the
+// held race guard — for nothing but the character swap tour.js now allows.
+function startStoryScene(chapter, onDone) {
+  const steps = getChapter(chapter).opening.map((beat) => ({
+    target: null, title: beat.title, body: beat.body, character: letterSVG(beat.speaker),
+  }));
+  closeAbilityFan();
+  tour?.end();
+  tour = new Tour($('app'));
+  setTimeout(() => tour.start(steps, { finishLabel: 'To the path', onEnd: () => onDone?.() }), 0);
+}
+
+// Where the seven stones sit on the board, first to last — a thread winding up
+// the cloth. Percentages of the path box, hand-placed so the walk climbs.
+const STONE_SPOTS = [
+  [30, 90], [64, 81], [39, 69], [69, 56], [33, 44], [61, 31], [48, 16],
+];
+
+function openStoryBoard() {
+  S.inStory = true;
+  applyTheme();
+  renderStoryBoard();
+  $('storyBoard').classList.remove('hidden');
+  syncStoryPill();
+}
+
+function closeStoryBoard() {
+  $('storyBoard').classList.add('hidden');
+}
+
+function renderStoryBoard() {
+  const ch = getChapter(S.save.story.chapter);
+  $('storyChapter').textContent = `Chapter One · ${ch.title}`;
+  const path = $('storyPath');
+  path.textContent = '';
+
+  // The thread through the stones, drawn behind them. An SVG built through the
+  // DOM API rather than innerHTML so the CSP never has to trust a string; the
+  // one path inside it carries only presentation attributes, which it allows.
+  const spots = ch.nodes.map((_, i) => STONE_SPOTS[i] ?? [50, 50]);
+  const d = spots.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join(' ');
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'story-thread');
+  svg.setAttribute('viewBox', '0 0 100 100');
+  svg.setAttribute('preserveAspectRatio', 'none');
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  line.setAttribute('d', d);
+  line.setAttribute('fill', 'none');
+  line.setAttribute('stroke', 'rgba(var(--accent-rgb), 0.5)');
+  line.setAttribute('stroke-width', '0.7');
+  line.setAttribute('stroke-linecap', 'round');
+  line.setAttribute('stroke-dasharray', '1.6 2.4');
+  svg.append(line);
+  path.append(svg);
+
+  // Y stands by the first stone, watching the walk.
+  const guide = document.createElement('div');
+  guide.className = 'story-guide';
+  guide.innerHTML = letterSVG('Y');
+  guide.style.left = `${STONE_SPOTS[0][0] - 15}%`;
+  guide.style.top = `${STONE_SPOTS[0][1] - 4}%`;
+  path.append(guide);
+
+  ch.nodes.forEach((node, i) => {
+    const [x, y] = STONE_SPOTS[i] ?? [50, 50];
+    const state = nodeState(node, S.save);
+    const wrap = document.createElement('div');
+    wrap.className = 'stone-wrap';
+    wrap.style.left = `${x}%`;
+    wrap.style.top = `${y}%`;
+
+    const b = document.createElement('button');
+    b.className = `stone stone-${state}${node.kind === 'boss' ? ' boss' : ''}`;
+    const mark = document.createElement('span');
+    mark.className = 'stone-mark';
+    mark.textContent = state === 'done' ? '✓' : state === 'locked' ? '🔒' : String(i + 1);
+    b.append(mark);
+    if (state === 'open' || state === 'done') b.addEventListener('click', () => openStone(node));
+    else b.disabled = true;
+
+    const label = document.createElement('div');
+    label.className = 'stone-label';
+    label.textContent = node.title;
+
+    wrap.append(b, label);
+    path.append(wrap);
+  });
+}
+
+async function openStone(node) {
+  if (!node.puzzle) return;
+  closeStoryBoard();
+  await loadPuzzle(node.puzzle);
+  ensureFrame();
+}
+
+// The pill back to the path shows only while a story stone is the loaded
+// picture and the board is not itself open — i.e. while you are painting one.
+function syncStoryPill() {
+  const boardOpen = !$('storyBoard').classList.contains('hidden');
+  const show = S.inStory && !boardOpen && S.puzzle && isStoryPuzzle(S.puzzle.id);
+  $('storyPill').classList.toggle('hidden', !show);
+}
+
 /* ------------------------------------------------------------------ chrome */
 
 document.addEventListener('click', async (e) => {
@@ -3022,6 +3224,9 @@ document.addEventListener('click', async (e) => {
     case 'panel-close': closePanel(); break;
     case 'next': $('finish').classList.add('hidden'); await nextPuzzle(); break;
     case 'finish-dismiss': $('finish').classList.add('hidden'); break;
+    case 'story-board': openStoryBoard(); break;      // the pill, back to the path
+    case 'story-back': closeStoryBoard(); showTitle(); break;
+    case 'story-free': enterFree(); break;
     default: break;
   }
 });
@@ -3181,6 +3386,14 @@ async function boot() {
   // being asked, so there is nothing to protect a first-time player from.
   S.save.settings.overtime ??= true;
 
+  // Story mode. Shallow-spread through both backends like `avatar`, so a save
+  // that predates it gets DEFAULT_SAVE.story whole, and one that has it but
+  // predates a later sub-key gets that key here. `mode` is which screen the
+  // title picker last sent them to; unset means show the picker.
+  S.save.story ??= defaultStory();
+  S.save.story.chapter = chapterOr(S.save.story.chapter);
+  S.save.story.seen ??= {};
+
   // A save from before this feature existed has no `avatar` key at all — the
   // DEFAULT_SAVE merge in platform.js/main.cjs already covers that case with
   // a complete literal. What it can't cover is a save that already HAS an
@@ -3306,14 +3519,23 @@ async function boot() {
     return;
   }
 
+  // A picture loads underneath everything, so the title menu and the board sit
+  // over a real canvas rather than a void. It is a free-play picture unless the
+  // last one open happened to be a story stone — the story stones otherwise keep
+  // out of the gallery's own defaulting.
   const preferred = S.save.settings.lastPuzzle;
   const first = S.manifest.find((p) => p.id === preferred)
-    ?? S.manifest.find((p) => !S.save.progress[p.id]?.done)
+    ?? S.manifest.find((p) => !isStoryPuzzle(p.id) && !S.save.progress[p.id]?.done)
+    ?? S.manifest.find((p) => !isStoryPuzzle(p.id))
     ?? S.manifest[0];
 
   await loadPuzzle(first.id);
   ensureFrame();
-  maybeFirstRunTour();
+
+  // The headless harnesses and the classic path go straight to free mode;
+  // everyone else meets the login menu, Continue first.
+  if (/[?&](notour|free)\b/.test(location.search)) enterFree();
+  else showTitle();
 }
 
 boot();
