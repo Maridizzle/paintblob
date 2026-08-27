@@ -1,25 +1,27 @@
 # Story-mode art: Flux prompts
 
-Placeholder art for chapter one's stones ships as flat vector scenes drawn in
-`tools/make-story-puzzles.mjs`. This file holds the Flux prompts for the *real*
-art. The workflow: run a prompt, generate six on blur mode, upload the six
-blind, and I pick the best one and keep the choice to myself.
+Both chapter-one stones now ship **real art**, mapped from Flux renders — no
+generator, so `npm run seed` leaves them alone. This file keeps the prompts that
+made them (for a re-bake, and as the template for the next stones' art) and the
+workflow that got them in.
 
-Each stone names a puzzle **id**, not an image, so swapping real art in touches
-no story-mode code:
+The workflow: run a prompt, generate six on blur mode, upload the six blind, and
+I pick the best one and keep the choice to myself. Each stone names a puzzle
+**id**, not an image, so a re-bake touches no story-mode code:
 
 ```bash
-npm run mapify -- ~/art/blue-reportedly.png --id blue-reportedly \
-  --title "Blue, Reportedly" --detail normal --crop false
-npm run mapify -- ~/art/ees-doorway.png --id ees-doorway \
-  --title "Ee’s Doorway" --detail detailed --crop false
+npm run mapify -- ~/art/blue-reportedly.jpg --id blue-reportedly \
+  --title "Blue, Reportedly" --detail normal --colours 28 --no-soften
+npm run mapify -- ~/art/ees-doorway.jpg --id ees-doorway \
+  --title "Ee’s Doorway" --detail detailed --colours 30 --no-soften
 npm run verify && npm test
 ```
 
-The board picks up the re-baked puzzle on the next load. (`make-story-puzzles.mjs`
-regenerates the *placeholders* on every `npm run seed`, so once real art lands,
-drop that scene from the script or it will overwrite your bake on the next CI
-run.)
+`--no-soften` is load-bearing on the doorway: smoothing nudges the thin gold-
+inlay boundaries past their own anchors and the verifier fails on stray anchors.
+Off, anchors sit on the same hard geometry that's checked, and the in-app blob
+fill hides the stair-steps anyway. The source render is embedded in the puzzle
+JSON (the compare-to-photo image), so a re-map needs only the original file.
 
 ## For paint-by-number legibility
 

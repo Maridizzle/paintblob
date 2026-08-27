@@ -7,7 +7,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "seed": "node tools/make-demo-puzzles.mjs && node tools/make-story-puzzles.mjs && node tools/apply-animations.mjs && node tools/apply-tags.mjs",
+    "seed": "node tools/make-demo-puzzles.mjs && node tools/apply-animations.mjs && node tools/apply-tags.mjs",
     "mapify": "node tools/mapify.mjs",
     "generate": "node tools/generate-image.mjs",
     "icon": "node tools/make-icon.mjs",
