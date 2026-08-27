@@ -1881,6 +1881,7 @@ button {
    driven idiom as the squirrel's .sq-fur / .sq-eye. */
 .lt-y { --lt-body: var(--accent2); }
 .lt-ee { --lt-body: var(--accent); }
+.lt-x { --lt-body: var(--muted); } /* the un-namer: drained grey, no colour of its own */
 .lt-body { fill: var(--lt-body); }
 .lt-white { fill: rgba(var(--sheen-rgb), 0.92); }
 .lt-eye { fill: rgba(var(--shade-rgb), 0.9); }

@@ -28,7 +28,8 @@ import { outlineSVG, outlineWeight } from './thumbnail.js';
 import { computePlayStats } from './playstats.js';
 import { Tour } from './tour.js';
 import {
-  getChapter, chapterOr, defaultStory, nodeState, isStoryPuzzle, openingSeen,
+  getChapter, chapterOr, defaultStory, nodeState, isStoryPuzzle,
+  onEnterScene, beforeStoneScene, pendingBoardScene, sceneKey, sceneSeen,
 } from './story.js';
 import { letterSVG } from './letters.js';
 import {
@@ -371,6 +372,17 @@ async function loadPuzzle(id) {
   syncCompare(); // ditto showSource
   syncUndo(); // history was just cleared, so this always hides it
   if (!S.finished) nextTub();
+
+  // Opening a free-gallery picture is leaving the story. Story mode is walked
+  // through the stone board, not the gallery, so a picture the chapter doesn't
+  // own drops you cleanly back to free mode rather than stranding you inStory
+  // with no path pill and the wrong bonus round on offer. Continue, on the
+  // title, walks back in. (openStone loads story stones, which stay inStory.)
+  if (S.inStory && !isStoryPuzzle(id)) {
+    S.inStory = false;
+    S.save.story.mode = 'free';
+    applyTheme();
+  }
   syncStoryPill(); // a story stone gets the way-back-to-the-path pill
 
   S.save.settings.lastPuzzle = id;
@@ -3408,36 +3420,40 @@ async function enterStory() {
   hideTitle();
   applyTheme();
   persist(true);
-  await maybeStoryOpening(S.save.story.chapter);
-  openStoryBoard();
+  const chapter = getChapter(S.save.story.chapter);
+  await playSceneOnce(chapter, onEnterScene(chapter), 'To the path');
+  await openStoryBoard();
 }
 
-// Plays a chapter's opening the first time it is entered, then resolves. Marked
-// seen up front — like the tour — so a reload mid-scene cannot replay it, and
-// skipped under ?notour so the headless harnesses are never sat on.
-function maybeStoryOpening(chapter) {
+// Plays a scene once and remembers it — like the tour, marked seen up front so
+// a reload mid-scene cannot restart it, and skipped whole under ?notour so the
+// headless harnesses are never sat on. Resolves either way, so a caller can
+// await the scene and then reveal whatever comes after it. A falsy scene (a
+// chapter with no beat at this trigger) resolves at once.
+function playSceneOnce(chapter, scene, finishLabel = 'Continue') {
   return new Promise((resolve) => {
-    if (/[?&]notour\b/.test(location.search) || openingSeen(S.save.story, chapter)) {
+    if (!scene || /[?&]notour\b/.test(location.search)
+        || sceneSeen(S.save.story, chapter.id, scene.id)) {
       resolve();
       return;
     }
-    S.save.story.seen[chapter] = true;
+    S.save.story.seen[sceneKey(chapter.id, scene.id)] = true;
     persist(true);
-    startStoryScene(chapter, resolve);
+    playScene(scene, finishLabel, resolve);
   });
 }
 
-// The opening as a run of centred tour cards, the squirrel swapped for whoever
-// is speaking. Reuses the whole tour mechanism — dots, Skip, keyboard, the
-// held race guard — for nothing but the character swap tour.js now allows.
-function startStoryScene(chapter, onDone) {
-  const steps = getChapter(chapter).opening.map((beat) => ({
+// A scene as a run of centred tour cards, the squirrel swapped for whoever is
+// speaking. Reuses the whole tour mechanism — dots, Skip, keyboard, the held
+// race guard — for nothing but the character swap tour.js now allows.
+function playScene(scene, finishLabel, onDone) {
+  const steps = scene.beats.map((beat) => ({
     target: null, title: beat.title, body: beat.body, character: letterSVG(beat.speaker),
   }));
   closeAbilityFan();
   tour?.end();
   tour = new Tour($('app'));
-  setTimeout(() => tour.start(steps, { finishLabel: 'To the path', onEnd: () => onDone?.() }), 0);
+  setTimeout(() => tour.start(steps, { finishLabel, onEnd: () => onDone?.() }), 0);
 }
 
 // Where the seven stones sit on the board, first to last — a thread winding up
@@ -3446,9 +3462,16 @@ const STONE_SPOTS = [
   [30, 90], [64, 81], [39, 69], [69, 56], [33, 44], [61, 31], [48, 16],
 ];
 
-function openStoryBoard() {
+async function openStoryBoard() {
   S.inStory = true;
   applyTheme();
+  // An interstitial owed for the stone you just finished plays before the board
+  // is shown, so you watch the scene and then see the newly-lit stone, not the
+  // other way round. pendingBoardScene decides whether one is due; playSceneOnce
+  // marks it seen so it never repeats. Nothing due — the common case — resolves
+  // instantly and the board comes straight up.
+  const chapter = getChapter(S.save.story.chapter);
+  await playSceneOnce(chapter, pendingBoardScene(chapter, S.save), 'To the path');
   renderStoryBoard();
   $('storyBoard').classList.remove('hidden');
   syncStoryPill();
@@ -3491,9 +3514,14 @@ function renderStoryBoard() {
   guide.style.top = `${STONE_SPOTS[0][1] - 4}%`;
   path.append(guide);
 
+  // Progressive unlock: each stone opens only once the one before it on the
+  // path is finished. prevDone walks forward down the list — true for the first
+  // stone, then whatever the last stone's state came out as.
+  let prevDone = true;
   ch.nodes.forEach((node, i) => {
     const [x, y] = STONE_SPOTS[i] ?? [50, 50];
-    const state = nodeState(node, S.save);
+    const state = nodeState(node, S.save, prevDone);
+    prevDone = state === 'done';
     const wrap = document.createElement('div');
     wrap.className = 'stone-wrap';
     wrap.style.left = `${x}%`;
@@ -3519,6 +3547,11 @@ function renderStoryBoard() {
 
 async function openStone(node) {
   if (!node.puzzle) return;
+  // The boss gets its intro before its picture, not after: X has the last word,
+  // then the fight. Any other stone has no beforeStone scene, so playSceneOnce
+  // no-ops and the puzzle loads straight away.
+  const chapter = getChapter(S.save.story.chapter);
+  await playSceneOnce(chapter, beforeStoneScene(chapter, node.id), 'Begin');
   closeStoryBoard();
   await loadPuzzle(node.puzzle);
   ensureFrame();

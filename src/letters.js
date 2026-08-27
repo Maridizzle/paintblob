@@ -81,7 +81,26 @@ function drawEe() {
   </svg>`;
 }
 
-const DRAW = { Y: drawY, Ee: drawEe };
+// X — the un-namer, the mark you make when the name is gone. Two strokes
+// crossed and nothing else, drawn in the drained grey of a colour that answers
+// to nothing (--lt-body is --muted for X, where Y is gold and Ee magenta). The
+// eyes sit high in the top notch between the arms; the mouth is a flat, unbothered
+// line — it is winning and knows it.
+function drawX() {
+  const down = bar(24, 16, 76, 86, 15); // top-left to bottom-right
+  const up = bar(76, 16, 24, 86, 15);   // top-right to bottom-left
+  return `<svg class="lt lt-x" viewBox="0 0 100 100" width="96" height="96" aria-hidden="true">
+    <g class="lt-flip">
+      <path class="lt-body" d="${down}${up}"/>
+      <!-- a shadow down the two legs, a thin light along the two upper arms -->
+      <path d="${bar(52, 53, 73, 82, 4)}${bar(48, 53, 27, 82, 4)}" fill="rgba(0,0,0,0.16)"/>
+      <path d="${bar(26, 19, 48, 48, 3.5)}${bar(74, 19, 52, 48, 3.5)}" fill="rgba(255,255,255,0.13)"/>
+      ${face(50, 37, 7, 4.6, '<path d="M43 51 Q50 53 57 51" fill="none" stroke="rgba(30,10,22,0.5)" stroke-width="2.2" stroke-linecap="round"/>')}
+    </g>
+  </svg>`;
+}
+
+const DRAW = { Y: drawY, Ee: drawEe, X: drawX };
 
 export function isSpeaker(id) {
   return Object.prototype.hasOwnProperty.call(DRAW, id);

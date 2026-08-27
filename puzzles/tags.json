@@ -292,5 +292,40 @@
     "themes": [
       "Flowers"
     ]
+  },
+  "thread-cupboard": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
+  "nobodys-red": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
+  "rhyme-that-stopped": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
+  "silent-e": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
+  "wrong-colour-day": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
   }
 }

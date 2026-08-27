@@ -628,6 +628,24 @@
     ]
   },
   {
+    "id": "nobodys-red",
+    "title": "Nobody’s Red",
+    "cells": 92,
+    "colours": 18,
+    "thumb": [
+      "#daa029",
+      "#ebad1f",
+      "#127549",
+      "#16be7b",
+      "#226ce3"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
+  {
     "id": "orchid-conservatory",
     "title": "Orchid Conservatory",
     "cells": 500,
@@ -720,6 +738,24 @@
     ]
   },
   {
+    "id": "silent-e",
+    "title": "Silent E Has The Last Word",
+    "cells": 103,
+    "colours": 15,
+    "thumb": [
+      "#c0861d",
+      "#daa029",
+      "#ebad1f",
+      "#f4e2bb",
+      "#0fa86b"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
+  {
     "id": "steampunk-forest",
     "title": "Steam Forest",
     "cells": 1200,
@@ -807,6 +843,60 @@
     ],
     "difficulty": "normal",
     "blind": true
+  },
+  {
+    "id": "rhyme-that-stopped",
+    "title": "The Rhyme That Stopped",
+    "cells": 90,
+    "colours": 15,
+    "thumb": [
+      "#cb8e58",
+      "#daa029",
+      "#f7ebd3",
+      "#ebad1f",
+      "#f4e2bb"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
+  {
+    "id": "thread-cupboard",
+    "title": "The Thread Cupboard",
+    "cells": 118,
+    "colours": 17,
+    "thumb": [
+      "#daa029",
+      "#ebad1f",
+      "#e5b83e",
+      "#f7cb47",
+      "#0fa86b"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
+  {
+    "id": "wrong-colour-day",
+    "title": "The Wrong-Colour Day",
+    "cells": 113,
+    "colours": 10,
+    "thumb": [
+      "#daa029",
+      "#ebad1f",
+      "#15c980",
+      "#226ce3",
+      "#100725"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
   },
   {
     "id": "tidepool-mosaic",

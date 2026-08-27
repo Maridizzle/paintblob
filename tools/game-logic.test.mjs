@@ -26,7 +26,8 @@ import {
 import { THEMES as APP_THEMES, DEFAULT_THEME, isTheme, themeOr } from '../src/themes.js';
 import {
   CHAPTERS, DEFAULT_CHAPTER, getChapter, chapterOr, defaultStory, nodeState,
-  isStoryPuzzle, openingSeen,
+  isStoryPuzzle, openingSeen, sceneSeen, sceneKey,
+  onEnterScene, beforeStoneScene, pendingBoardScene,
 } from '../src/story.js';
 import { letterSVG, isSpeaker } from '../src/letters.js';
 import {
@@ -872,7 +873,7 @@ test('both DEFAULT_SAVE literals declare a theme, and boot backfills it', () => 
 // so all of it is exercised here. The board and the cutscene are drawn in
 // game.js and only checked structurally.
 
-test('chapter one is a coherent seven-stone path', () => {
+test('chapter one is a coherent, fully-built seven-stone path', () => {
   const ch = getChapter(1);
   assert.equal(ch.id, 1);
   assert.ok(ch.title && ch.theme, 'a chapter needs a title and a theme to hand out');
@@ -881,53 +882,68 @@ test('chapter one is a coherent seven-stone path', () => {
 
   const ids = ch.nodes.map((n) => n.id);
   assert.equal(new Set(ids).size, ids.length, 'stone ids must be unique');
-  assert.equal(ch.nodes[ch.nodes.length - 1].kind, 'boss', 'the last stone is the boss');
+  assert.equal(ch.nodes.at(-1).kind, 'boss', 'the last stone is the boss');
   assert.equal(ch.nodes.filter((n) => n.kind === 'boss').length, 1, 'exactly one boss');
 
-  // Every stone that names a puzzle must name one that actually ships, or the
-  // board would offer a stone that loads nothing. This is the check that pins
-  // the story to the puzzles built for it.
+  // Every stone now names a built puzzle, and every name has to resolve to one
+  // that actually ships — the check that pins the story to its art.
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles/manifest.json'), 'utf8'));
   const built = new Set(manifest.map((p) => p.id));
   for (const node of ch.nodes) {
-    if (node.puzzle) assert.ok(built.has(node.puzzle), `stone "${node.id}" names a missing puzzle "${node.puzzle}"`);
+    assert.ok(node.puzzle, `stone "${node.id}" has no puzzle — the chapter is meant to be complete`);
+    assert.ok(built.has(node.puzzle), `stone "${node.id}" names a missing puzzle "${node.puzzle}"`);
   }
 });
 
-test('a fresh save opens exactly the two built stones', () => {
+// The board's own walk: a stone's openness depends on whether the one before it
+// is finished, so the states are computed left to right, carrying prevDone.
+const boardStates = (nodes, save) => {
+  let prevDone = true;
+  return nodes.map((n) => {
+    const s = nodeState(n, save, prevDone);
+    prevDone = s === 'done';
+    return s;
+  });
+};
+const doneSaveOf = (...ids) => ({ progress: Object.fromEntries(ids.map((id) => [id, { done: true }])) });
+
+test('a fresh save opens only the first stone', () => {
   const ch = getChapter(1);
-  const fresh = { progress: {} };
-  const states = ch.nodes.map((n) => nodeState(n, fresh));
-  assert.equal(states.filter((s) => s === 'open').length, 2, 'two stones open on a fresh save');
-  assert.equal(states.filter((s) => s === 'locked').length, 5, 'the other five are locked');
-  assert.equal(states.filter((s) => s === 'done').length, 0);
-  // The two open ones are the two carrying a puzzle, and they come first.
-  assert.deepEqual(states.slice(0, 2), ['open', 'open']);
+  const states = boardStates(ch.nodes, { progress: {} });
+  assert.equal(states[0], 'open', 'the first stone is open from the start');
+  assert.equal(states.filter((s) => s === 'open').length, 1, 'and it is the only one open');
+  assert.equal(states.filter((s) => s === 'locked').length, 6, 'the other six wait behind it');
 });
 
-test('nodeState reads completion off the save and never strands', () => {
+test('finishing a stone opens exactly the next one, and the boss waits for six', () => {
+  const ch = getChapter(1);
+
+  let states = boardStates(ch.nodes, doneSaveOf('blue-reportedly'));
+  assert.deepEqual(states.slice(0, 3), ['done', 'open', 'locked'], 'stone two opens, three stays shut');
+
+  states = boardStates(ch.nodes, doneSaveOf('blue-reportedly', 'ees-doorway', 'thread-cupboard', 'nobodys-red'));
+  assert.deepEqual(states, ['done', 'done', 'done', 'done', 'open', 'locked', 'locked']);
+
+  const six = ch.nodes.slice(0, 6).map((n) => n.puzzle);
+  states = boardStates(ch.nodes, doneSaveOf(...six));
+  assert.equal(states.at(-1), 'open', 'the boss opens once the sixth stone is done');
+});
+
+test('nodeState is a pure function of one stone, its save, and what came before', () => {
   const ch = getChapter(1);
   const first = ch.nodes[0];
-  const second = ch.nodes[1];
-  const locked = ch.nodes[2];
+  const noPuzzle = { id: 'ghost', puzzle: null };
 
-  assert.equal(nodeState(first, { progress: {} }), 'open');
-  assert.equal(nodeState(first, { progress: { [first.puzzle]: { done: true } } }), 'done');
-  // Finishing one stone opens nothing new in this slice — the other built stone
-  // was already open, the rest stay locked.
-  const afterOne = { progress: { [first.puzzle]: { done: true } } };
-  assert.equal(nodeState(second, afterOne), 'open');
-  assert.equal(nodeState(locked, afterOne), 'locked');
-  // A stone with no puzzle is locked however the save looks; nothing throws on a
-  // missing progress map or a missing node.
-  assert.equal(nodeState(locked, {}), 'locked');
-  assert.equal(nodeState(undefined, {}), 'locked');
-  assert.equal(nodeState(first, undefined), 'open');
+  assert.equal(nodeState(first, { progress: {} }, true), 'open', 'built, unfinished, predecessor done → open');
+  assert.equal(nodeState(first, { progress: {} }, false), 'locked', 'predecessor not done → locked');
+  assert.equal(nodeState(first, { progress: { [first.puzzle]: { done: true } } }, false), 'done',
+    'a finished stone reads done even if the chain in front of it were incomplete');
+  assert.equal(nodeState(noPuzzle, { progress: {} }, true), 'locked');
+  assert.equal(nodeState(undefined, {}, true), 'locked');
+  assert.equal(nodeState(first, undefined, true), 'open');
 });
 
 test('a stale story save falls back instead of stranding the mode', () => {
-  // Same contract as themeOr: a save carrying a chapter this build dropped must
-  // land on a real one rather than leave story mode pointing at nothing.
   assert.equal(chapterOr(1), 1);
   assert.equal(chapterOr(999), DEFAULT_CHAPTER);
   assert.equal(chapterOr(undefined), DEFAULT_CHAPTER);
@@ -935,9 +951,51 @@ test('a stale story save falls back instead of stranding the mode', () => {
   const story = defaultStory();
   assert.equal(story.chapter, DEFAULT_CHAPTER);
   assert.deepEqual(story.seen, {});
-  assert.equal(openingSeen(story, 1), false);
-  assert.equal(openingSeen({ seen: { 1: true } }, 1), true);
-  assert.equal(openingSeen(undefined, 1), false);
+});
+
+test('a scene plays once: per-scene keys, with the old one-flag-per-chapter honoured', () => {
+  // seen used to be a single boolean per chapter (the opening). A save from then
+  // must not replay the opening, so sceneSeen treats seen[chapterId] as the
+  // opening having played — but every later scene is tracked by its own key.
+  const fresh = defaultStory();
+  assert.equal(sceneSeen(fresh, 1, 'opening'), false);
+  assert.equal(openingSeen(fresh, 1), false);
+
+  const legacy = { seen: { 1: true } };
+  assert.equal(sceneSeen(legacy, 1, 'opening'), true, 'the legacy per-chapter flag still counts as the opening seen');
+  assert.equal(openingSeen(legacy, 1), true);
+  assert.equal(sceneSeen(legacy, 1, 'boss'), false, 'but it does not mark the later scenes seen');
+
+  const played = { seen: { [sceneKey(1, 'boss')]: true } };
+  assert.equal(sceneSeen(played, 1, 'boss'), true);
+  assert.equal(sceneSeen(played, 1, 'thread'), false);
+  assert.equal(sceneSeen(undefined, 1, 'opening'), false, 'a missing story never throws');
+});
+
+test('the chapter has an opening, two interstitials, and a boss intro, each triggered right', () => {
+  const ch = getChapter(1);
+  assert.equal(onEnterScene(ch)?.id, 'opening', 'a chapter needs an opening (onEnter) scene');
+  assert.ok(beforeStoneScene(ch, 'wrong-colour-day'), 'the boss stone must have an intro');
+  assert.equal(beforeStoneScene(ch, 'blue-reportedly'), undefined, 'a normal stone has no beforeStone scene');
+
+  const afterDone = ch.scenes.filter((s) => s.trigger?.afterDone);
+  assert.equal(afterDone.length, 2, 'two interstitials between the opening and the boss');
+  for (const s of afterDone) {
+    assert.ok(ch.nodes.some((n) => n.id === s.trigger.afterDone),
+      `interstitial "${s.id}" triggers on an unknown stone "${s.trigger.afterDone}"`);
+  }
+});
+
+test('pendingBoardScene owes an interstitial only once its stone is done, and only once', () => {
+  const ch = getChapter(1);
+  const scene = ch.scenes.find((s) => s.trigger?.afterDone);
+  const stone = scene.trigger.afterDone;
+
+  assert.equal(pendingBoardScene(ch, { progress: {}, story: defaultStory() }), null, 'nothing owed on a fresh board');
+  const doneSave = { progress: { [stone]: { done: true } }, story: defaultStory() };
+  assert.equal(pendingBoardScene(ch, doneSave)?.id, scene.id, 'owed the first time you reach the board after its stone is done');
+  const seenSave = { progress: { [stone]: { done: true } }, story: { seen: { [sceneKey(1, scene.id)]: true } } };
+  assert.equal(pendingBoardScene(ch, seenSave), null, 'and never again once it has played');
 });
 
 test('every story puzzle id is a real manifest entry, and only story ids read as story', () => {
@@ -976,8 +1034,17 @@ test('the story stones keep out of the free gallery until finished', () => {
     'nextPuzzle must skip story stones so free mode never walks into one');
 });
 
+test('opening a free picture in story mode drops cleanly back to free mode', () => {
+  // The limbo: loadPuzzle left S.inStory true on a non-story picture, so the
+  // path pill vanished and Overtime — the free-mode round — started being
+  // offered, with no way back to the board.
+  const game = readSource('src/game.js');
+  assert.match(game, /if \(S\.inStory && !isStoryPuzzle\(id\)\) \{\s*\n\s*S\.inStory = false;/,
+    'loadPuzzle must leave story mode when the loaded picture is not a story stone');
+});
+
 test('the letters are drawable, wash-shaded, and never do colour maths', () => {
-  for (const id of ['Y', 'Ee']) {
+  for (const id of ['Y', 'Ee', 'X']) {
     assert.ok(isSpeaker(id), `${id} should be a known speaker`);
     const svg = letterSVG(id);
     assert.match(svg, /^<svg/, `${id} must render an svg`);
@@ -993,25 +1060,30 @@ test('the letters are drawable, wash-shaded, and never do colour maths', () => {
   assert.match(letterSVG('Q'), /^<svg/);
 });
 
-test('the opening scene is playable: every beat has a drawable speaker and words', () => {
+test('every beat of every scene has a drawable speaker and real words', () => {
   for (const ch of CHAPTERS) {
-    assert.ok(Array.isArray(ch.opening) && ch.opening.length, `chapter ${ch.id} has no opening`);
-    for (const beat of ch.opening) {
-      assert.ok(isSpeaker(beat.speaker), `a beat names an undrawable speaker "${beat.speaker}"`);
-      assert.ok(beat.title && beat.title.length, 'a beat has no title');
-      assert.ok(beat.body && beat.body.length > 20, 'a beat has no real text');
+    assert.ok(Array.isArray(ch.scenes) && ch.scenes.length, `chapter ${ch.id} has no scenes`);
+    for (const scene of ch.scenes) {
+      assert.ok(scene.id && scene.trigger, `a scene in chapter ${ch.id} is missing an id or trigger`);
+      assert.ok(scene.beats?.length, `scene "${scene.id}" has no beats`);
+      for (const beat of scene.beats) {
+        assert.ok(isSpeaker(beat.speaker), `scene "${scene.id}" names an undrawable speaker "${beat.speaker}"`);
+        assert.ok(beat.title && beat.title.length, `a beat in "${scene.id}" has no title`);
+        assert.ok(beat.body && beat.body.length > 20, `a beat in "${scene.id}" has no real text`);
+      }
     }
   }
 });
 
-test('game.js plays the opening through the tour, and marks it seen up front', () => {
+test('game.js plays a scene through the tour, and marks it seen up front', () => {
   const game = readSource('src/game.js');
   // Seen is written before the scene plays, like tourSeen, so a reload mid-scene
   // cannot replay it — and persisted immediately, to outlast a fast reload.
-  const body = game.slice(game.indexOf('function maybeStoryOpening'), game.indexOf('function startStoryScene'));
-  const seenAt = body.indexOf('seen[chapter] = true');
-  const playAt = body.indexOf('startStoryScene');
-  assert.ok(seenAt > 0 && playAt > seenAt, 'the opening must be marked seen before it is played');
+  const start = game.indexOf('function playSceneOnce');
+  const body = game.slice(start, game.indexOf('\nfunction ', start + 10));
+  const seenAt = body.indexOf('seen[sceneKey(');
+  const playAt = body.indexOf('playScene(');
+  assert.ok(seenAt > 0 && playAt > seenAt, 'a scene must be marked seen before it is played');
   assert.match(body, /persist\(true\)/, 'seen must be flushed immediately, not on the debounce');
   assert.ok(body.includes('notour'), 'the scene must be skipped under ?notour for the harnesses');
 });
