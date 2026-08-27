@@ -196,7 +196,10 @@ export function buildPuzzle(rgba, srcW, srcH, opts = {}) {
   const pixels = despeckle(resized, width, height, grain);
   const vivid = boostSaturation(pixels, o.saturate ?? 1);
 
-  const { palette, indices } = quantize(vivid, width, height, o.maxColours);
+  // An explicit colour count (opts.strictColours, set by mapify's --colours)
+  // makes maxColours a hard cap; the preset/importer path leaves it a soft
+  // target so a photo keeps every distinct tone it needs.
+  const { palette, indices } = quantize(vivid, width, height, o.maxColours, { rescue: !o.strictColours });
   const cleaned = o.denoise > 0
     ? denoiseIndices(indices, width, height, o.denoise, palette.length)
     : indices;

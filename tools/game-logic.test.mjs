@@ -16,11 +16,11 @@ import {
 import { grantPoints, spendPoints, levelForPoints, cumulativeForLevel } from '../src/points.js';
 import {
   ABILITIES, getDef, isUnlocked, defaultAbilityState, grantLevelUpCharges,
-  activate, isActive, consumeActive, NUMBER_RECOLOR_CYCLE, nextNumberRecolorIndex,
+  activate, isActive, consumeActive,
 } from '../src/abilities.js';
 import { WARDROBE_ITEMS } from '../src/wardrobe.js';
 import {
-  CHUNKS, MIN_STEP, labL, rampFrom, lerpHue, scramble, swap, isSolved, placedCount, partnerFor,
+  CHUNKS, MIN_STEP, labL, rampFrom, randomStops, lerpHue, scramble, swap, isSolved, placedCount, partnerFor,
 } from '../src/overtime.js';
 // Aliased: THEMES is already taken further down by the picture-tag list.
 import { THEMES as APP_THEMES, DEFAULT_THEME, isTheme, themeOr } from '../src/themes.js';
@@ -322,7 +322,7 @@ test('defaultAbilityState gives every ability a full charge pool up front', () =
 
 test('activate spends exactly one charge and refuses at zero', () => {
   const state = defaultAbilityState();
-  const def = getDef('precision-ping');
+  const def = getDef('colour-flash'); // Beacon
   for (let i = 0; i < def.maxCharges; i++) assert.equal(activate(state, def.id, 0), true);
   assert.equal(state[def.id].charges, 0);
   assert.equal(activate(state, def.id, 0), false);
@@ -330,38 +330,52 @@ test('activate spends exactly one charge and refuses at zero', () => {
 
 test('activate on an ability with a duration opens an active window isActive sees', () => {
   const state = defaultAbilityState();
-  activate(state, 'colour-surge', 1000);
-  assert.equal(isActive(state, 'colour-surge', 1500), true);
-  assert.equal(isActive(state, 'colour-surge', 1000 + getDef('colour-surge').durationMs + 1), false);
+  activate(state, 'focus', 1000);
+  assert.equal(isActive(state, 'focus', 1500), true);
+  assert.equal(isActive(state, 'focus', 1000 + getDef('focus').durationMs + 1), false);
 });
 
 test('activate on a zero-duration ability (an instant effect) opens no active window', () => {
   const state = defaultAbilityState();
-  activate(state, 'precision-ping', 1000);
-  assert.equal(isActive(state, 'precision-ping', 1000), false);
+  activate(state, 'prism', 1000); // instant fill
+  assert.equal(isActive(state, 'prism', 1000), false);
 });
 
-test('consumeActive ends a window early, e.g. Streak Shield used up by the click it protected', () => {
+test('consumeActive ends a window early', () => {
   const state = defaultAbilityState();
-  activate(state, 'streak-shield', 0);
-  assert.equal(isActive(state, 'streak-shield', 10), true);
-  consumeActive(state, 'streak-shield');
-  assert.equal(isActive(state, 'streak-shield', 10), false);
+  activate(state, 'focus', 0);
+  assert.equal(isActive(state, 'focus', 10), true);
+  consumeActive(state, 'focus');
+  assert.equal(isActive(state, 'focus', 10), false);
 });
 
 test('isUnlocked gates purely on level vs unlockLevel', () => {
-  const def = getDef('half-fill');
+  const def = getDef('half-fill'); // Floodgate
   assert.equal(isUnlocked(def, def.unlockLevel - 1), false);
   assert.equal(isUnlocked(def, def.unlockLevel), true);
 });
 
-test('abilities unlock one per level across 1..8, not clumped in the first few', () => {
-  // Guards the reported "level 3 with almost every ability" problem: the
-  // eight abilities must arrive one at a time, not six of them by level 3.
+test('abilities unlock one per level across 1..5, not clumped in the first few', () => {
+  // The five that survived the cull arrive one at a time as you climb, not all
+  // at once. (Guards the old "level 3 with almost every ability" complaint.)
   const levels = ABILITIES.map((a) => a.unlockLevel).sort((x, y) => x - y);
-  assert.deepEqual(levels, [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.deepEqual(levels, [1, 2, 3, 4, 5]);
   const atLevel3 = ABILITIES.filter((a) => isUnlocked(a, 3)).length;
   assert.equal(atLevel3, 3, 'level 3 should grant 3 abilities, not most of them');
+});
+
+test('the cut abilities are gone, and every survivor is a reveal, filter or fill', () => {
+  const ids = new Set(ABILITIES.map((a) => a.id));
+  for (const gone of ['precision-ping', 'number-recolor', 'steady-hand', 'golden-cell', 'colour-surge', 'streak-shield']) {
+    assert.ok(!ids.has(gone), `${gone} should have been cut`);
+  }
+  assert.deepEqual([...ids].sort(), ['colour-flash', 'explode', 'focus', 'half-fill', 'prism'].sort());
+  // And game.js wires each visible effect, and no longer reaches for the cut ones.
+  const game = readSource('src/game.js');
+  assert.match(game, /case 'focus':\s*\n\s*if \(S\.selected >= 0\) board\.setFocus\(/, 'Focus must grey the board');
+  assert.match(game, /case 'prism':[\s\S]*?fillOnePerColour\(\)/, 'Prism must fill one of every colour');
+  assert.match(game, /case 'explode':[\s\S]*?explodeHeldColour\(\)/, 'Explode must burst a third of the colour');
+  assert.ok(!/NUMBER_RECOLOR_CYCLE|markGolden|colour-surge/.test(game), 'no reference to a cut ability should remain');
 });
 
 test('grantLevelUpCharges refills one charge per level-up, capped at max, only once unlocked', () => {
@@ -390,16 +404,6 @@ test('half-fill only regains a charge every second level-up, per its slower leve
   assert.equal(state[def.id].charges, 0, 'one level-up since unlock is not enough yet');
   grantLevelUpCharges(state, L + 1);
   assert.equal(state[def.id].charges, 1, 'the second level-up since unlock grants the charge');
-});
-
-test('nextNumberRecolorIndex starts at red and wraps violet back to red', () => {
-  let i;
-  i = nextNumberRecolorIndex(i);
-  assert.equal(i, 0, 'first-ever activation lands on red');
-  for (let step = 1; step < NUMBER_RECOLOR_CYCLE.length; step++) i = nextNumberRecolorIndex(i);
-  assert.equal(i, NUMBER_RECOLOR_CYCLE.length - 1, 'cycled through every colour once');
-  i = nextNumberRecolorIndex(i);
-  assert.equal(i, 0, 'violet wraps back to red');
 });
 
 /* --------------------------------------------------------------- wardrobe */
@@ -1085,6 +1089,23 @@ test('the Swap shows its rules before the clock, and reveals on a loss', () => {
   assert.match(game, /function revealSwapAnswer/, 'a lost round must show the right pairing');
 });
 
+test('Overtime shows its rules before the clock too', () => {
+  const game = readSource('src/game.js');
+  // Same how-to contract as the Swap: startOvertime opens the panel and starts
+  // NOTHING — no clock until Begin. The timer lived inside startOvertime before;
+  // it must have moved out to beginOvertime, or the sixty seconds run behind the
+  // instructions and the panel is a lie.
+  const start = game.slice(game.indexOf('function startOvertime'), game.indexOf('function beginOvertime'));
+  assert.ok(start.length > 50, 'startOvertime has moved or gone');
+  assert.match(start, /started: false/, 'startOvertime must open on the how-to panel');
+  assert.ok(!/setInterval/.test(start), 'the clock must not start until Begin');
+  const begin = game.slice(game.indexOf('function beginOvertime'), game.indexOf('function tickOvertime'));
+  assert.match(begin, /endsAt = Date\.now\(\) \+ OT_SECONDS \* 1000/, 'beginOvertime starts the sixty seconds');
+  assert.match(begin, /setInterval\(tickOvertime/, 'the clock only ticks once begun');
+  // renderOvertime draws the panel off the started flag.
+  assert.match(game, /function renderOvertime[\s\S]*?if \(!S\.ot\.started\)/, 'renderOvertime must branch on the how-to panel');
+});
+
 test('Named answers a tap with the cell’s own colour, and is spent per cell', () => {
   const game = readSource('src/game.js');
   const body = game.slice(game.indexOf('function tryPaint'), game.indexOf('function launch'));
@@ -1180,6 +1201,34 @@ test('the ramp is orderable: fifteen distinct steps, always climbing', () => {
   }
 });
 
+test('a random gradient is a different puzzle but never an unsolvable one', () => {
+  // The point of randomStops is variety — a fresh colour family every round
+  // instead of the theme's one gradient forever. The thing that must NOT vary
+  // is the answer key: however the hue and saturation come out, the fifteen
+  // steps still have to climb in L* by at least MIN_STEP, or the round has no
+  // findable order. Sweep a few hundred seeds and hold every one to the same
+  // invariant the themed ramps are held to above.
+  const seen = new Set();
+  for (let seed = 0; seed < 400; seed++) {
+    const stops = randomStops(seededRng(seed));
+    assert.ok(stops.length === 2 || stops.length === 3, `seed ${seed} gave ${stops.length} stops`);
+    for (const s of stops) {
+      assert.ok(Number.isFinite(s.h) && s.h >= 0 && s.h < 360, `seed ${seed} hue ${s.h}`);
+      assert.ok(s.s >= 0.46 && s.s <= 0.8, `seed ${seed} sat ${s.s}`);
+    }
+    const ramp = rampFrom(stops);
+    assert.equal(ramp.length, CHUNKS);
+    assert.equal(new Set(ramp).size, CHUNKS, `seed ${seed} repeats a colour`);
+    for (let i = 1; i < ramp.length; i++) {
+      const step = labL(ramp[i]) - labL(ramp[i - 1]);
+      assert.ok(step >= MIN_STEP, `seed ${seed} climbs only ${step.toFixed(2)} between ${i - 1} and ${i}`);
+    }
+    seen.add(Math.round(hueOf(ramp[7]))); // the middle chunk's hue stands in for the family
+  }
+  // Variety actually happened: the swept rounds did not all land on one hue.
+  assert.ok(seen.size > 40, `only ${seen.size} distinct mid-hues across 400 rounds — not varied enough`);
+});
+
 test('L* is perceived lightness, not a byte average', () => {
   // The anchors CIE defines: black is 0, white is 100, and mid-grey — sRGB
   // #777777, half way up in bytes — sits at 50, not at the 47 a naive average
@@ -1272,33 +1321,31 @@ test('a swap is pure, and undoes itself', () => {
   assert.equal(placedCount(once), CHUNKS - 2);
 });
 
-test('the ramp is drawn from the theme and never from the picture', () => {
-  // The version this replaced took its hue from the picture's commonest paint,
-  // which under Tee Vibes put a navy tray in a magenta room. The theme tokens
-  // are the only source now, and getComputedStyle is the only way to read one
-  // that a [data-theme] block has overridden.
+test('the ramp is drawn fresh each round, never from the theme or the picture', () => {
+  // Two earlier sources are both gone. The first took its hue from the
+  // picture's commonest paint, which put a navy tray in a magenta room; the
+  // second took it from the theme tokens, which was steady but meant the same
+  // gradient every single round under a given room. Now startOvertime builds
+  // the ramp from randomStops, so it varies play to play and belongs to
+  // neither the room nor the picture.
   const game = readSource('src/game.js');
-  const body = game.slice(game.indexOf('function overtimeStops'),
-    game.indexOf('function maybeOfferOvertime'));
-  assert.ok(body.length > 100, 'overtimeStops has moved or gone');
-  assert.match(body, /getComputedStyle\(document\.documentElement\)/,
-    'the stops must be read off the live root, not off a constant');
-  const TOKENS = ['--accent', '--hot', '--accent2'];
-  for (const token of TOKENS) assert.ok(body.includes(token), `${token} is no longer a stop`);
-  assert.ok(!/getImageData|drawImage|canvas/i.test(body),
+  const start = game.slice(game.indexOf('function startOvertime'),
+    game.indexOf('function tickOvertime'));
+  assert.match(start, /ramp:\s*rampFrom\(randomStops\(\)\)/,
+    'the ramp must be built from randomStops, fresh each round');
+  assert.ok(!/getComputedStyle|--accent|--hot|--accent2/.test(start),
+    'the round no longer reads the theme tokens — that was the every-round-the-same bug');
+  assert.ok(!/getImageData|drawImage|canvas/i.test(start),
     'the round must not go near the picture: it plays over blind ones too');
-  // overtimeStops drops anything that is not a six-digit hex, so a theme
-  // writing rgb() or #abc for one of these would silently lose a stop and the
-  // ramp would quietly fall back to a shorter one. Every theme owes all three.
-  const css = readSource('src/styles.css');
-  for (const t of APP_THEMES) {
-    const at = t.id === DEFAULT_THEME ? css.indexOf(':root {') : css.indexOf(`[data-theme="${t.id}"]`);
-    const block = css.slice(at, css.indexOf('\n}', at));
-    for (const token of TOKENS) {
-      assert.match(block, new RegExp(`\\${token}:\\s*#[0-9a-f]{6}\\s*;`, 'i'),
-        `theme "${t.id}" does not give ${token} as a six-digit hex`);
-    }
-  }
+  // randomStops is arithmetic, not chrome — it has to run in node beside the
+  // rest of overtime.js, so it may not reach for the DOM the way the old
+  // theme-reading stops did.
+  const ot = readSource('src/overtime.js');
+  const fn = ot.slice(ot.indexOf('export function randomStops'),
+    ot.indexOf('/* --------------------------------------------------------------- ordering */'));
+  assert.ok(fn.length > 100, 'randomStops has moved or gone');
+  assert.ok(!/document|getComputedStyle|window/.test(fn),
+    'randomStops must stay pure — no DOM');
 });
 
 test('undo only takes back the cells that were counted', () => {

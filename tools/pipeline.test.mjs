@@ -54,6 +54,37 @@ test('quantize collapses near-identical shades onto one palette entry', () => {
   for (let y = 42; y < H; y++) assert.equal(indices[y * W + 30], band(50));
 });
 
+test('rescue:false makes maxColours a hard cap', () => {
+  // A gently graded field — many near-neighbours the way a photograph shades a
+  // subject — is what makes the rescue want to add tubs past the target: no
+  // single median-cut slot represents the far end of the ramp well. Eight
+  // horizontal bands of a red→blue sweep.
+  const data = image(W, H, (x, y) => {
+    const t = Math.floor(y / (H / 8)) / 7; // 0..1 in eight steps
+    return [Math.round(220 - 180 * t), 40, Math.round(40 + 180 * t)];
+  });
+
+  // The contract that was broken: with rescue off, the count asked for is the
+  // ceiling — never more, whatever the picture wants.
+  for (const cap of [2, 3, 5]) {
+    const hard = quantize(data, W, H, cap, { rescue: false });
+    assert.ok(hard.palette.length <= cap, `hard cap of ${cap} gave ${hard.palette.length}`);
+    assert.ok(hard.indices.every((i) => i < hard.palette.length));
+  }
+
+  // The default stays a soft target, so it can meet or exceed the hard result —
+  // never come out under it — which is the whole reason a photo keeps rescue on.
+  assert.ok(
+    quantize(data, W, H, 3).palette.length >= quantize(data, W, H, 3, { rescue: false }).palette.length,
+    'the soft target must never yield fewer tubs than the hard cap',
+  );
+
+  // buildPuzzle threads the cap through from opts.strictColours (mapify's
+  // --colours sets it); without it, the preset/importer path keeps the rescue.
+  const capped = buildPuzzle(data, W, H, { maxColours: 4, strictColours: true, minAreaFrac: 0.002, soften: false, crop: false });
+  assert.ok(capped.palette.length <= 4, `strictColours should cap the tubs; got ${capped.palette.length}`);
+});
+
 test('quantize marks transparent pixels as belonging to no cell', () => {
   const data = image(W, H, () => RED);
   for (let i = 0; i < W; i++) data[i * 4 + 3] = 0; // clear the top row

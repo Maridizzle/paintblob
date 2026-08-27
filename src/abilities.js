@@ -4,76 +4,50 @@
 // ability actually looks or feels like; this just owns whether you can fire
 // one right now and for how long it stays on.
 //
+// Every ability DOES something you can see — a reveal, a screen filter, or a
+// mass fill. The old set leaked slots to invisible point-multipliers and
+// barely-there nudges (a wider tap radius, a one-cell ping); those are gone.
+// What is left is five levers that change the board in front of you.
+//
 // Tiered by power: max charges go DOWN as the effect gets stronger, so the
-// biggest lever (Half Fill) is the rarest. Unlock level steps one per level
-// down this list (L1..L8) — abilities arrive one at a time as you climb,
-// weakest first, rather than clumping in the first few levels. `tier` still
-// records the power grouping the charge counts follow; it no longer equals
-// the unlock level.
+// biggest lever (Floodgate) is the rarest. Unlock level steps one per level
+// down this list (L1..L5) — they arrive one at a time as you climb, the
+// cheapest reveal first, the picture-moving fills last. `tier` records the
+// power grouping the charge counts follow; it is not the unlock level.
+//
+// Ids are kept stable where an ability survived the cull (colour-flash,
+// half-fill), so a returning player keeps the charges they had banked; the cut
+// ids simply stop being read (their saved state sits harmless and unused).
 
 export const ABILITIES = [
   {
-    id: 'precision-ping', icon: '🎯', name: 'Precision Ping',
-    desc: 'Flashes the nearest unfilled cell of your held colour.',
-    tier: 1, maxCharges: 5, durationMs: 0, unlockLevel: 1, levelsPerCharge: 1,
+    id: 'colour-flash', icon: '✨', name: 'Beacon',
+    desc: 'Every unfilled cell of your held colour pulses — find them all at a glance.',
+    tier: 1, maxCharges: 5, durationMs: 8000, unlockLevel: 1, levelsPerCharge: 1,
   },
   {
-    id: 'number-recolor', icon: '🔢', name: 'Number Recolor',
-    desc: 'Cycles unfilled numbers to the next ROYGBIV colour — stays that way until used again.',
-    tier: 1, maxCharges: 4, durationMs: 0, unlockLevel: 2, levelsPerCharge: 1,
+    id: 'focus', icon: '🔎', name: 'Focus',
+    desc: 'The whole picture greys out except your held colour, so it leaps off the board.',
+    tier: 2, maxCharges: 4, durationMs: 12000, unlockLevel: 2, levelsPerCharge: 1,
   },
   {
-    id: 'colour-flash', icon: '✨', name: 'Colour Flash',
-    desc: "Makes every unfilled cell of your held colour flash.",
-    tier: 2, maxCharges: 4, durationMs: 4000, unlockLevel: 3, levelsPerCharge: 1,
+    id: 'prism', icon: '🌈', name: 'Prism',
+    desc: 'One cell of every colour fills at once, scattered across the picture.',
+    tier: 3, maxCharges: 3, durationMs: 0, unlockLevel: 3, levelsPerCharge: 1,
   },
   {
-    id: 'steady-hand', icon: '🤲', name: 'Steady Hand',
-    desc: 'Widens your tap radius so near-misses still land.',
-    tier: 2, maxCharges: 3, durationMs: 10000, unlockLevel: 4, levelsPerCharge: 1,
+    id: 'explode', icon: '💥', name: 'Explode',
+    desc: "A third of your held colour's remaining cells burst outward, filled.",
+    tier: 4, maxCharges: 2, durationMs: 0, unlockLevel: 4, levelsPerCharge: 1,
   },
   {
-    id: 'golden-cell', icon: '🌟', name: 'Golden Cell',
-    desc: "Marks one cell of your held colour worth 5x points.",
-    tier: 3, maxCharges: 3, durationMs: 15000, unlockLevel: 5, levelsPerCharge: 1,
-  },
-  {
-    id: 'colour-surge', icon: '⚡', name: 'Colour Surge',
-    desc: 'Doubles points from every fill while active.',
-    tier: 3, maxCharges: 3, durationMs: 8000, unlockLevel: 6, levelsPerCharge: 1,
-  },
-  {
-    id: 'streak-shield', icon: '🛡️', name: 'Streak Shield',
-    desc: 'Forgives your next wrong-tub click.',
-    tier: 4, maxCharges: 2, durationMs: 15000, unlockLevel: 7, levelsPerCharge: 1,
-  },
-  {
-    id: 'half-fill', icon: '🪄', name: 'Half Fill',
-    desc: "Paints half of your held colour's remaining cells outright.",
-    tier: 5, maxCharges: 1, durationMs: 0, unlockLevel: 8, levelsPerCharge: 2,
+    id: 'half-fill', icon: '🌊', name: 'Floodgate',
+    desc: "Half of your held colour's remaining cells fill at once.",
+    tier: 5, maxCharges: 1, durationMs: 0, unlockLevel: 5, levelsPerCharge: 2,
   },
 ];
 
 const BY_ID = new Map(ABILITIES.map((a) => [a.id, a]));
-
-// Mid-to-high lightness rather than the traditional dark #4B0082/#8F00FF, so
-// the single dark outline render.js already draws behind every number stays
-// legible for every step of the cycle — no per-colour outline branch needed.
-export const NUMBER_RECOLOR_CYCLE = [
-  { name: 'Red', hex: '#ff4d4d' },
-  { name: 'Orange', hex: '#ff9f40' },
-  { name: 'Yellow', hex: '#ffe066' },
-  { name: 'Green', hex: '#46d17a' },
-  { name: 'Blue', hex: '#4da6ff' },
-  { name: 'Indigo', hex: '#7c6bff' },
-  { name: 'Violet', hex: '#d17bff' },
-];
-
-/** Advances the ROYGBIV cycle by one step, wrapping violet back to red.
- *  `i` is the previously-used index, or absent if never activated. */
-export function nextNumberRecolorIndex(i) {
-  return ((i ?? -1) + 1) % NUMBER_RECOLOR_CYCLE.length;
-}
 
 export function getDef(id) {
   return BY_ID.get(id);

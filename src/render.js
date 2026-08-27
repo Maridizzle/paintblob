@@ -92,9 +92,11 @@ export class Board {
     this.dirty = true;
     this._pulseStripe = null; // cached breathing-hatch pattern — see pulseStripe()
     this.hintTarget = null; // { id, start } while a hint flash is showing
-    this.colourFlash = null;    // { id, start, duration } — Colour Flash ability
-    this.numberOverride = null; // { colour, end } — Number Recolor ability
-    this.goldenCell = null;     // { id, end } — Golden Cell ability
+    this.colourFlash = null;    // { id, start, duration } — Beacon ability
+    this.numberOverride = null; // { colour, end } — kept for compat; unused now
+    this.goldenCell = null;     // { id, end } — kept for compat; unused now
+    this.focus = null;          // { colour, end } — Focus ability: grey all but this colour
+    this.shock = null;          // { x, y, start } — Explode's expanding ring
 
     this.sourceBitmap = null; // the real photo, once decoded — see setPuzzle()
     this.showSource = false;  // true = showing it instead of the painted cells
@@ -157,6 +159,8 @@ export class Board {
     this.colourFlash = null;
     this.numberOverride = null;
     this.goldenCell = null;
+    this.focus = null;
+    this.shock = null;
 
     this.showSource = false;
     this.living = null;
@@ -324,17 +328,18 @@ export class Board {
     this.dirty = true;
   }
 
-  /** Number Recolor: swaps every unfilled number's colour until `end` — or
-   *  indefinitely, for `durationMs <= 0`, since the ability now cycles to a
-   *  colour that's meant to stick until the player changes it again. */
-  setNumberOverride(colour, durationMs, now) {
-    this.numberOverride = { colour, end: durationMs > 0 ? now + durationMs : Infinity };
+  /** Focus: for a window, grey the whole picture except this one colour, so its
+   *  cells — filled and not — leap off a desaturated board. Frozen at
+   *  activation like Beacon, so switching tubs mid-window does not retarget it. */
+  setFocus(colourIndex, durationMs, now) {
+    this.focus = { colour: colourIndex, end: now + durationMs };
     this.dirty = true;
   }
 
-  /** Golden Cell: rings one cell distinctly until it's filled or time runs out. */
-  markGolden(cellId, durationMs, now) {
-    this.goldenCell = { id: cellId, end: now + durationMs };
+  /** Explode: a single expanding ring from a point, the shockwave the fill
+   *  radiates out from. Lives in the live layer, gone in well under a second. */
+  shockwave(x, y, now) {
+    this.shock = { x, y, start: now };
   }
 
   /** Fits the picture into the element box, preserving aspect. */
@@ -593,11 +598,40 @@ export class Board {
       return;
     }
 
+    // Focus: re-blit the whole board through a greyscale filter, then paint the
+    // focus colour's own filled cells back in over the grey — so everything
+    // desaturates except the colour you asked to see. Done here, in device
+    // space right after the base blit, before any overlay, so the pulses and
+    // hints below still land in full colour on top.
+    if (this.focus) {
+      if (timeMs >= this.focus.end) {
+        this.focus = null;
+        this.dirty = true;
+      } else {
+        ctx.save();
+        ctx.filter = 'grayscale(1)';
+        ctx.drawImage(this.base, sx * this.dpr, sy * this.dpr);
+        ctx.restore();
+        this.applyTransform(ctx, sx, sy);
+        ctx.fillStyle = this.hexOf(this.focus.colour);
+        for (const cell of this.cells) {
+          if (cell.colour === this.focus.colour && this.filled.has(cell.id)) ctx.fill(cell.path);
+        }
+      }
+    }
+
     // Straight after the base and before every overlay: the raised element is
     // part of the picture, not something drawn over it. showSource returned
     // above, so this never reaches the photo — the living element has that
     // view to itself.
-    const lifted = this.liftCells ? this.drawLift(sx, sy) : null;
+    //
+    // Suppressed while Focus is live: drawLift re-blits the base in full colour
+    // (that is the whole point — a parallax copy of the picture), which would
+    // paint the raised subject back over the greyscale the focus branch just
+    // laid down. The subject is already baked flat into the base, so it greys
+    // correctly with everything else; it just loses its parallax for the
+    // twelve-second window, which no one will miss with the board desaturated.
+    const lifted = (this.liftCells && !this.focus) ? this.drawLift(sx, sy) : null;
 
     this.applyTransform(ctx, sx, sy);
 
@@ -736,6 +770,26 @@ export class Board {
         burst.drawBlobs(ctx);
       }
       ctx.restore();
+    }
+
+    // Explode's shockwave: a single white ring racing outward from the burst
+    // centre, gone in well under a second. Purely cosmetic — the cells are
+    // already filled — but it is what makes the fill read as an explosion.
+    if (this.shock) {
+      const t = (timeMs - this.shock.start) / 600;
+      if (t >= 1) {
+        this.shock = null;
+      } else {
+        this.applyTransform(ctx, sx, sy);
+        ctx.save();
+        ctx.globalAlpha = (1 - t) * 0.55;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = (7 * (1 - t) + 1) / this.scale;
+        ctx.beginPath();
+        ctx.arc(this.shock.x, this.shock.y, t * Math.max(this.puzzle.width, this.puzzle.height) * 0.6, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
     }
   }
 

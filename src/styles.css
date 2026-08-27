@@ -1798,7 +1798,14 @@ button {
 .overtime {
   position: absolute;
   inset: 0;
-  z-index: 6;
+  /* A modal, so it has to cover the stage chrome — not sit under it. The story
+     pill (15), the named pill (15) and the desktop grip (20) all outrank a low
+     value, and any of them poking through a full-screen backdrop is tappable:
+     the pill in particular reads as "back to the path" and yanks you out of the
+     round mid-play, the whole round left running behind the board. Above those,
+     below a real navigation (the story board at 22, the title at 46) so if one
+     of those ever opens it still wins. */
+  z-index: 21;
   display: grid;
   place-items: center;
   padding: 14px;
@@ -2124,16 +2131,23 @@ button {
 .swatch.demo:hover { transform: none; }
 
 /* The how-to panel, shown once before the clock starts. */
-.swap-how { display: flex; flex-direction: column; gap: 10px; align-items: center; text-align: center; padding: 4px 2px; }
-.swap-how-title {
+/* The bonus-round how-to panel, shared by the Swap and by Overtime — the same
+   shown-before-the-clock card, so the same styling under two names. */
+.swap-how, .ot-how { display: flex; flex-direction: column; gap: 10px; align-items: center; text-align: center; padding: 4px 2px; }
+.swap-how-title, .ot-how-title {
   font-weight: 800;
   font-size: 20px;
   letter-spacing: 0.5px;
   color: var(--accent);
 }
-.swap-how-body { font-size: 12.5px; line-height: 1.5; color: var(--muted); max-width: 320px; }
-.swap-how-demo { display: flex; gap: 12px; margin: 4px 0; }
-.swap-how-foot { display: flex; gap: 10px; justify-content: flex-end; align-items: center; margin-top: 6px; }
+.swap-how-body, .ot-how-body { font-size: 12.5px; line-height: 1.5; color: var(--muted); max-width: 320px; }
+.swap-how-demo, .ot-how-demo { display: flex; gap: 12px; margin: 4px 0; }
+.swap-how-foot, .ot-how-foot { display: flex; gap: 10px; justify-content: flex-end; align-items: center; margin-top: 6px; }
+
+/* Overtime's demo is a little run of the real thing: a handful of chips in
+   order, dark to light, so "put them back in this order" is shown not just told. */
+.ot-how-demo { gap: 0; border-radius: 6px; overflow: hidden; box-shadow: var(--cut); }
+.ot-how-chip { width: 30px; height: 30px; }
 
 /* The answer laid under a lost attempt: each colour beside its own name. */
 .swap-answer { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; }
