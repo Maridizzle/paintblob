@@ -16,7 +16,7 @@ import {
   activate as activateAbility, isActive as isAbilityActive, consumeActive,
 } from './abilities.js';
 import { WARDROBE_ITEMS } from './wardrobe.js';
-import { THEMES, DEFAULT_THEME, themeOr } from './themes.js';
+import { THEMES, DEFAULT_THEME, themeOr, themeUnlocked } from './themes.js';
 import {
   SECONDS as OT_SECONDS, CHUNKS, COLS, rampFrom, randomStops, scramble, swap, isSolved, partnerFor,
 } from './overtime.js';
@@ -28,8 +28,14 @@ import { outlineSVG, outlineWeight } from './thumbnail.js';
 import { computePlayStats } from './playstats.js';
 import { Tour } from './tour.js';
 import {
-  getChapter, chapterOr, defaultStory, nodeState, isStoryPuzzle, openingSeen,
+  getChapter, chapterOr, defaultStory, nodeState, isStoryPuzzle, isBossPuzzle,
+  onEnterScene, beforeStoneScene, pendingBoardScene, sceneKey, sceneSeen,
 } from './story.js';
+import {
+  regenCount, pickWipeTargets, pickLockTargets, chooseAttack, difficultyMult,
+  healthFraction, REGEN_INTERVAL_MS, ATTACK_INTERVAL_MS, FIRST_ATTACK_MS,
+  COLOUR_DISABLE_MS, CELL_LOCK_MS,
+} from './boss.js';
 import { letterSVG } from './letters.js';
 import {
   ROOMS, HOUSE_ITEMS, LIGHTING, PETS, PROP_SLOTS, SLOT_LABEL,
@@ -80,6 +86,11 @@ const S = {
   swap: null,
   swapOffered: false,
   named: 0,
+  // The boss fight — X taking painted cells back and throwing spells while you
+  // paint the last stone. Same per-picture, never-saved shape as ot/swap: it
+  // runs only while a boss stone is loaded and unfinished, and holds its own
+  // interval handles, the currently disabled colour, and the frozen cells.
+  boss: null,
   // Are we in the story surface right now? Runtime-only — which SCREEN they last
   // chose is persisted as save.story.mode; this is whether the board/pill/theme
   // are currently the story's, and it drives applyTheme().
@@ -209,6 +220,7 @@ function syncTubs() {
     const left = S.remaining[i];
     tub.classList.toggle('spent', left === 0);
     tub.classList.toggle('selected', i === S.selected);
+    tub.classList.toggle('frozen', isColourDisabled(i)); // X's colour-freeze spell
     tub.querySelector('.count').textContent = String(left);
   });
 
@@ -252,6 +264,7 @@ function syncCompare() {
 function selectTub(i, fromUser = false) {
   if (i < 0 || i >= S.puzzle.palette.length) return;
   if (S.remaining[i] === 0 || i === S.selected) return;
+  if (isColourDisabled(i)) { if (fromUser) sfx.play('nope'); return; } // X has this colour frozen
 
   if (fromUser && S.selected >= 0) {
     S.save.stats.colourSwitches++;
@@ -351,6 +364,7 @@ async function loadPuzzle(id) {
   S.named = 0;
   closeSwap();
   syncNamed();
+  stopBoss(); // tear down any fight from the picture we are leaving
   S.selected = -1;
   S.revealFrom = S.finished ? 0 : -1;
   S.hintsThisPuzzle = 0;
@@ -371,7 +385,21 @@ async function loadPuzzle(id) {
   syncCompare(); // ditto showSource
   syncUndo(); // history was just cleared, so this always hides it
   if (!S.finished) nextTub();
+
+  // Opening a free-gallery picture is leaving the story. Story mode is walked
+  // through the stone board, not the gallery, so a picture the chapter doesn't
+  // own drops you cleanly back to free mode rather than stranding you inStory
+  // with no path pill and the wrong bonus round on offer. Continue, on the
+  // title, walks back in. (openStone loads story stones, which stay inStory.)
+  if (S.inStory && !isStoryPuzzle(id)) {
+    S.inStory = false;
+    S.save.story.mode = 'free';
+    applyTheme();
+  }
   syncStoryPill(); // a story stone gets the way-back-to-the-path pill
+  // The last stone is a fight: X takes cells back and throws spells while you
+  // paint it. Only a boss stone, and only while it is unfinished.
+  if (isBossPuzzle(id) && !S.finished) startBoss(id);
 
   S.save.settings.lastPuzzle = id;
   persist();
@@ -567,6 +595,11 @@ function tryPaint(clientX, clientY, pointerType) {
     });
   }
   if (!target) return;
+
+  // X's spells are real walls: a cell it froze cannot be filled, and a colour it
+  // froze cannot be laid down. Either just buzzes — the ✕ on the cell and the
+  // frozen tub already say why.
+  if (cellLocked(target.id) || isColourDisabled(target.colour)) { sfx.play('nope'); return; }
 
   launch(target, point);
 }
@@ -863,6 +896,7 @@ function finish() {
   S.finished = true;
   S.revealFrom = performance.now();
   $('board').classList.add('done');
+  stopBoss(); // the boss dies the instant the last cell lands — no more regen, no spells
   syncUndo();
 
   S.save.stats.puzzles++;
@@ -872,6 +906,15 @@ function finish() {
   if (S.cells.length >= 100) achievements.award('fine-print');
   if (S.cells.length < 12) achievements.award('minimalist');
   achievements.sync(S.save.stats);
+
+  // Beating a boss earns the chapter's reward look. The unlock itself is
+  // automatic — themeUnlocked reads progress, which the persist() below writes —
+  // so this is only the announcement, pointing at Settings where it can be worn.
+  const rewardTheme = THEMES.find((t) => t.unlockedBy === S.puzzle.id);
+  if (rewardTheme) {
+    toast({ icon: '✨', name: `${rewardTheme.label} unlocked`,
+      desc: 'The colours answer again — a new look is waiting in Settings.' }, '', { sticky: true });
+  }
 
   const secs = Math.round(S.elapsedMs / 1000);
   $('finishName').textContent = S.puzzle.title;
@@ -2801,16 +2844,24 @@ function renderSettings(body) {
     themeSub.textContent = THEMES.find((t) => t.id === themeOr(settings.theme))?.blurb ?? '';
   };
   for (const t of THEMES) {
+    const unlocked = themeUnlocked(t.id, S.save);
     const b = document.createElement('button');
-    b.textContent = t.label;
-    b.className = themeOr(settings.theme) === t.id ? 'on' : '';
-    b.addEventListener('click', () => {
-      settings.theme = t.id;
-      applyTheme();
-      syncThemeSub();
-      [...themeSeg.children].forEach((c) => c.classList.toggle('on', c === b));
-      persist();
-    });
+    b.textContent = unlocked ? t.label : `🔒 ${t.label}`;
+    b.classList.toggle('on', unlocked && themeOr(settings.theme) === t.id);
+    b.classList.toggle('locked', !unlocked);
+    if (unlocked) {
+      b.addEventListener('click', () => {
+        settings.theme = t.id;
+        applyTheme();
+        syncThemeSub();
+        [...themeSeg.children].forEach((c) => c.classList.toggle('on', c === b));
+        persist();
+      });
+    } else {
+      // Earned, not chosen — inert until its puzzle is finished.
+      b.disabled = true;
+      b.title = 'Beat chapter one’s boss to unlock this look.';
+    }
     themeSeg.append(b);
   }
   syncThemeSub();
@@ -3352,6 +3403,122 @@ function syncSoundIcon() {
     ?.classList.toggle('on', !!S.save.settings.sound);
 }
 
+/* ------------------------------------------------------------------- boss */
+
+// X's side of the last stone. Started when a boss stone loads unfinished, torn
+// down the instant it finishes or you leave. All of it is per-picture session
+// state on S.boss and board.bossLocks — never saved. The arithmetic lives in
+// boss.js; this is the clock and the consequences.
+
+function bossActive() {
+  return !!S.boss && !!S.puzzle && !S.finished && !document.hidden;
+}
+
+function isColourDisabled(i) {
+  const d = S.boss?.disabled;
+  return !!d && d.colour === i && performance.now() < d.end;
+}
+
+function cellLocked(id) {
+  const l = board.bossLocks;
+  return !!l && l.cells.has(id) && performance.now() < l.end;
+}
+
+function startBoss(id) {
+  stopBoss(); // never two fights at once
+  const entry = S.manifest.find((p) => p.id === id);
+  S.boss = { mult: difficultyMult(entry?.difficulty), disabled: null, timers: [] };
+  board.bossLocks = null;
+  // Regen ticks from the off; the hud counts down twice a second; the first
+  // spell holds back a grace beat so the fight opens on the drain alone, then
+  // settles into its own cadence.
+  S.boss.timers.push(setInterval(bossRegenTick, REGEN_INTERVAL_MS));
+  S.boss.timers.push(setInterval(syncBossHud, 500));
+  S.boss.timers.push(setTimeout(function armAttacks() {
+    if (!S.boss) return;
+    bossAttackTick();
+    S.boss.timers.push(setInterval(bossAttackTick, ATTACK_INTERVAL_MS));
+  }, FIRST_ATTACK_MS));
+  syncBossHud();
+}
+
+function stopBoss() {
+  if (!S.boss) return;
+  for (const t of S.boss.timers) { clearInterval(t); clearTimeout(t); }
+  S.boss = null;
+  board.bossLocks = null;
+  $('bossHud')?.classList.add('hidden');
+  syncTubs();
+}
+
+// X takes some painted cells back — chosen at random, un-filled, so the board
+// comes un-named all over rather than X reaching for your last stroke. The
+// count fades to nothing as the picture nears done (see boss.js), so this can
+// never outrun the ending.
+function bossRegenTick() {
+  if (!bossActive()) return;
+  const n = regenCount(S.cells.length, S.filled.size, S.boss.mult);
+  if (!n) return;
+  for (const id of pickWipeTargets([...S.filled], n)) {
+    const cell = S.cells[id];
+    if (!cell) continue;
+    S.filled.delete(id);
+    S.remaining[cell.colour]++;
+    board.markUnfilled(id);
+  }
+  board.bossPulse = performance.now(); // the board flinches when X takes cells back
+  // A colour that had been finished is back in play; if nothing paintable is in
+  // hand any more, reach for a tub that is.
+  if (S.selected < 0 || S.remaining[S.selected] === 0 || isColourDisabled(S.selected)) nextTub();
+  syncTubs();
+  persist(); // X's damage should survive a reload, not un-happen
+  ensureFrame();
+}
+
+// One spell: freeze the colour in hand, or freeze a third of what is left to
+// paint. X will not freeze your only remaining colour, or one already frozen,
+// so you are never left with nothing you can do.
+function bossAttackTick() {
+  if (!bossActive()) return;
+  const now = performance.now();
+  const others = S.remaining.filter((r, i) => r > 0 && i !== S.selected).length;
+  const canDisable = S.selected >= 0 && !isColourDisabled(S.selected) && others > 0;
+  if (chooseAttack(Math.random, canDisable) === 'colour') {
+    S.boss.disabled = { colour: S.selected, end: now + COLOUR_DISABLE_MS };
+    nextTub(); // step off the colour X just froze
+    toast({ icon: '✕', name: 'X takes a colour', desc: 'That paint won’t answer for a moment — use another.' });
+  } else {
+    const unfilled = S.cells.filter((c) => !S.filled.has(c.id) && !S.pending.has(c.id)).map((c) => c.id);
+    const locked = pickLockTargets(unfilled);
+    board.bossLocks = { cells: new Set(locked), end: now + CELL_LOCK_MS };
+    board.dirty = true;
+    toast({ icon: '✕', name: 'X freezes the board', desc: `${locked.length} cells crossed out — they thaw in a moment.` });
+  }
+  sfx.play('nope');
+  syncTubs();
+  ensureFrame();
+}
+
+// The health bar and the countdowns, twice a second. Also where the two spells
+// expire: reading their end here keeps the wiring in one place, and re-syncs the
+// tubs and the board the moment a freeze lifts.
+function syncBossHud() {
+  if (!S.boss) return;
+  const now = performance.now();
+  if (S.boss.disabled && now >= S.boss.disabled.end) { S.boss.disabled = null; syncTubs(); }
+  if (board.bossLocks && now >= board.bossLocks.end) { board.bossLocks = null; board.dirty = true; ensureFrame(); }
+
+  const hud = $('bossHud');
+  if (!hud) return;
+  hud.classList.remove('hidden');
+  const health = healthFraction(S.filled.size, S.cells.length);
+  hud.querySelector('.boss-health-fill').style.width = `${health * 100}%`;
+  const parts = [];
+  if (S.boss.disabled && now < S.boss.disabled.end) parts.push(`colour frozen ${Math.ceil((S.boss.disabled.end - now) / 1000)}s`);
+  if (board.bossLocks && now < board.bossLocks.end) parts.push(`board frozen ${Math.ceil((board.bossLocks.end - now) / 1000)}s`);
+  hud.querySelector('.boss-status').textContent = parts.join(' · ');
+}
+
 /* -------------------------------------------------------------- story mode */
 
 // The login menu. Continue is offered only to a player who has been here
@@ -3408,36 +3575,40 @@ async function enterStory() {
   hideTitle();
   applyTheme();
   persist(true);
-  await maybeStoryOpening(S.save.story.chapter);
-  openStoryBoard();
+  const chapter = getChapter(S.save.story.chapter);
+  await playSceneOnce(chapter, onEnterScene(chapter), 'To the path');
+  await openStoryBoard();
 }
 
-// Plays a chapter's opening the first time it is entered, then resolves. Marked
-// seen up front — like the tour — so a reload mid-scene cannot replay it, and
-// skipped under ?notour so the headless harnesses are never sat on.
-function maybeStoryOpening(chapter) {
+// Plays a scene once and remembers it — like the tour, marked seen up front so
+// a reload mid-scene cannot restart it, and skipped whole under ?notour so the
+// headless harnesses are never sat on. Resolves either way, so a caller can
+// await the scene and then reveal whatever comes after it. A falsy scene (a
+// chapter with no beat at this trigger) resolves at once.
+function playSceneOnce(chapter, scene, finishLabel = 'Continue') {
   return new Promise((resolve) => {
-    if (/[?&]notour\b/.test(location.search) || openingSeen(S.save.story, chapter)) {
+    if (!scene || /[?&]notour\b/.test(location.search)
+        || sceneSeen(S.save.story, chapter.id, scene.id)) {
       resolve();
       return;
     }
-    S.save.story.seen[chapter] = true;
+    S.save.story.seen[sceneKey(chapter.id, scene.id)] = true;
     persist(true);
-    startStoryScene(chapter, resolve);
+    playScene(scene, finishLabel, resolve);
   });
 }
 
-// The opening as a run of centred tour cards, the squirrel swapped for whoever
-// is speaking. Reuses the whole tour mechanism — dots, Skip, keyboard, the
-// held race guard — for nothing but the character swap tour.js now allows.
-function startStoryScene(chapter, onDone) {
-  const steps = getChapter(chapter).opening.map((beat) => ({
+// A scene as a run of centred tour cards, the squirrel swapped for whoever is
+// speaking. Reuses the whole tour mechanism — dots, Skip, keyboard, the held
+// race guard — for nothing but the character swap tour.js now allows.
+function playScene(scene, finishLabel, onDone) {
+  const steps = scene.beats.map((beat) => ({
     target: null, title: beat.title, body: beat.body, character: letterSVG(beat.speaker),
   }));
   closeAbilityFan();
   tour?.end();
   tour = new Tour($('app'));
-  setTimeout(() => tour.start(steps, { finishLabel: 'To the path', onEnd: () => onDone?.() }), 0);
+  setTimeout(() => tour.start(steps, { finishLabel, onEnd: () => onDone?.() }), 0);
 }
 
 // Where the seven stones sit on the board, first to last — a thread winding up
@@ -3446,9 +3617,16 @@ const STONE_SPOTS = [
   [30, 90], [64, 81], [39, 69], [69, 56], [33, 44], [61, 31], [48, 16],
 ];
 
-function openStoryBoard() {
+async function openStoryBoard() {
   S.inStory = true;
   applyTheme();
+  // An interstitial owed for the stone you just finished plays before the board
+  // is shown, so you watch the scene and then see the newly-lit stone, not the
+  // other way round. pendingBoardScene decides whether one is due; playSceneOnce
+  // marks it seen so it never repeats. Nothing due — the common case — resolves
+  // instantly and the board comes straight up.
+  const chapter = getChapter(S.save.story.chapter);
+  await playSceneOnce(chapter, pendingBoardScene(chapter, S.save), 'To the path');
   renderStoryBoard();
   $('storyBoard').classList.remove('hidden');
   syncStoryPill();
@@ -3491,9 +3669,14 @@ function renderStoryBoard() {
   guide.style.top = `${STONE_SPOTS[0][1] - 4}%`;
   path.append(guide);
 
+  // Progressive unlock: each stone opens only once the one before it on the
+  // path is finished. prevDone walks forward down the list — true for the first
+  // stone, then whatever the last stone's state came out as.
+  let prevDone = true;
   ch.nodes.forEach((node, i) => {
     const [x, y] = STONE_SPOTS[i] ?? [50, 50];
-    const state = nodeState(node, S.save);
+    const state = nodeState(node, S.save, prevDone);
+    prevDone = state === 'done';
     const wrap = document.createElement('div');
     wrap.className = 'stone-wrap';
     wrap.style.left = `${x}%`;
@@ -3519,6 +3702,11 @@ function renderStoryBoard() {
 
 async function openStone(node) {
   if (!node.puzzle) return;
+  // The boss gets its intro before its picture, not after: X has the last word,
+  // then the fight. Any other stone has no beforeStone scene, so playSceneOnce
+  // no-ops and the puzzle loads straight away.
+  const chapter = getChapter(S.save.story.chapter);
+  await playSceneOnce(chapter, beforeStoneScene(chapter, node.id), 'Begin');
   closeStoryBoard();
   await loadPuzzle(node.puzzle);
   ensureFrame();

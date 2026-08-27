@@ -27,6 +27,21 @@ export const THEMES = [
     // chapter looking like somewhere you have arrived rather than a reskin.
     chapter: 1,
   },
+  {
+    id: 'cobalt',
+    label: 'Cobalt',
+    blurb: 'The first colour, answered: deep-space black lit by crystalline blue.',
+    // Earned by beating chapter one's boss — the day the FIRST colour, blue,
+    // answered to its name again. A blue locked absolutely: deepest navy at the
+    // cores, royal cobalt and electric cerulean on the lit edges, ice white at
+    // the highlights, glacial teal in the shadows, all on deep-space black so
+    // every blue glows with a cold internal fire. Later chapters earn their own
+    // colour in this same crystalline register; the full spectrum is the story's
+    // end, not its first stone. `unlockedBy` names the puzzle whose completion
+    // opens it; the settings picker draws it locked until then (see
+    // themeUnlocked).
+    unlockedBy: 'wrong-colour-day',
+  },
 ];
 
 const BY_ID = new Map(THEMES.map((t) => [t.id, t]));
@@ -43,4 +58,16 @@ export function themeOr(id, fallback = DEFAULT_THEME) {
 
 export function themeLabel(id) {
   return BY_ID.get(id)?.label ?? BY_ID.get(DEFAULT_THEME).label;
+}
+
+/**
+ * Whether a theme is available to wear. A theme with no `unlockedBy` is always
+ * on; one that names a puzzle is earned by finishing it — read straight off
+ * save.progress, the one source of truth for what is done, so there is no
+ * second unlock-list to drift from it. A missing save reads as nothing earned.
+ */
+export function themeUnlocked(id, save) {
+  const t = BY_ID.get(id);
+  if (!t?.unlockedBy) return true;
+  return !!save?.progress?.[t.unlockedBy]?.done;
 }

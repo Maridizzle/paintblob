@@ -85,6 +85,19 @@
       <button id="storyPill" class="story-pill hidden" data-act="story-board"
         title="Back to the path">↩ The path</button>
 
+      <!-- The boss health bar: X's grip on the last stone. It drains as you
+           paint and ticks back up whenever X takes cells, so the tug-of-war is
+           legible. The fill width and the status line are set from game.js;
+           shown only while a boss stone is loaded and unfinished. -->
+      <div id="bossHud" class="boss-hud hidden">
+        <div class="boss-hud-top">
+          <span class="boss-hud-mark">✕</span>
+          <span class="boss-hud-name">The Wrong-Colour Day</span>
+          <span class="boss-status"></span>
+        </div>
+        <div class="boss-health"><i class="boss-health-fill"></i></div>
+      </div>
+
       <div id="toasts"></div>
     </div>
 
