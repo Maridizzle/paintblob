@@ -30,7 +30,11 @@ function parseArgs(argv) {
     const value = inline !== undefined ? inline : argv[++i];
     switch (flag) {
       case 'size': opts.size = Number(value); break;
-      case 'colors': case 'colours': opts.maxColours = Number(value); break;
+      // An explicit count is a hard cap, not a target: asking for --colours 14
+      // means fourteen tubs, not fourteen-plus-however-many-the-rescue-adds.
+      // (The default, preset-driven path keeps the rescue — a photo shouldn't
+      // lose a real colour to a tidy number.)
+      case 'colors': case 'colours': opts.maxColours = Number(value); opts.strictColours = true; break;
       case 'cells': opts.maxCells = Number(value); break;
       case 'min-area': opts.minAreaFrac = Number(value); break;
       case 'denoise': opts.denoise = Number(value); break;

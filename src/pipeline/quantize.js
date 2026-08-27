@@ -213,11 +213,16 @@ function averageOf(hist, ids) {
  *   are collapsed afterwards, so a four-colour image yields four tubs, and a
  *   spatially-contiguous cluster the result would otherwise badly misrender
  *   can still earn a tub past it (see RESCUE_CEILING above).
+ * @param {{ rescue?: boolean }} [opts] — `rescue: false` turns maxColours from
+ *   a soft target into a HARD cap: the salient-minority rescue is skipped, so a
+ *   deliberately small palette stays small. It is what an explicit `--colours`
+ *   asks for (a chunky, few-tub picture); the default keeps the rescue on, so a
+ *   photograph never loses a real colour to a tidy count.
  * @returns {{ palette: number[][], indices: Uint8Array }}
  *   palette entries are [r,g,b] rounded to integers; indices holds one palette
  *   slot per pixel (255 marks a transparent pixel that belongs to no cell).
  */
-export function quantize(rgba, width, height, maxColours) {
+export function quantize(rgba, width, height, maxColours, { rescue = true } = {}) {
   const pixelCount = width * height;
   const hist = buildHistogram(rgba, pixelCount);
 
@@ -344,7 +349,7 @@ export function quantize(rgba, width, height, maxColours) {
   };
 
   // --- rescue salient minority colours ---------------------------------------
-  if (palette.length < RESCUE_CEILING) {
+  if (rescue && palette.length < RESCUE_CEILING) {
     const preRescue = assignPixels(palette);
     const minArea = Math.max(24, Math.round(pixelCount * 0.00004));
     const clusters = findSalientClusters(rgba, width, height, preRescue, palette, minArea);
