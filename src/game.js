@@ -797,6 +797,12 @@ function finish() {
     `${S.cells.length} cells · ${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, '0')}s` +
     `${streaks.wrongClicks === 0 ? ' · flawless' : ''}`;
 
+  // In the story, the finish card leads back to the path, not on to a free-play
+  // picture: nextPuzzle would eject you from the chapter you are partway
+  // through. The 'next' handler routes on the same condition.
+  $('finish').querySelector('.primary').textContent =
+    S.inStory && isStoryPuzzle(S.puzzle.id) ? 'Back to the path' : 'Next picture';
+
   // A real pause on the finished picture before anything covers it — the
   // 850ms outline fade (S.revealFrom above) is barely long enough to notice
   // it happened, let alone look the picture over. The stats card can wait;
@@ -3222,7 +3228,13 @@ document.addEventListener('click', async (e) => {
       else await openPanel(act);
       break;
     case 'panel-close': closePanel(); break;
-    case 'next': $('finish').classList.add('hidden'); await nextPuzzle(); break;
+    case 'next':
+      $('finish').classList.add('hidden');
+      // A finished story stone returns to the board; everything else walks the
+      // gallery. Same condition the finish card's label was set from.
+      if (S.inStory && isStoryPuzzle(S.puzzle?.id)) openStoryBoard();
+      else await nextPuzzle();
+      break;
     case 'finish-dismiss': $('finish').classList.add('hidden'); break;
     case 'story-board': openStoryBoard(); break;      // the pill, back to the path
     case 'story-back': closeStoryBoard(); showTitle(); break;

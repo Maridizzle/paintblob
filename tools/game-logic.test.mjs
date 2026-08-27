@@ -1008,6 +1008,20 @@ test('game.js plays the opening through the tour, and marks it seen up front', (
   assert.ok(body.includes('notour'), 'the scene must be skipped under ?notour for the harnesses');
 });
 
+test('finishing a story stone leads back to the path, not out to the gallery', () => {
+  // The wart caught before shipping: the finish card's primary button ran
+  // nextPuzzle(), which skips story stones — so completing a stone ejected you
+  // into a random free-mode picture mid-chapter. Both the label and the action
+  // now branch on the same story condition.
+  const game = readSource('src/game.js');
+  assert.match(game, /S\.inStory && isStoryPuzzle\(S\.puzzle\.id\) \? 'Back to the path' : 'Next picture'/,
+    'the finish card must offer the path back inside the story');
+  const handler = game.slice(game.indexOf("case 'next':"), game.indexOf("case 'finish-dismiss'"));
+  assert.match(handler, /if \(S\.inStory && isStoryPuzzle\(S\.puzzle\?\.id\)\) openStoryBoard\(\)/,
+    'the next button must return to the board for a finished story stone');
+  assert.match(handler, /else await nextPuzzle\(\)/, 'free mode still walks the gallery');
+});
+
 /* -------------------------------------------------------------- overtime */
 
 // Overtime hands you a fifteen-step gradient in pieces and sixty seconds to
