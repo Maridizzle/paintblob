@@ -1798,7 +1798,14 @@ button {
 .overtime {
   position: absolute;
   inset: 0;
-  z-index: 6;
+  /* A modal, so it has to cover the stage chrome — not sit under it. The story
+     pill (15), the named pill (15) and the desktop grip (20) all outrank a low
+     value, and any of them poking through a full-screen backdrop is tappable:
+     the pill in particular reads as "back to the path" and yanks you out of the
+     round mid-play, the whole round left running behind the board. Above those,
+     below a real navigation (the story board at 22, the title at 46) so if one
+     of those ever opens it still wins. */
+  z-index: 21;
   display: grid;
   place-items: center;
   padding: 14px;
