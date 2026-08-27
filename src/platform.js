@@ -17,6 +17,10 @@ const DEFAULT_SAVE = {
   stats: { blobs: 0, cells: 0, puzzles: 0, colourSwitches: 0, seconds: 0, undos: 0, bestStreak: 0, wrongTaps: 0, dayStreak: 0, bestDayStreak: 0 },
   unlocked: [],
   settings: { sound: true, volume: 0.7, alwaysOnTop: true, scale: 1, opacity: 0.7, theme: 'void', overtime: true },
+  // Story mode. Shallow-spread through readSave like `avatar`, so a save that
+  // already has it but predates a later sub-key gets that key from a ??= in
+  // boot(). `seen` records which chapters' opening scenes have played.
+  story: { chapter: 1, seen: {} },
   bounds: null,
   avatar: {
     customize: {

@@ -95,13 +95,16 @@ export class Tour {
   // `suppressible` adds a "Don't show again" checkbox to the card. It rides
   // checked by default (the tour is one-and-done), and onEnd is handed its
   // state: false means the viewer un-ticked it and wants to be shown again.
-  start(steps, { onEnd, suppressible = false } = {}) {
+  start(steps, { onEnd, suppressible = false, finishLabel = "Let's paint" } = {}) {
     if (this.running) return;
     this.steps = steps.filter((s) => s.before || !s.target || this._resolve(s.target));
     if (!this.steps.length) { onEnd?.(); return; }
 
     this.onEnd = onEnd;
     this.suppressible = suppressible;
+    // The word on the last Next button. A cutscene ends on "To the path", the
+    // guided tour on the default.
+    this.finishLabel = finishLabel;
     this.running = true;
     this.i = 0;
     this._build();
@@ -152,9 +155,13 @@ export class Tour {
   _build() {
     const root = document.createElement('div');
     root.className = this.suppressible ? 'tour suppressible' : 'tour';
+    // The character starts as whoever speaks the first beat — the squirrel for
+    // the tour, a letter for a story scene — so there is no flash of the wrong
+    // one before the first _show swaps it in.
+    this._char = this.steps[0]?.character || squirrelSVG();
     root.innerHTML =
       '<div class="tour-spotlight"></div>' +
-      `<div class="tour-squirrel">${squirrelSVG()}</div>` +
+      `<div class="tour-squirrel">${this._char}</div>` +
       '<div class="tour-card">' +
         '<div class="tour-step"></div>' +
         '<div class="tour-title"></div>' +
@@ -219,9 +226,17 @@ export class Tour {
     this.card.querySelector('.tour-step').textContent = `${i + 1} of ${this.steps.length}`;
     this.card.querySelector('.tour-title').textContent = step.title || '';
     this.card.querySelector('.tour-body').textContent = step.body || '';
-    this.card.querySelector('.tour-next').textContent = last ? "Let's paint" : 'Next';
+    this.card.querySelector('.tour-next').textContent = last ? this.finishLabel : 'Next';
     this.root.querySelectorAll('.tour-dot')
       .forEach((d, k) => d.classList.toggle('on', k === i));
+
+    // Swap the speaker only when it actually changes, so a run of beats by the
+    // same character doesn't restart its idle animation on every Next.
+    const char = step.character || squirrelSVG();
+    if (char !== this._char) {
+      this.squirrel.innerHTML = char;
+      this._char = char;
+    }
 
     // The before-hook may open a panel or switch a tab and needs a beat to
     // settle before we measure. A token guards against a fast Next landing us on

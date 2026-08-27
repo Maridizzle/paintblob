@@ -70,6 +70,11 @@
       </button>
       <div id="overtime" class="overtime hidden"></div>
 
+      <!-- Shown only while a story stone is being painted: the way back to the
+           path without leaving story mode. Mirrors the undo pill. -->
+      <button id="storyPill" class="story-pill hidden" data-act="story-board"
+        title="Back to the path">↩ The path</button>
+
       <div id="toasts"></div>
     </div>
 
@@ -109,6 +114,30 @@
       <!-- The big look at an unpainted picture. Inside the panel so it covers
            the list and nothing else, and so closing the panel takes it too. -->
       <div id="picPreview" class="pic-preview hidden"></div>
+    </section>
+
+    <!-- The login menu: Free mode or Story mode. Its buttons are built in JS so
+         Continue can appear only for a returning player. -->
+    <section id="title" class="title-screen hidden">
+      <div class="title-card">
+        <div class="title-mark">paintblob</div>
+        <div class="title-tag" id="titleTag"></div>
+        <div class="title-actions" id="titleActions"></div>
+      </div>
+    </section>
+
+    <!-- The chapter board: a stepping-stone path across the Sampler. The path
+         and its stones are drawn into #storyPath by renderStoryBoard(). -->
+    <section id="storyBoard" class="story-board hidden">
+      <header class="story-bar">
+        <button class="icon" data-act="story-back" title="Back to the menu">‹</button>
+        <span class="story-chapter" id="storyChapter"></span>
+        <span class="spacer"></span>
+        <button class="icon" data-act="story-free" title="Free mode">▦</button>
+      </header>
+      <div class="story-scroll">
+        <div class="story-path" id="storyPath"></div>
+      </div>
     </section>
   </div>
 

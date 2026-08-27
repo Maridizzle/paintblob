@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium, devices } from 'playwright-core';
 
 import { findChromium } from './lib/chromium.mjs';
+import { isStoryPuzzle } from '../src/story.js';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const WEB = path.join(ROOT, 'dist-web');
@@ -95,8 +96,12 @@ await page.waitForFunction(
 // tells you nothing. Blind picture titles are hidden in the list (that's the
 // whole point of them), so clicking one by its real title further down would
 // never find a row — restrict the search to picked ones a title click works.
+// Story stones are hidden from the gallery for the same reason (they live on
+// the board until finished), so they are excluded on the same grounds.
 const manifest = JSON.parse(fs.readFileSync(path.join(WEB, 'puzzles', 'manifest.json'), 'utf8'));
-const busiest = [...manifest].filter((p) => !p.blind).sort((a, b) => b.colours - a.colours)[0];
+const busiest = [...manifest]
+  .filter((p) => !p.blind && !isStoryPuzzle(p.id))
+  .sort((a, b) => b.colours - a.colours)[0];
 await page.click('[data-act="pictures"]');
 await page.click(`.row.clickable:has-text("${busiest.title}")`);
 await page.waitForFunction(

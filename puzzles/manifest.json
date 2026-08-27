@@ -109,6 +109,24 @@
     ]
   },
   {
+    "id": "blue-reportedly",
+    "title": "Blue, Reportedly",
+    "cells": 500,
+    "colours": 35,
+    "thumb": [
+      "#884d13",
+      "#ba6d1e",
+      "#d79a40",
+      "#f7ba51",
+      "#fac55b"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
+  {
     "id": "brass-fruit-bowl",
     "title": "Brass Fruit Bowl",
     "cells": 456,
@@ -285,6 +303,24 @@
     "themes": [
       "Landscape",
       "Water"
+    ]
+  },
+  {
+    "id": "ees-doorway",
+    "title": "Ee’s Doorway",
+    "cells": 577,
+    "colours": 40,
+    "thumb": [
+      "#652410",
+      "#ce5832",
+      "#b34114",
+      "#e8753f",
+      "#de8d62"
+    ],
+    "difficulty": "detailed",
+    "themes": [
+      "Fantasy",
+      "Abstract"
     ]
   },
   {

@@ -47,6 +47,13 @@
       "Abstract"
     ]
   },
+  "blue-reportedly": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
   "brass-fruit-bowl": {
     "difficulty": "normal",
     "themes": [
@@ -106,6 +113,13 @@
     "themes": [
       "Landscape",
       "Water"
+    ]
+  },
+  "ees-doorway": {
+    "difficulty": "detailed",
+    "themes": [
+      "Fantasy",
+      "Abstract"
     ]
   },
   "firefly-meadow": {
