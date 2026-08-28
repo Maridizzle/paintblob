@@ -2073,6 +2073,16 @@ function renderAvatarCustomize(section, stage) {
   }
 }
 
+// The clothing slots, in the order the shop lists them, with a heading each.
+// Optional layers (like the dress) can be taken off by tapping the worn item.
+const WEAR_LABEL = {
+  shirt: 'Shirts', bottoms: 'Bottoms', dress: 'Dresses', outerwear: 'Outerwear',
+  neckwear: 'Neckwear', socks: 'Socks', shoes: 'Shoes', headwear: 'Headwear', eyewear: 'Eyewear',
+};
+const SLOT_ORDER = ['shirt', 'bottoms', 'dress', 'outerwear', 'neckwear', 'socks', 'shoes', 'headwear', 'eyewear'];
+const OPTIONAL_SLOTS = new Set(['dress', 'outerwear', 'headwear', 'eyewear', 'neckwear']);
+const LINE_LABEL = { street: 'Streetwear', formal: 'Formal', cozy: 'Cozy', sport: 'Sport' };
+
 function renderAvatarOutfits(section, stage) {
   const customize = S.save.avatar.customize;
   const owned = new Set(S.save.avatar.unlocked);
@@ -2090,7 +2100,7 @@ function renderAvatarOutfits(section, stage) {
     renderAvatarPanel($('panelBody'));
   };
 
-  for (const item of WARDROBE_ITEMS) {
+  const itemRow = (item) => {
     const has = owned.has(item.id);
     const equipped = customize[item.slot]?.itemId === item.id;
     const el = row(has ? 'clickable' : 'locked');
@@ -2098,11 +2108,12 @@ function renderAvatarOutfits(section, stage) {
     text.className = 'grow';
     text.innerHTML = '<div class="label"></div><div class="sub"></div>';
     text.querySelector('.label').textContent = item.name;
+    const line = item.line ? ` · ${LINE_LABEL[item.line] ?? item.line}` : '';
     text.querySelector('.sub').textContent = equipped
-      ? 'equipped'
+      ? (OPTIONAL_SLOTS.has(item.slot) ? 'equipped · tap to remove' : 'equipped')
       : has
         ? 'owned · tap to equip'
-        : item.source === 'achievement' ? 'earned from an achievement' : `${item.price}🪙`;
+        : item.source === 'achievement' ? 'earned from an achievement' : `${item.price}🪙${line}`;
     el.append(text);
 
     if (equipped) {
@@ -2110,11 +2121,11 @@ function renderAvatarOutfits(section, stage) {
       tick.className = 'glyph';
       tick.textContent = '✓';
       el.append(tick);
-      if (item.slot === 'dress') {
+      if (OPTIONAL_SLOTS.has(item.slot)) {
         el.classList.add('clickable');
-        el.title = 'Tap to remove the dress';
+        el.title = `Tap to take off the ${item.name.toLowerCase()}`;
         el.addEventListener('click', () => {
-          customize.dress.itemId = null;
+          customize[item.slot].itemId = null;
           redraw();
         });
       }
@@ -2140,6 +2151,22 @@ function renderAvatarOutfits(section, stage) {
       el.append(buy);
     }
     section.append(el);
+  };
+
+  // Grouped by slot, with a heading each — the flat list got unwieldy once the
+  // wardrobe grew past sixty items. Any slot not in SLOT_ORDER still shows,
+  // after the known ones, so a future slot is never silently dropped.
+  const extra = [...new Set(WARDROBE_ITEMS.map((i) => i.slot))].filter((s) => !SLOT_ORDER.includes(s));
+  for (const slot of [...SLOT_ORDER, ...extra]) {
+    const items = WARDROBE_ITEMS.filter((i) => i.slot === slot);
+    if (!items.length) continue;
+    const heading = document.createElement('div');
+    heading.className = 'empty';
+    heading.style.padding = '10px 4px 2px';
+    const ownedHere = items.filter((i) => owned.has(i.id)).length;
+    heading.textContent = `${WEAR_LABEL[slot] ?? slot} · ${ownedHere}/${items.length}`;
+    section.append(heading);
+    for (const item of items) itemRow(item);
   }
 }
 
@@ -4032,6 +4059,13 @@ async function boot() {
   // drawing, and Classic is one tap away in the Customize tab for anyone who
   // preferred the old flat look.
   S.save.avatar.customize.style ??= 'inked';
+  // Same reason again: the four optional layers (outerwear/headwear/eyewear/
+  // neckwear) postdate most saves, so a returning player's customize object
+  // lacks them until this backfill adds each — bare (itemId null), like dress.
+  S.save.avatar.customize.outerwear ??= { itemId: null, colour: '#3a5a8a' };
+  S.save.avatar.customize.headwear ??= { itemId: null, colour: '#7a5a3a' };
+  S.save.avatar.customize.eyewear ??= { itemId: null, colour: '#2a2a30' };
+  S.save.avatar.customize.neckwear ??= { itemId: null, colour: '#a03a3a' };
   S.save.avatar.unlocked ??= starterItems;
   S.save.avatar.abilities = { ...defaultAbilityState(), ...S.save.avatar.abilities };
   // Same reason as `race` above: a save written before the house existed keeps

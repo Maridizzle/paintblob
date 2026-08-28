@@ -423,6 +423,27 @@ test('every starter wardrobe item is free', () => {
   }
 });
 
+test('every store wardrobe item costs something', () => {
+  for (const item of WARDROBE_ITEMS) {
+    if (item.source === 'store') assert.ok(item.price > 0, `${item.id} is a store item but is free`);
+  }
+});
+
+test('every wardrobe line tag is a known collection', () => {
+  const LINES = new Set(['street', 'formal', 'cozy', 'sport']);
+  for (const item of WARDROBE_ITEMS) {
+    if ('line' in item) assert.ok(LINES.has(item.line), `${item.id} has unknown line "${item.line}"`);
+  }
+});
+
+test('every optional avatar slot defaults to nothing worn but stays recolourable', () => {
+  const c = defaultAvatarCustomize();
+  for (const slot of ['dress', 'outerwear', 'headwear', 'eyewear', 'neckwear']) {
+    assert.ok(c[slot] && c[slot].itemId === null, `${slot} should default to itemId null`);
+    assert.ok('colour' in c[slot], `${slot} needs a default colour to be recolourable`);
+  }
+});
+
 /* ----------------------------------------------------- referential integrity */
 
 // Achievements.award() silently no-ops on an id with no matching definition —
@@ -466,7 +487,11 @@ test('every achievement outfit field references a real WARDROBE_ITEMS id', () =>
 // not a thrown error — it is a path string quietly containing "NaN", which
 // renders as nothing at all. These sweep for exactly that.
 
-const SLOTS = new Set(['skin', 'hair', 'eyes', 'shirt', 'bottoms', 'dress', 'socks', 'shoes']);
+const SLOTS = new Set(['skin', 'hair', 'eyes', 'shirt', 'bottoms', 'dress', 'socks', 'shoes',
+  'outerwear', 'headwear', 'eyewear', 'neckwear']);
+// The slots worn over the base that default to nothing on the bare figure, so
+// they only draw a group once something is equipped (the dress is the original).
+const OPTIONAL_SLOTS = new Set(['dress', 'outerwear', 'headwear', 'eyewear', 'neckwear']);
 
 /** Every meaningful combination of the customization axes. */
 function* everyAvatar() {
@@ -563,7 +588,7 @@ test('the slider extremes stay clean and in frame', () => {
   }
 });
 
-test('every emitted data-slot is one of the known eight, and groups balance', () => {
+test('every emitted data-slot is a known slot, and groups balance', () => {
   for (const [label, c] of everyAvatar()) {
     const svg = buildAvatarSVG(c);
     const slots = [...svg.matchAll(/<g data-slot="([a-z]+)"/g)].map((m) => m[1]);
@@ -581,17 +606,24 @@ test('the bare figure exposes every part the customize tab can recolour', () => 
   const groups = (c) =>
     new Set([...buildAvatarSVG(c).matchAll(/<g data-slot="([a-z]+)"/g)].map((m) => m[1]));
 
-  // A dress stands in for the shirt and bottoms, so no single render carries
-  // all eight — undressed covers seven, and the dress covers the eighth.
+  // The optional layers (dress, outerwear, headwear, eyewear, neckwear) are off
+  // by default, so the bare figure carries every OTHER slot; each optional one
+  // is checked below once it is actually worn.
   const plain = groups(defaultAvatarCustomize());
   for (const slot of SLOTS) {
-    if (slot === 'dress') continue;
+    if (OPTIONAL_SLOTS.has(slot)) continue;
     assert.ok(plain.has(slot), `no <g data-slot="${slot}"> to click on the customize screen`);
   }
 
-  const c = defaultAvatarCustomize();
-  c.dress.itemId = 'dress-basic';
-  assert.ok(groups(c).has('dress'), 'an equipped dress is not clickable');
+  const reps = {
+    dress: 'dress-basic', outerwear: 'outerwear-denim', headwear: 'headwear-beanie',
+    eyewear: 'eyewear-round', neckwear: 'neckwear-tie',
+  };
+  for (const [slot, id] of Object.entries(reps)) {
+    const c = defaultAvatarCustomize();
+    c[slot].itemId = id;
+    assert.ok(groups(c).has(slot), `an equipped ${slot} is not clickable to recolour`);
+  }
 });
 
 test('customize and outfits stage the figure, room and abilities the scene', () => {
