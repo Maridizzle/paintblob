@@ -1169,6 +1169,10 @@ test('X weakens as it dies, and can never outrun the ending', () => {
   assert.ok(difficultyMult('normal') > difficultyMult('chunky'));
   assert.equal(difficultyMult('what'), 1, 'an unknown tag is normal');
   assert.ok(regenCount(400, 200, difficultyMult('insane')) >= regenCount(400, 200, difficultyMult('normal')));
+  // The calm-cadence tuning: a healthy normal ~110-cell boss takes a handful of
+  // cells a tick (paired with a 15s beat), not the near-double it took before.
+  const healthy = regenCount(113, 20, difficultyMult('normal'));
+  assert.ok(healthy >= 3 && healthy <= 6, `a healthy normal boss should take ~5 cells, took ${healthy}`);
 });
 
 test('X takes and freezes a bounded, distinct sample', () => {
