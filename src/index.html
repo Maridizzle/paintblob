@@ -85,6 +85,12 @@
       <button id="storyPill" class="story-pill hidden" data-act="story-board"
         title="Back to the path">↩ The path</button>
 
+      <!-- Developer mode only: fills the whole picture at once, so a stone can be
+           cleared and the next one (or a boss's reward) checked without painting
+           it. Hidden unless dev mode is on and an unfinished picture is loaded. -->
+      <button id="devPill" class="dev-pill hidden" data-act="dev-complete"
+        title="Instantly complete this picture">🛠 Complete</button>
+
       <!-- The boss health bar: X's grip on the last stone. It drains as you
            paint and ticks back up whenever X takes cells, so the tug-of-war is
            legible. The fill width and the status line are set from game.js;

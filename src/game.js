@@ -91,6 +91,12 @@ const S = {
   // runs only while a boss stone is loaded and unfinished, and holds its own
   // interval handles, the currently disabled colour, and the frozen cells.
   boss: null,
+  // Developer mode — a hidden switch for checking every stone and the bosses
+  // without grinding the chapter. Session-only and never saved, so it clears on
+  // reload and can never ship stuck on; armed by typing DEV_CODE (or ?dev). When
+  // on it opens every built stone past the progressive gate, unlocks every
+  // theme, and puts an instant-complete pill on the loaded picture.
+  dev: /[?&]dev\b/.test(location.search),
   // Are we in the story surface right now? Runtime-only — which SCREEN they last
   // chose is persisted as save.story.mode; this is whether the board/pill/theme
   // are currently the story's, and it drives applyTheme().
@@ -397,6 +403,7 @@ async function loadPuzzle(id) {
     applyTheme();
   }
   syncStoryPill(); // a story stone gets the way-back-to-the-path pill
+  syncDevPill();   // dev mode's instant-complete pill, if it is on
   // The last stone is a fight: X takes cells back and throws spells while you
   // paint it. Only a boss stone, and only while it is unfinished.
   if (isBossPuzzle(id) && !S.finished) startBoss(id);
@@ -897,6 +904,7 @@ function finish() {
   S.revealFrom = performance.now();
   $('board').classList.add('done');
   stopBoss(); // the boss dies the instant the last cell lands — no more regen, no spells
+  syncDevPill(); // hide the instant-complete pill on a finished picture
   syncUndo();
 
   S.save.stats.puzzles++;
@@ -2844,7 +2852,7 @@ function renderSettings(body) {
     themeSub.textContent = THEMES.find((t) => t.id === themeOr(settings.theme))?.blurb ?? '';
   };
   for (const t of THEMES) {
-    const unlocked = themeUnlocked(t.id, S.save);
+    const unlocked = themeUnlocked(t.id, S.save) || S.dev; // dev mode opens every look
     const b = document.createElement('button');
     b.textContent = unlocked ? t.label : `🔒 ${t.label}`;
     b.classList.toggle('on', unlocked && themeOr(settings.theme) === t.id);
@@ -3519,6 +3527,58 @@ function syncBossHud() {
   hud.querySelector('.boss-status').textContent = parts.join(' · ');
 }
 
+/* --------------------------------------------------------------- dev mode */
+
+// A hidden switch for checking every stone and the bosses without grinding the
+// chapter. Type the code anywhere to toggle it; it also comes on with ?dev in
+// the URL. Session-only (S.dev), so it clears on reload and can never ship a
+// save stuck in it. When on: the board opens every built stone past the
+// progressive gate, Settings unlocks every theme, and the loaded picture wears
+// an instant-complete pill.
+const DEV_CODE = 'devmode';
+let devBuffer = '';
+document.addEventListener('keydown', (e) => {
+  // Only letters, so tub number-keys and shortcuts are untouched; a rolling
+  // window the length of the code is all that is ever compared.
+  if (e.key.length !== 1 || !/[a-z]/i.test(e.key)) return;
+  devBuffer = (devBuffer + e.key.toLowerCase()).slice(-DEV_CODE.length);
+  if (devBuffer === DEV_CODE) { devBuffer = ''; toggleDev(); }
+});
+
+function toggleDev(on = !S.dev) {
+  S.dev = on;
+  toast({ icon: on ? '🛠' : '🔒', name: `Developer mode ${on ? 'ON' : 'off'}`,
+    desc: on
+      ? 'Every stone unlocked, every theme open. Type devmode again to turn it off.'
+      : 'Back to normal play.' });
+  syncDevPill();
+  // Repaint whatever dev changes the look of, right now.
+  if (!$('storyBoard').classList.contains('hidden')) renderStoryBoard();
+  if (S.panel === 'settings') openPanel('settings');
+}
+
+/** The instant-complete pill: shown only in dev mode while an unfinished
+ *  picture is loaded, so you can clear a stone and see the next one open (and a
+ *  boss's reward land) without painting it. */
+function syncDevPill() {
+  $('devPill')?.classList.toggle('hidden', !(S.dev && S.puzzle && !S.finished));
+}
+
+// Fills the whole picture at once and finishes it — the dev skip. Tears the boss
+// fight down first so no regen races the fill.
+function devComplete() {
+  if (!S.dev || !S.puzzle || S.finished) return;
+  stopBoss();
+  for (const cell of S.cells) {
+    if (!S.filled.has(cell.id)) { S.filled.add(cell.id); board.markFilled(cell.id); }
+  }
+  S.pending.clear();
+  S.remaining = S.remaining.map(() => 0);
+  board.dirty = true;
+  syncTubs();
+  finish();
+}
+
 /* -------------------------------------------------------------- story mode */
 
 // The login menu. Continue is offered only to a player who has been here
@@ -3671,11 +3731,12 @@ function renderStoryBoard() {
 
   // Progressive unlock: each stone opens only once the one before it on the
   // path is finished. prevDone walks forward down the list — true for the first
-  // stone, then whatever the last stone's state came out as.
+  // stone, then whatever the last stone's state came out as. Developer mode
+  // forces every predecessor "done", so every built stone opens at once.
   let prevDone = true;
   ch.nodes.forEach((node, i) => {
     const [x, y] = STONE_SPOTS[i] ?? [50, 50];
-    const state = nodeState(node, S.save, prevDone);
+    const state = nodeState(node, S.save, S.dev || prevDone);
     prevDone = state === 'done';
     const wrap = document.createElement('div');
     wrap.className = 'stone-wrap';
@@ -3780,6 +3841,7 @@ document.addEventListener('click', async (e) => {
       else await nextPuzzle();
       break;
     case 'finish-dismiss': $('finish').classList.add('hidden'); break;
+    case 'dev-complete': devComplete(); break;         // dev mode: clear the picture instantly
     case 'story-board': openStoryBoard(); break;      // the pill, back to the path
     case 'story-back': closeStoryBoard(); showTitle(); break;
     case 'story-free': enterFree(); break;

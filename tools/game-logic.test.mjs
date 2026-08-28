@@ -1193,8 +1193,25 @@ test('the earned theme is locked until its boss is beaten', () => {
   const css = readSource('src/styles.css');
   assert.ok(css.includes(`[data-theme="${chorus.id}"]`), `styles.css has no block for "${chorus.id}"`);
   const game = readSource('src/game.js');
-  assert.match(game, /themeUnlocked\(t\.id, S\.save\)/, 'the theme picker must gate on themeUnlocked');
+  assert.match(game, /themeUnlocked\(t\.id, S\.save\) \|\| S\.dev/, 'the theme picker must gate on themeUnlocked');
   assert.match(game, /THEMES\.find\(\(t\) => t\.unlockedBy === S\.puzzle\.id\)/, 'finishing a boss must announce its reward theme');
+});
+
+test('developer mode opens the whole chapter for checking', () => {
+  // A hidden switch for reaching every stone and boss without grinding. Typed
+  // code or ?dev, session-only so it can never ship a save stuck in it.
+  const game = readSource('src/game.js');
+  assert.match(game, /const DEV_CODE = 'devmode';/, 'the typed dev code must exist');
+  assert.match(game, /dev: \/\[\?&\]dev\\b\/\.test\(location\.search\)/, 'dev mode must also come on with ?dev');
+  // The board opens every built stone; the theme picker unlocks every look.
+  assert.match(game, /nodeState\(node, S\.save, S\.dev \|\| prevDone\)/, 'the board must open every stone in dev');
+  // And an instant-complete pill clears a picture without painting it.
+  assert.match(game, /function devComplete\(\)/, 'dev mode needs an instant-complete');
+  assert.match(game, /case 'dev-complete': devComplete\(\)/, 'the dev pill must be wired to devComplete');
+  assert.match(readSource('src/index.html'), /id="devPill"[\s\S]*?data-act="dev-complete"/, 'the dev pill must be in the DOM');
+  // Never written to disk — it is session-only by design.
+  const persist = game.slice(game.indexOf('function persist'), game.indexOf('function persist') + 1500);
+  assert.ok(!/\bdev\b/.test(persist), 'dev mode must not be persisted');
 });
 
 /* ------------------------------------------------------------- the swap */
