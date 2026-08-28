@@ -1185,9 +1185,9 @@ test('X takes and freezes a bounded, distinct sample', () => {
   assert.deepEqual(pickWipeTargets(filled, 0, bossRng(3)), []);
 
   const unfilled = Array.from({ length: 30 }, (_, i) => i + 100);
-  const locked = pickLockTargets(unfilled, bossRng(4)); // default ~1/3
-  assert.equal(locked.length, 10, 'a freeze hits about a third');
-  assert.equal(new Set(locked).size, 10);
+  const locked = pickLockTargets(unfilled, bossRng(4)); // default LOCK_FRACTION (1/5)
+  assert.equal(locked.length, 6, 'a freeze hits about a fifth of what is left');
+  assert.equal(new Set(locked).size, 6);
 });
 
 test('X cannot freeze a colour you are not holding', () => {

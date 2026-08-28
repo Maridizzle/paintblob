@@ -13,20 +13,26 @@
 // win, and — because regen reaches zero exactly as the picture completes — it
 // can never strand you one tile short. You cannot lose; you can only be slowed.
 
-export const REGEN_INTERVAL_MS = 15000;   // how often X takes cells back
-export const ATTACK_INTERVAL_MS = 21000;  // how often X throws a spell
-export const FIRST_ATTACK_MS = 12000;     // a grace beat before the first spell
-export const COLOUR_DISABLE_MS = 12000;   // a disabled colour stays locked this long
-export const CELL_LOCK_MS = 20000;        // frozen cells stay frozen this long
-export const LOCK_FRACTION = 1 / 3;       // share of the unpainted board a freeze hits
+// Cadence is tuned so the board is CLEAR most of the time and a spell is an
+// occasional spike, not a constant wall. The freeze is the load-bearing one:
+// its duration (CELL_LOCK_MS) must stay well under the gap between spells
+// (ATTACK_INTERVAL_MS) or the crossings-out overlap and a third of the picture
+// is locked out for half the fight — which read as "super hard". At these
+// numbers a freeze crosses a fifth of the board for ten seconds roughly once a
+// minute, so it thaws and the board breathes long before the next one.
+export const REGEN_INTERVAL_MS = 18000;   // how often X takes cells back
+export const ATTACK_INTERVAL_MS = 34000;  // how often X throws a spell
+export const FIRST_ATTACK_MS = 20000;     // a grace beat before the first spell
+export const COLOUR_DISABLE_MS = 9000;    // a disabled colour stays locked this long
+export const CELL_LOCK_MS = 10000;        // frozen cells stay frozen this long
+export const LOCK_FRACTION = 1 / 5;       // share of the unpainted board a freeze hits
 
 // The share of the whole picture X takes on ONE full-health tick, before
-// difficulty. Tuned so a healthy boss on a ~110-cell normal stone takes ~5
-// cells every fifteen seconds (see REGEN_INTERVAL_MS) — a slow, legible
-// drain-back you comfortably out-paint at roughly a cell a second, and less
-// every tick as X weakens. An earlier ~3-cells-every-5s tuning read as X
-// eating the board faster than you could hold it.
-const REGEN_FRAC = 0.044;
+// difficulty. Tuned so a healthy boss on a ~110-cell normal stone takes ~4
+// cells every eighteen seconds (see REGEN_INTERVAL_MS) — a slow, legible
+// drain-back you comfortably out-paint, fading to nothing as X weakens. The
+// drain was never really the problem; the freeze cadence above was.
+const REGEN_FRAC = 0.035;
 
 // A picture's difficulty tag scales how hard X hits — the same tag the pipeline
 // writes into the manifest. Unknown or missing → normal.
