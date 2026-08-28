@@ -2545,6 +2545,11 @@ function triggerAbility(id) {
       toast({ icon: def.icon, name: def.name, desc: `Half your colour — ${n} cells` });
       break;
     }
+    case 'steady-hand':
+      // No visual — the effect is the widened tap slack read back in tryPaint —
+      // so a toast is the only sign it took, for the seconds it lasts.
+      toast({ icon: def.icon, name: def.name, desc: 'Your aim is forgiving for a few seconds' });
+      break;
     default:
       break;
   }
@@ -2887,6 +2892,9 @@ function renderSettings(body) {
     if (unlocked) {
       b.addEventListener('click', () => {
         settings.theme = t.id;
+        // Picking a theme is taking control: from now on it wins even in the
+        // story, so the chapter no longer overrides it.
+        settings.themePinned = true;
         applyTheme();
         syncThemeSub();
         [...themeSeg.children].forEach((c) => c.classList.toggle('on', c === b));
@@ -2950,9 +2958,13 @@ function renderSettings(body) {
  *  tokens this attribute swaps, so there is nothing else to keep in step. */
 function applyTheme() {
   // In the story, the chapter's own look wins over the player's chosen theme —
-  // without overwriting it, so free mode goes back to what they picked. Out of
-  // the story, their setting rules.
-  const id = S.inStory ? getChapter(S.save.story.chapter).theme : S.save.settings.theme;
+  // but only until they take control. The moment they pick any theme in
+  // Settings (`themePinned`), their choice rules everywhere, story included, so
+  // "I just need dark mode" is one tap and it sticks. Until then, a fresh player
+  // still gets the chapter's flavour.
+  const id = (S.inStory && !S.save.settings.themePinned)
+    ? getChapter(S.save.story.chapter).theme
+    : S.save.settings.theme;
   document.documentElement.dataset.theme = themeOr(id);
 }
 /* ------------------------------------------------------------- overtime */
@@ -3641,6 +3653,19 @@ function showTitle() {
 
 function hideTitle() { $('title').classList.add('hidden'); }
 
+// The Story ⇄ Free confirm, filled from the current mode. Switching changes the
+// theme, the bonus round and the gallery routing, so it asks first rather than
+// yanking the player across on a single tap.
+function showModeSwap() {
+  const toStory = !S.inStory;
+  $('modeSwapTitle').textContent = toStory ? 'Enter Story mode?' : 'Switch to Free mode?';
+  $('modeSwapBody').textContent = toStory
+    ? 'Follow the chapter path and its bonus rounds. You can switch back any time.'
+    : 'Paint anything from the gallery. Your story progress is saved.';
+  document.querySelector('#modeSwap [data-act="mode-go"]').textContent = toStory ? 'Enter Story' : 'Free mode';
+  $('modeSwap').classList.remove('hidden');
+}
+
 // Free mode: the classic gallery over whatever picture is loaded.
 function enterFree() {
   S.inStory = false;
@@ -3872,6 +3897,12 @@ document.addEventListener('click', async (e) => {
     case 'story-board': openStoryBoard(); break;      // the pill, back to the path
     case 'story-back': closeStoryBoard(); showTitle(); break;
     case 'story-free': enterFree(); break;
+    case 'mode-swap': showModeSwap(); break;
+    case 'mode-cancel': $('modeSwap').classList.add('hidden'); break;
+    case 'mode-go':
+      $('modeSwap').classList.add('hidden');
+      if (S.inStory) enterFree(); else enterStory();
+      break;
     default: break;
   }
 });
@@ -3880,6 +3911,10 @@ document.addEventListener('click', async (e) => {
 // part, same as the close button, dismisses it without leaving the picture.
 $('finish').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) $('finish').classList.add('hidden');
+});
+// Same for the mode-swap confirm: clicking the dark part cancels it.
+$('modeSwap').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) $('modeSwap').classList.add('hidden');
 });
 
 // A repeated list of icon buttons keyed by ability id, not a single fixed
@@ -4027,6 +4062,9 @@ async function boot() {
   // later build dropped must fall back rather than leave the app unstyled —
   // themeOr does that, so this only has to fill the blank.
   S.save.settings.theme ??= DEFAULT_THEME;
+  // false until the player picks a theme; once true their choice wins in story
+  // mode too, rather than the chapter overriding it (accessibility: dark mode).
+  S.save.settings.themePinned ??= false;
   // The bonus round is opt-out, not opt-in: it never takes the canvas without
   // being asked, so there is nothing to protect a first-time player from.
   S.save.settings.overtime ??= true;

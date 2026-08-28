@@ -309,8 +309,11 @@ test('every ability id is unique', () => {
   assert.equal(new Set(ids).size, ids.length);
 });
 
-test('ability cost tiers strictly rise in unlock level as max charges falls', () => {
-  const byUnlock = [...ABILITIES].sort((a, b) => a.unlockLevel - b.unlockLevel);
+test('across the power ladder, later unlocks never grant more charges (Steady Hand, a utility, aside)', () => {
+  // The reveal/filter/fill abilities get rarer as they get stronger. Steady Hand
+  // is a convenience aid, not a power rung, so it sits outside that ordering.
+  const byUnlock = [...ABILITIES].filter((a) => a.id !== 'steady-hand')
+    .sort((a, b) => a.unlockLevel - b.unlockLevel);
   for (let i = 1; i < byUnlock.length; i++) {
     assert.ok(
       byUnlock[i].maxCharges <= byUnlock[i - 1].maxCharges,
@@ -359,21 +362,24 @@ test('isUnlocked gates purely on level vs unlockLevel', () => {
   assert.equal(isUnlocked(def, def.unlockLevel), true);
 });
 
-test('abilities unlock one per level across 1..5, not clumped in the first few', () => {
-  // The five that survived the cull arrive one at a time as you climb, not all
-  // at once. (Guards the old "level 3 with almost every ability" complaint.)
+test('abilities unlock one per level across 1..6, not clumped in the first few', () => {
+  // Each ability arrives one at a time as you climb, not all at once — now six
+  // rungs with Steady Hand restored at the top. (Guards the old "level 3 with
+  // almost every ability" complaint.)
   const levels = ABILITIES.map((a) => a.unlockLevel).sort((x, y) => x - y);
-  assert.deepEqual(levels, [1, 2, 3, 4, 5]);
+  assert.deepEqual(levels, [1, 2, 3, 4, 5, 6]);
   const atLevel3 = ABILITIES.filter((a) => isUnlocked(a, 3)).length;
   assert.equal(atLevel3, 3, 'level 3 should grant 3 abilities, not most of them');
 });
 
-test('the cut abilities are gone, and every survivor is a reveal, filter or fill', () => {
+test('the cut abilities stay cut, and Steady Hand is restored alongside the survivors', () => {
   const ids = new Set(ABILITIES.map((a) => a.id));
-  for (const gone of ['precision-ping', 'number-recolor', 'steady-hand', 'golden-cell', 'colour-surge', 'streak-shield']) {
+  // steady-hand was cut in the rewrite but brought back by request; the rest stay gone.
+  for (const gone of ['precision-ping', 'number-recolor', 'golden-cell', 'colour-surge', 'streak-shield']) {
     assert.ok(!ids.has(gone), `${gone} should have been cut`);
   }
-  assert.deepEqual([...ids].sort(), ['colour-flash', 'explode', 'focus', 'half-fill', 'prism'].sort());
+  assert.ok(ids.has('steady-hand'), 'Steady Hand should be restored');
+  assert.deepEqual([...ids].sort(), ['colour-flash', 'explode', 'focus', 'half-fill', 'prism', 'steady-hand'].sort());
   // And game.js wires each visible effect, and no longer reaches for the cut ones.
   const game = readSource('src/game.js');
   assert.match(game, /case 'focus':\s*\n\s*if \(S\.selected >= 0\) board\.setFocus\(/, 'Focus must grey the board');

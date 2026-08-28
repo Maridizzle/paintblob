@@ -45,6 +45,13 @@ export const ABILITIES = [
     desc: "Half of your held colour's remaining cells fill at once.",
     tier: 5, maxCharges: 1, durationMs: 0, unlockLevel: 5, levelsPerCharge: 2,
   },
+  {
+    // The sixth rung. Its effect read-back is already live in game.js's tryPaint
+    // (a wider tap slack while active), so only this catalogue row is needed.
+    id: 'steady-hand', icon: '🤲', name: 'Steady Hand',
+    desc: 'Widens your tap radius so near-misses still land.',
+    tier: 6, maxCharges: 3, durationMs: 10000, unlockLevel: 6, levelsPerCharge: 1,
+  },
 ];
 
 const BY_ID = new Map(ABILITIES.map((a) => [a.id, a]));

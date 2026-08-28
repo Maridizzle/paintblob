@@ -1204,7 +1204,9 @@ button {
   flex-direction: column;
   background: var(--tx-grain), var(--sparks), var(--streaks), var(--void-glow), var(--void);
   animation: fade 180ms ease both;
-  z-index: 10;
+  /* Above the story board (z-index 22) so Settings — reached from the story
+     bar's ⚙ — opens on top of the board rather than behind it. */
+  z-index: 30;
 }
 /* A layered stamp ghost pressed into the panel's dead corner — faint, so it
    reads as depth, not decoration. Pointer-events off; sits behind the list. */
