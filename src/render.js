@@ -44,9 +44,10 @@ const LIFT_SHADOW = 'rgba(10, 8, 18, 0.42)';
  */
 const LIFT_MAX_AREA = 0.55;
 
-const HINT_DURATION = 1600;
+const HINT_DURATION = 60000;   // a hint holds for a full minute — impossible to miss
 const HINT_PING = 500;
-const HINT_FADE = 400;
+const HINT_FADE = 600;
+const HINT_PING_EVERY = 2200;  // the white ring re-pings this often across the minute
 
 // How far past fit-to-window the player can zoom. High enough that even the
 // smallest Insane-detail sliver can be pushed back over the number threshold.
@@ -729,28 +730,40 @@ export class Board {
       } else {
         const tail = HINT_DURATION - HINT_FADE;
         const fade = elapsed > tail ? 1 - (elapsed - tail) / HINT_FADE : 1;
-        const pulse = Math.abs(Math.sin(elapsed / 140));
+        const pulse = Math.abs(Math.sin(elapsed / 320));  // a calm ~1s breath
+        const grow = 1 + 0.3 * pulse;                     // the cell swells on each beat
+        const ax = cell.anchor.x, ay = cell.anchor.y;
 
+        // Grow the target about its own centre so it visibly swells past its
+        // borders — the "flash AND grow" that makes a hint impossible to miss.
         ctx.save();
+        ctx.translate(ax, ay);
+        ctx.scale(grow, grow);
+        ctx.translate(-ax, -ay);
         ctx.fillStyle = this.hexOf(cell.colour);
-        ctx.globalAlpha = fade * (0.16 + 0.24 * pulse);
+        ctx.globalAlpha = fade * (0.22 + 0.3 * pulse);
         ctx.fill(cell.path);
         ctx.globalAlpha = fade;
         ctx.strokeStyle = this.hexOf(cell.colour);
-        ctx.lineWidth = (1.5 + 1.5 * pulse) / this.scale;
+        ctx.lineWidth = (1.6 + 1.8 * pulse) / this.scale / grow;
         ctx.lineJoin = 'round';
         ctx.stroke(cell.path);
+        ctx.restore();
 
-        if (elapsed < HINT_PING) {
-          const p = elapsed / HINT_PING;
+        // A white ring pings outward every couple of seconds for the whole
+        // minute — not just once — so a long-lived hint keeps catching the eye.
+        const ping = elapsed % HINT_PING_EVERY;
+        if (ping < HINT_PING) {
+          const p = ping / HINT_PING;
+          ctx.save();
           ctx.beginPath();
-          ctx.arc(cell.anchor.x, cell.anchor.y, cell.inradius * (0.4 + 1.8 * p), 0, Math.PI * 2);
-          ctx.globalAlpha = fade * (1 - p) * 0.8;
+          ctx.arc(ax, ay, cell.inradius * (0.5 + 2.2 * p), 0, Math.PI * 2);
+          ctx.globalAlpha = fade * (1 - p) * 0.85;
           ctx.lineWidth = 2.5 / this.scale;
           ctx.strokeStyle = '#fff';
           ctx.stroke();
+          ctx.restore();
         }
-        ctx.restore();
       }
     }
 
