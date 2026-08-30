@@ -1154,6 +1154,42 @@ check('cancelling the chooser resolves', chooser.cancelled === 'resolved', choos
   await page.screenshot({ path: path.join(OUT, 'raised-element.png') });
 }
 
+/* ------------------------------------------------------------- low-stim mode */
+// The accessibility switch: one toggle that hides every extra and forces the
+// calm default look, leaving a plain-painting surface. Flip it on through the
+// real Settings UI and confirm the chrome actually goes.
+await page.evaluate(() => {
+  if (window.__paintblobTest.state.panel !== 'settings') document.querySelector('[data-act="settings"]').click();
+});
+await page.waitForSelector('#panel:not(.hidden)', { timeout: 5000 });
+await page.waitForTimeout(200);
+const lsPickerBefore = await page.evaluate(() => !!document.querySelector('#panelBody .segmented.wrap'));
+await page.evaluate(() => {
+  const row = [...document.querySelectorAll('#panelBody .row.clickable')].find((r) => /Low-stim/i.test(r.textContent));
+  row?.click();
+});
+await page.waitForTimeout(250);
+const ls = await page.evaluate(() => {
+  const disp = (sel) => { const el = document.querySelector(sel); return el ? getComputedStyle(el).display : 'absent'; };
+  return {
+    on: document.documentElement.classList.contains('low-stim'),
+    saved: window.__paintblobTest.state.save.settings.lowStim === true,
+    theme: document.documentElement.dataset.theme,
+    picker: !!document.querySelector('#panelBody .segmented.wrap'),
+    avatar: disp('#avatarWidget'),
+    points: disp('#pointsHud'),
+    bg: getComputedStyle(document.getElementById('app')).backgroundImage,
+  };
+});
+check('low-stim: Settings shows the theme picker before the toggle is on', lsPickerBefore);
+check('low-stim: the toggle stamps html.low-stim and persists', ls.on && ls.saved);
+check('low-stim: the look is forced to the calm default (void)', ls.theme === 'void', ls.theme);
+check('low-stim: the theme picker, avatar and points HUD are hidden',
+  ls.picker === false && ls.avatar === 'none' && ls.points === 'none',
+  `picker=${ls.picker} avatar=${ls.avatar} points=${ls.points}`);
+check('low-stim: the background is flat black — no laser streaks', ls.bg === 'none', ls.bg);
+await page.screenshot({ path: path.join(OUT, 'low-stim.png') });
+
 await browser.close();
 server.close();
 

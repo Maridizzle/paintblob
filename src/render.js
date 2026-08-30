@@ -93,6 +93,7 @@ export class Board {
     this.dirty = true;
     this._pulseStripe = null; // cached breathing-hatch pattern — see pulseStripe()
     this.hintTarget = null; // { id, start } while a hint flash is showing
+    this.lowStim = false;   // low-stim mode: draw the hint as a calm still glow
     this.colourFlash = null;    // { id, start, duration } — Beacon ability
     this.numberOverride = null; // { colour, end } — kept for compat; unused now
     this.goldenCell = null;     // { id, end } — kept for compat; unused now
@@ -730,9 +731,24 @@ export class Board {
       } else {
         const tail = HINT_DURATION - HINT_FADE;
         const fade = elapsed > tail ? 1 - (elapsed - tail) / HINT_FADE : 1;
+        const ax = cell.anchor.x, ay = cell.anchor.y;
+
+        if (this.lowStim) {
+          // Low-stim: a calm, still glow on the target — no growing, no pulsing,
+          // no pinging ring. It just sits there quietly until the cell is filled.
+          ctx.save();
+          ctx.fillStyle = this.hexOf(cell.colour);
+          ctx.globalAlpha = fade * 0.3;
+          ctx.fill(cell.path);
+          ctx.globalAlpha = fade;
+          ctx.strokeStyle = this.hexOf(cell.colour);
+          ctx.lineWidth = 2.4 / this.scale;
+          ctx.lineJoin = 'round';
+          ctx.stroke(cell.path);
+          ctx.restore();
+        } else {
         const pulse = Math.abs(Math.sin(elapsed / 320));  // a calm ~1s breath
         const grow = 1 + 0.3 * pulse;                     // the cell swells on each beat
-        const ax = cell.anchor.x, ay = cell.anchor.y;
 
         // Grow the target about its own centre so it visibly swells past its
         // borders — the "flash AND grow" that makes a hint impossible to miss.
@@ -763,6 +779,7 @@ export class Board {
           ctx.strokeStyle = '#fff';
           ctx.stroke();
           ctx.restore();
+        }
         }
       }
     }

@@ -908,6 +908,36 @@ test('both DEFAULT_SAVE literals declare a theme, and boot backfills it', () => 
     'the theme must reach the DOM through themeOr, so a stale id cannot strand the app');
 });
 
+test('low-stim mode: shipped in both saves, backfilled, and gates every extra', () => {
+  // The save-shape four-places rule, same as theme/overtime above.
+  for (const f of ['src/platform.js', 'electron/main.cjs']) {
+    assert.match(readSource(f), /lowStim: false/, `${f} is missing lowStim in DEFAULT_SAVE.settings`);
+  }
+  const game = readSource('src/game.js');
+  assert.match(game, /settings\.lowStim \?\?= false/, 'boot() must backfill settings.lowStim');
+
+  // applyTheme forces the calm default look, and applyLowStim stamps the root
+  // class the stylesheet keys off, tells the board, and mutes sound.
+  assert.match(game, /lowStim\s*\?\s*DEFAULT_THEME/, 'applyTheme() must force DEFAULT_THEME under low-stim');
+  assert.match(game, /classList\.toggle\('low-stim'/, 'applyLowStim must stamp html.low-stim');
+  assert.match(game, /board\.lowStim = on/, 'applyLowStim must tell the board its hint should go calm');
+
+  // Nothing hidden may still fire: the tour, the points-HUD float and both
+  // bonus offers each bail early, and the title drops the Story door.
+  const guards = (game.match(/if \(S\.save\.settings\.lowStim\) return;/g) ?? []).length;
+  assert.ok(guards >= 4, `expected low-stim guards on the tour, HUD and bonus offers, found ${guards}`);
+  assert.match(game, /if \(!lowStim\) add\('Story mode'/, 'the title must hide the Story door under low-stim');
+
+  // The stylesheet hides the extra chrome in one declarative block.
+  const css = readSource('src/styles.css');
+  for (const sel of ['#avatarWidget', '#pointsHud', '#bossHud', '#overtimeChip', '\\[data-act="trophies"\\]']) {
+    assert.match(css, new RegExp(`html\\.low-stim ${sel}`), `styles.css must hide ${sel} under low-stim`);
+  }
+
+  // The hint keeps working but is drawn as a still glow, not the flash-and-grow.
+  assert.match(readSource('src/render.js'), /if \(this\.lowStim\)/, 'render.js must branch the hint for low-stim');
+});
+
 /* ---------------------------------------------------------------- story */
 
 // Story mode's data and gating are pure, like the rest of the DOM-free logic,
