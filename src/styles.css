@@ -2387,14 +2387,17 @@ html.low-stim #devPill {
 }
 
 /* Plain black. The void theme's diagonal neon "lasers" (its --streaks and
-   --void-glow background layers) and the animated spark twinkle on #app::after
-   are themselves stimulating — motion and bright colour a low-stim player has
-   asked to be rid of — so the calm surface drops them all for one flat,
-   dead-still ground, matching the board's own letterbox so nothing draws the
-   eye but the picture. */
-html.low-stim #app {
+   --void-glow background layers), the animated spark twinkle on #app::after, the
+   SAME layers on every panel (Settings, Pictures, and the avatar menu — they all
+   use .panel), and the panel's neon edge threads (.panel::before) are all
+   stimulating — motion and bright colour a low-stim player has asked to be rid
+   of — so the calm surface drops them all for one flat, dead-still ground,
+   matching the board's own letterbox so nothing draws the eye but the picture. */
+html.low-stim #app,
+html.low-stim .panel {
   background: var(--void);
 }
-html.low-stim #app::after {
+html.low-stim #app::after,
+html.low-stim .panel::before {
   display: none;
 }

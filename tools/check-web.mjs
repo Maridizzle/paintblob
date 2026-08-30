@@ -1179,6 +1179,7 @@ const ls = await page.evaluate(() => {
     avatar: disp('#avatarWidget'),
     swap: disp('[data-act="mode-swap"]'),
     bg: getComputedStyle(document.getElementById('app')).backgroundImage,
+    panelBg: getComputedStyle(document.querySelector('.panel')).backgroundImage,
   };
 });
 check('low-stim: Settings shows the theme picker before the toggle is on', lsPickerBefore);
@@ -1188,7 +1189,8 @@ check('low-stim: the theme picker is hidden but the avatar layer stays',
   ls.picker === false && ls.avatar !== 'none' && ls.avatar !== 'absent',
   `picker=${ls.picker} avatar=${ls.avatar}`);
 check('low-stim: story-mode chrome (the Story⇄Free swap) is hidden', ls.swap === 'none', ls.swap);
-check('low-stim: the background is flat black — no laser streaks', ls.bg === 'none', ls.bg);
+check('low-stim: the app background is flat black — no laser streaks', ls.bg === 'none', ls.bg);
+check('low-stim: the panels (Settings, avatar menu) are flat black too', ls.panelBg === 'none', ls.panelBg);
 await page.screenshot({ path: path.join(OUT, 'low-stim.png') });
 
 await browser.close();
