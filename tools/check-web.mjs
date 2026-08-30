@@ -1177,16 +1177,17 @@ const ls = await page.evaluate(() => {
     theme: document.documentElement.dataset.theme,
     picker: !!document.querySelector('#panelBody .segmented.wrap'),
     avatar: disp('#avatarWidget'),
-    points: disp('#pointsHud'),
+    swap: disp('[data-act="mode-swap"]'),
     bg: getComputedStyle(document.getElementById('app')).backgroundImage,
   };
 });
 check('low-stim: Settings shows the theme picker before the toggle is on', lsPickerBefore);
 check('low-stim: the toggle stamps html.low-stim and persists', ls.on && ls.saved);
 check('low-stim: the look is forced to the calm default (void)', ls.theme === 'void', ls.theme);
-check('low-stim: the theme picker, avatar and points HUD are hidden',
-  ls.picker === false && ls.avatar === 'none' && ls.points === 'none',
-  `picker=${ls.picker} avatar=${ls.avatar} points=${ls.points}`);
+check('low-stim: the theme picker is hidden but the avatar layer stays',
+  ls.picker === false && ls.avatar !== 'none' && ls.avatar !== 'absent',
+  `picker=${ls.picker} avatar=${ls.avatar}`);
+check('low-stim: story-mode chrome (the Story⇄Free swap) is hidden', ls.swap === 'none', ls.swap);
 check('low-stim: the background is flat black — no laser streaks', ls.bg === 'none', ls.bg);
 await page.screenshot({ path: path.join(OUT, 'low-stim.png') });
 

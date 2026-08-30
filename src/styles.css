@@ -2368,18 +2368,16 @@ button {
 }
 
 /* -------------------------------------------------------------- low-stim mode
-   One switch (Settings → Low-stim mode) that strips the app back to plain, calm
-   painting. `applyLowStim()` stamps `low-stim` on <html>; everything an
-   overwhelmed player asked to be rid of — the avatar and its abilities, the
-   points HUD, the Story⇄Free and Achievements buttons, the boss health bar, the
-   bonus-round chips, the story/dev pills — is hidden here, in one place. The
-   blob-burst fill, the paints, the picture and the hint (drawn calm, see
-   render.js) all stay. JS guards keep the hidden things from ever firing. */
-html.low-stim #avatarWidget,
-html.low-stim #abilityRow,
-html.low-stim #pointsHud,
+   One switch (Settings → Low-stim mode) that hides STORY MODE and calms the
+   visuals while keeping the whole avatar layer. `applyLowStim()` stamps
+   `low-stim` on <html>; the story-only chrome — the Story⇄Free swap button, the
+   boss health bar, the bonus-round chips, the story/dev pills — is hidden here,
+   in one place. The avatar, its abilities, the points HUD and the Achievements
+   button all STAY (the player asked to keep the whole avatar function); so do
+   the blob-burst fill, the paints, the picture and the hint (drawn calm, see
+   render.js). JS guards keep the story cutscenes, tour and bonus offers from
+   ever firing. */
 html.low-stim [data-act="mode-swap"],
-html.low-stim [data-act="trophies"],
 html.low-stim #overtimeChip,
 html.low-stim #swapChip,
 html.low-stim #bossHud,
