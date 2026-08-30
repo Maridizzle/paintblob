@@ -2608,8 +2608,6 @@ function closeAbilityFan() {
  *  plus a "+N" that floats up and fades — commitFill() is the only granting
  *  site (Half Fill bypasses it on purpose), so this is the only call site. */
 function bumpPointsHud(award) {
-  // Low-stim hides the points HUD entirely (CSS) and skips its floating "+N".
-  if (S.save.settings.lowStim) return;
   const hud = $('pointsHud');
   if (hud) {
     hud.classList.remove('bump');
@@ -2879,7 +2877,7 @@ function renderSettings(body) {
   const lowStimText = document.createElement('div');
   lowStimText.className = 'grow';
   lowStimText.innerHTML = '<div class="label">Low-stim mode</div>'
-    + '<div class="sub">Calm painting only — hides the story, characters and effects</div>';
+    + '<div class="sub">Hides story mode and calms the visuals — keeps your avatar</div>';
   const lowStimSw = document.createElement('div');
   lowStimSw.className = `switch ${settings.lowStim ? 'on' : ''}`;
   lowStimRow.append(lowStimText, lowStimSw);
@@ -3009,12 +3007,13 @@ function applyTheme() {
   document.documentElement.dataset.theme = themeOr(id);
 }
 
-/** Low-stim mode: the single switch that strips the app back to plain painting.
- *  It stamps `<html class="low-stim">` so the stylesheet can hide every extra
- *  (avatar, abilities, story/boss chrome, the points HUD, the bonus chips) in
- *  one declarative block, flips the board's hint into its calm still form, and
- *  mutes sound. The JS guards elsewhere (title screen, tour, bonus offers, FX)
- *  stop the hidden things ever firing. Called from boot() and the toggle. */
+/** Low-stim mode: one switch that hides STORY MODE (the Story door, boss and
+ *  bonus rounds) and calms the visuals — a flat plain-black ground, a still
+ *  hint, and muted sound — while KEEPING the whole avatar layer (character,
+ *  dress-up, abilities, points and achievements). It stamps
+ *  `<html class="low-stim">` for the stylesheet, flips the board's hint to its
+ *  calm form, and mutes sound; JS guards elsewhere (title screen, tour, bonus
+ *  offers) stop the story bits ever firing. Called from boot() and the toggle. */
 function applyLowStim() {
   const on = !!S.save.settings.lowStim;
   document.documentElement.classList.toggle('low-stim', on);
@@ -4129,10 +4128,10 @@ async function boot() {
   // false until the player picks a theme; once true their choice wins in story
   // mode too, rather than the chapter overriding it (accessibility: dark mode).
   S.save.settings.themePinned ??= false;
-  // Low-stim mode: one switch that hides the story, characters, abilities and
-  // every visual flourish, forces the calm default look, and mutes sound —
-  // leaving nothing but plain painting. Off by default; set once (e.g. for a
-  // player the extras overwhelm) and it sticks on that device.
+  // Low-stim mode: one switch that hides STORY MODE and calms the visuals (a
+  // plain-black look, a still hint, muted sound) while keeping the whole avatar
+  // layer. Off by default; set once (e.g. for a player the story overwhelms)
+  // and it sticks on that device.
   S.save.settings.lowStim ??= false;
   // The bonus round is opt-out, not opt-in: it never takes the canvas without
   // being asked, so there is nothing to protect a first-time player from.
@@ -4242,12 +4241,10 @@ async function boot() {
       S.save.avatar.unlocked.push(def.outfit);
       syncAvatarWidget();
     }
-    // Low-stim: no achievement pop-up or fanfare — the hint is still granted and
-    // the unlock still recorded, it just lands quietly with nothing to dismiss.
-    if (!S.save.settings.lowStim) {
-      toast(def, `+${reward}✦`, { sticky: true });
-      sfx.play('achievement');
-    }
+    toast(def, `+${reward}✦`, { sticky: true });
+    // Sound is muted under low-stim (applyLowStim), so the fanfare is silent
+    // there while the unlock toast and the outfit it earns still land.
+    sfx.play('achievement');
     persist();
   });
   achievements.sync(S.save.stats);

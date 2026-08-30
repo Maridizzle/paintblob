@@ -908,7 +908,7 @@ test('both DEFAULT_SAVE literals declare a theme, and boot backfills it', () => 
     'the theme must reach the DOM through themeOr, so a stale id cannot strand the app');
 });
 
-test('low-stim mode: shipped in both saves, backfilled, and gates every extra', () => {
+test('low-stim mode: shipped in both saves, backfilled, hides story but keeps the avatar', () => {
   // The save-shape four-places rule, same as theme/overtime above.
   for (const f of ['src/platform.js', 'electron/main.cjs']) {
     assert.match(readSource(f), /lowStim: false/, `${f} is missing lowStim in DEFAULT_SAVE.settings`);
@@ -922,17 +922,24 @@ test('low-stim mode: shipped in both saves, backfilled, and gates every extra', 
   assert.match(game, /classList\.toggle\('low-stim'/, 'applyLowStim must stamp html.low-stim');
   assert.match(game, /board\.lowStim = on/, 'applyLowStim must tell the board its hint should go calm');
 
-  // Nothing hidden may still fire: the tour, the points-HUD float and both
-  // bonus offers each bail early, and the title drops the Story door.
+  // The story-only things bail early — the first-run tour and both bonus
+  // offers — and the title drops the Story door.
   const guards = (game.match(/if \(S\.save\.settings\.lowStim\) return;/g) ?? []).length;
-  assert.ok(guards >= 4, `expected low-stim guards on the tour, HUD and bonus offers, found ${guards}`);
+  assert.ok(guards >= 3, `expected low-stim guards on the tour and bonus offers, found ${guards}`);
   assert.match(game, /if \(!lowStim\) add\('Story mode'/, 'the title must hide the Story door under low-stim');
 
-  // The stylesheet hides the extra chrome in one declarative block.
+  // The stylesheet hides the story-only chrome…
   const css = readSource('src/styles.css');
-  for (const sel of ['#avatarWidget', '#pointsHud', '#bossHud', '#overtimeChip', '\\[data-act="trophies"\\]']) {
+  for (const sel of ['#bossHud', '#overtimeChip', '#swapChip', '#storyPill', '\\[data-act="mode-swap"\\]']) {
     assert.match(css, new RegExp(`html\\.low-stim ${sel}`), `styles.css must hide ${sel} under low-stim`);
   }
+  // …but keeps the whole avatar layer: the widget and the points HUD are NOT in
+  // the low-stim hide block, and the achievement unlock still pops (no guard on
+  // its toast) — the player asked to keep the whole avatar function.
+  assert.doesNotMatch(css, /html\.low-stim #avatarWidget/, 'low-stim must KEEP the avatar widget');
+  assert.doesNotMatch(css, /html\.low-stim #pointsHud/, 'low-stim must KEEP the points HUD');
+  assert.doesNotMatch(game, /if \(!S\.save\.settings\.lowStim\)/,
+    'low-stim must not suppress the achievement pop-up (the avatar layer is kept)');
 
   // The hint keeps working but is drawn as a still glow, not the flash-and-grow.
   assert.match(readSource('src/render.js'), /if \(this\.lowStim\)/, 'render.js must branch the hint for low-stim');
