@@ -2608,6 +2608,8 @@ function closeAbilityFan() {
  *  plus a "+N" that floats up and fades — commitFill() is the only granting
  *  site (Half Fill bypasses it on purpose), so this is the only call site. */
 function bumpPointsHud(award) {
+  // Low-stim hides the points HUD entirely (CSS) and skips its floating "+N".
+  if (S.save.settings.lowStim) return;
   const hud = $('pointsHud');
   if (hud) {
     hud.classList.remove('bump');
@@ -2712,6 +2714,8 @@ function startTour({ fromSettings = false } = {}) {
 }
 
 function maybeFirstRunTour() {
+  // Low-stim silences the automatic first-run tour along with the other extras.
+  if (S.save.settings.lowStim) return;
   // The headless harnesses (check-web, preview) and the Electron smoke test all
   // boot a fresh save and then drive the UI, which the tour would sit on top of.
   // They load with ?notour so only they skip the automatic run — the Settings
@@ -2869,6 +2873,31 @@ function renderSettings(body) {
     body.append(el);
   };
 
+  // Low-stim mode first: with it on, the theme, sound and story rows below are
+  // hidden, so this one switch decides what the rest of the panel even shows.
+  const lowStimRow = row('clickable');
+  const lowStimText = document.createElement('div');
+  lowStimText.className = 'grow';
+  lowStimText.innerHTML = '<div class="label">Low-stim mode</div>'
+    + '<div class="sub">Calm painting only — hides the story, characters and effects</div>';
+  const lowStimSw = document.createElement('div');
+  lowStimSw.className = `switch ${settings.lowStim ? 'on' : ''}`;
+  lowStimRow.append(lowStimText, lowStimSw);
+  lowStimRow.addEventListener('click', () => {
+    settings.lowStim = !settings.lowStim;
+    lowStimSw.classList.toggle('on', settings.lowStim);
+    applyLowStim();
+    applyTheme();
+    persist();
+    // Re-render in place so the rows this hides appear or disappear at once.
+    body.textContent = '';
+    renderSettings(body);
+  });
+  body.append(lowStimRow);
+
+  // The theme picker, sound and the Overtime/tours block below are all "extras":
+  // a low-stim player has switched them off, so they are built only when it is off.
+  if (!settings.lowStim) {
   // First, because it repaints everything under it while you watch.
   const themeRow = row();
   const themeText = document.createElement('div');
@@ -2918,9 +2947,15 @@ function renderSettings(body) {
     if (on) sfx.play('pick', 2);
   });
   slider('Volume', 'volume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`, (v) => sfx.setVolume(v));
+  }
+
+  // The blob is the one animation low-stim keeps, so its controls always show —
+  // and they can make it calmer still: slower, sparser, fainter.
   slider('Blob speed', 'speed', 0.6, 1.8, 0.1, (v) => `${v.toFixed(1)}×`);
   slider('Blob density', 'density', 0.4, 1.6, 0.1, (v) => `${v.toFixed(1)}×`);
   slider('Blob opacity', 'opacity', 0.25, 1, 0.05, (v) => `${Math.round(v * 100)}%`);
+
+  if (!settings.lowStim) {
   toggle('Overtime', 'overtime', (on) => {
     // Turning it off mid-picture retires the offer but never yanks a session
     // out from under someone already sixty seconds into one.
@@ -2940,6 +2975,7 @@ function renderSettings(body) {
     '<div class="tour-seal" aria-hidden="true">🐿️</div>';
   avatarGuide.addEventListener('click', () => startAvatarTour({ fromSettings: true }));
   body.append(avatarGuide);
+  }
 
   const reset = row('clickable');
   reset.innerHTML = '<div class="grow"><div class="label">Repaint this picture</div>' +
@@ -2962,10 +2998,30 @@ function applyTheme() {
   // Settings (`themePinned`), their choice rules everywhere, story included, so
   // "I just need dark mode" is one tap and it sticks. Until then, a fresh player
   // still gets the chapter's flavour.
-  const id = (S.inStory && !S.save.settings.themePinned)
-    ? getChapter(S.save.story.chapter).theme
-    : S.save.settings.theme;
+  // Low-stim mode forces the calm default look no matter what is saved or which
+  // chapter is open — a bright theme jumping out is exactly the kind of surprise
+  // it exists to spare that player.
+  const id = S.save.settings.lowStim
+    ? DEFAULT_THEME
+    : (S.inStory && !S.save.settings.themePinned)
+      ? getChapter(S.save.story.chapter).theme
+      : S.save.settings.theme;
   document.documentElement.dataset.theme = themeOr(id);
+}
+
+/** Low-stim mode: the single switch that strips the app back to plain painting.
+ *  It stamps `<html class="low-stim">` so the stylesheet can hide every extra
+ *  (avatar, abilities, story/boss chrome, the points HUD, the bonus chips) in
+ *  one declarative block, flips the board's hint into its calm still form, and
+ *  mutes sound. The JS guards elsewhere (title screen, tour, bonus offers, FX)
+ *  stop the hidden things ever firing. Called from boot() and the toggle. */
+function applyLowStim() {
+  const on = !!S.save.settings.lowStim;
+  document.documentElement.classList.toggle('low-stim', on);
+  board.lowStim = on;
+  // Sound is one of the extras it silences; turned off again, the player's own
+  // sound choice applies once more.
+  sfx?.setEnabled(on ? false : (S.save.settings.sound !== false));
 }
 /* ------------------------------------------------------------- overtime */
 
@@ -2980,6 +3036,7 @@ function applyTheme() {
  */
 function maybeOfferOvertime() {
   if (S.otOffered || S.ot || S.bogo || S.finished) return;
+  if (S.save.settings.lowStim) return; // a bonus round is an extra low-stim hides
   if (S.save.settings.overtime === false) return;
   if (S.filled.size < 10) return;
   S.otOffered = true;
@@ -3206,6 +3263,7 @@ function tapChunk(slot) {
 // gate.
 function maybeOfferSwap() {
   if (S.swapOffered || S.swap || S.named > 0 || S.finished) return;
+  if (S.save.settings.lowStim) return; // a bonus round is an extra low-stim hides
   if (S.save.settings.overtime === false) return; // the shared bonus-round opt-out
   if (S.filled.size < 10) return;
   S.swapOffered = true;
@@ -3624,9 +3682,12 @@ function devComplete() {
 // before — a first launch simply chooses between the two modes — and it is
 // first, as the returning player's one-tap way back in.
 function showTitle() {
-  $('titleTag').textContent = S.save.story.mode
-    ? 'Welcome back.'
-    : 'The colours stopped answering to their names.';
+  const lowStim = S.save.settings.lowStim;
+  $('titleTag').textContent = lowStim
+    ? 'Pick a picture and paint.'
+    : S.save.story.mode
+      ? 'Welcome back.'
+      : 'The colours stopped answering to their names.';
 
   const actions = $('titleActions');
   actions.textContent = '';
@@ -3641,12 +3702,15 @@ function showTitle() {
   };
 
   if (S.save.story.mode) {
-    const story = S.save.story.mode === 'story';
+    // Low-stim never routes into the story, so Continue always means "back to
+    // painting" for that player, whatever mode the save was last left in.
+    const story = S.save.story.mode === 'story' && !lowStim;
     add('Continue', story ? 'Back to the Sampler' : 'Back to painting', true,
       () => (story ? enterStory() : enterFree()));
   }
-  add('Story mode', 'The colours are on strike', !S.save.story.mode, () => enterStory());
-  add('Free mode', 'Just paint', false, () => enterFree());
+  // The story door is one of the extras low-stim hides.
+  if (!lowStim) add('Story mode', 'The colours are on strike', !S.save.story.mode, () => enterStory());
+  add('Free mode', 'Just paint', lowStim && !S.save.story.mode, () => enterFree());
 
   $('title').classList.remove('hidden');
 }
@@ -4065,6 +4129,11 @@ async function boot() {
   // false until the player picks a theme; once true their choice wins in story
   // mode too, rather than the chapter overriding it (accessibility: dark mode).
   S.save.settings.themePinned ??= false;
+  // Low-stim mode: one switch that hides the story, characters, abilities and
+  // every visual flourish, forces the calm default look, and mutes sound —
+  // leaving nothing but plain painting. Off by default; set once (e.g. for a
+  // player the extras overwhelm) and it sticks on that device.
+  S.save.settings.lowStim ??= false;
   // The bonus round is opt-out, not opt-in: it never takes the canvas without
   // being asked, so there is nothing to protect a first-time player from.
   S.save.settings.overtime ??= true;
@@ -4173,8 +4242,12 @@ async function boot() {
       S.save.avatar.unlocked.push(def.outfit);
       syncAvatarWidget();
     }
-    toast(def, `+${reward}✦`, { sticky: true });
-    sfx.play('achievement');
+    // Low-stim: no achievement pop-up or fanfare — the hint is still granted and
+    // the unlock still recorded, it just lands quietly with nothing to dismiss.
+    if (!S.save.settings.lowStim) {
+      toast(def, `+${reward}✦`, { sticky: true });
+      sfx.play('achievement');
+    }
     persist();
   });
   achievements.sync(S.save.stats);
@@ -4191,6 +4264,7 @@ async function boot() {
   }
 
   applyTheme();
+  applyLowStim();
   document.querySelector('[data-act="pin"]')
     ?.classList.toggle('on', S.save.settings.alwaysOnTop !== false);
   syncSoundIcon();

@@ -2366,3 +2366,37 @@ button {
   .swatch:hover { transform: none; }
   .swatch.picked:hover { transform: translateY(-3px) scale(1.04); }
 }
+
+/* -------------------------------------------------------------- low-stim mode
+   One switch (Settings → Low-stim mode) that strips the app back to plain, calm
+   painting. `applyLowStim()` stamps `low-stim` on <html>; everything an
+   overwhelmed player asked to be rid of — the avatar and its abilities, the
+   points HUD, the Story⇄Free and Achievements buttons, the boss health bar, the
+   bonus-round chips, the story/dev pills — is hidden here, in one place. The
+   blob-burst fill, the paints, the picture and the hint (drawn calm, see
+   render.js) all stay. JS guards keep the hidden things from ever firing. */
+html.low-stim #avatarWidget,
+html.low-stim #abilityRow,
+html.low-stim #pointsHud,
+html.low-stim [data-act="mode-swap"],
+html.low-stim [data-act="trophies"],
+html.low-stim #overtimeChip,
+html.low-stim #swapChip,
+html.low-stim #bossHud,
+html.low-stim #storyPill,
+html.low-stim #devPill {
+  display: none !important;
+}
+
+/* Plain black. The void theme's diagonal neon "lasers" (its --streaks and
+   --void-glow background layers) and the animated spark twinkle on #app::after
+   are themselves stimulating — motion and bright colour a low-stim player has
+   asked to be rid of — so the calm surface drops them all for one flat,
+   dead-still ground, matching the board's own letterbox so nothing draws the
+   eye but the picture. */
+html.low-stim #app {
+  background: var(--void);
+}
+html.low-stim #app::after {
+  display: none;
+}

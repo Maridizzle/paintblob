@@ -1,0 +1,150 @@
+# paintblob — guide for coding agents
+
+A frameless **Electron 33 desktop app** and an **installable PWA** served from the
+same `src/`. **Vanilla ESM — no framework, no bundler, no TypeScript.** It's a
+paint-by-number toy: pick a paint tub, tap a cell, a blob explosion tears across
+the picture and sucks into that cell to fill it. Progress lives in a save
+(IndexedDB on web, a JSON file in Electron).
+
+This file is the fast on-ramp. Read it, then read the specific source file for the
+thing you're touching — the code is heavily commented and the comments are the
+spec.
+
+## Run / build / test
+
+| command | what it does |
+|---|---|
+| `npm test` | Pure-logic unit tests (`node:test`), mostly `tools/game-logic.test.mjs`. ~209 tests, no DOM. |
+| `npm run check:web` | Builds `dist-web/` then **drives the real app headlessly in Chromium** (`tools/check-web.mjs`) asserting layout + behaviour. The integration gate. |
+| `npm run verify` | Puzzle geometry invariants: total tiling, no overlaps, anchor-inside-cell. |
+| `npm run build:web` | Build the static `dist-web/` site. |
+| `npm run seed` | Regenerate generated puzzles deterministically (CI does this). |
+
+**Drive the app yourself** (how nearly every real defect was found): serve
+`dist-web/` from a tiny Node http server, open it in the pre-installed Chromium at
+`/opt/pw-browsers/chromium` with `playwright-core`, and poke it. `window.__paintblobTest = { board, state: S }`
+exposes the live state. Useful URL flags: `?dev` (dev mode — opens all story
+stones, unlocks all themes, adds an instant-complete pill), `?notour` (skip the
+first-run tour). In a harness, set `S.save.settings.tourSeen = true` /
+`avatarTourSeen = true` to stop tours covering the board. Then screenshot and
+**look** — many things (does a hint read, does a garment look right) can only be
+judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
+
+## Architecture / key files
+
+- **`src/game.js`** (~4000 lines) — the orchestrator. Runtime state `S`; boot +
+  save; the single **delegated click switch** (every button carries
+  `data-act="…"`); puzzle load; the paint path (`tryPaint` → burst animation →
+  `commitFill`); panels; and the wiring for story / boss / overtime / swap /
+  abilities. Essentially all DOM lives here.
+- **`src/render.js`** — the two-layer canvas **Board**: a base layer (painted
+  cells) and a live layer (animations). One RAF loop via `ensureFrame()`, gated by
+  a `busy` flag so it idles when nothing moves. Cells are `Path2D`; per-cell
+  effects (hint flash, Beacon colour-flash, boss locks/pulse) draw on the live
+  layer.
+- **Pure logic modules** (no DOM → run in node tests): `points.js`, `hints.js`,
+  `overtime.js`, `swap.js`, `boss.js`, `abilities.js`, `story.js`, `themes.js`,
+  `geometry.js`, `playstats.js`.
+- **`src/avatar.js`** (~1500 lines) + **`src/wardrobe.js`** — SVG-string avatar
+  generation in the "squirrel idiom" (below). `buildAvatarSVG(customize)`,
+  per-slot garment markup fns, and `part()` which applies the render style.
+- **`src/house.js`** — the room/pet scene the avatar stands in.
+- **`src/platform.js`** (web save/IndexedDB) and **`electron/main.cjs`** (Electron
+  save/file + the window) — hold **two `DEFAULT_SAVE` literals that must stay in
+  sync.**
+- **`src/tour.js`** — the first-run guided-tour engine, reused for story cutscenes
+  via a per-step `character` SVG. **`src/letters.js`** — the story characters
+  Y / Ee / X drawn as SVG letters.
+- **`src/pipeline/`** — the image → puzzle pipeline. **`tools/`** —
+  `build-web`, `check-web` (the big integration harness), `make-*-puzzles`,
+  `mapify` (photo → puzzle), `tag-animation`, and `game-logic.test.mjs`.
+
+## Idioms that are load-bearing
+
+1. **The squirrel idiom (avatars, house).** Draw with overlapping **flat fills**
+   whose joins vanish; shading is translucent **rgba washes carrying their own
+   fill** + `stroke="none"`; **one colour token per part** (recolour writes a
+   single `fill` on the `<g data-slot>`); **no `<text>`** (CSP is
+   `font-src 'self'`); **no colour maths.** A garment authored this way is
+   *automatically* rendered in all six styles — classic / inked / soft / gouache /
+   anime / neon are a post-process in `part()`, not per-garment code.
+   - **Fixed accents = "multicolor":** a `<path>` with its own **solid** fill +
+     `stroke="none"` reads as a baked contrast panel in every style while the body
+     stays dyeable. Helpers `panel()` / `dot()` / `stripe()` in `avatar.js`.
+     (True independently-dyeable panels are NOT built yet — see Pending.)
+2. **A save-shape change touches ~4 places:** both `DEFAULT_SAVE` literals
+   (`platform.js` + `electron/main.cjs`), a `??=` backfill in `game.js` `boot()`,
+   and sometimes the `persist()` write-set. Miss one and returning players don't
+   get the key.
+3. **Keep logic in pure modules** so tests run in node without a DOM.
+4. **Theme = a `data-theme` attribute on `<html>`**; every colour token in
+   `styles.css` keys off `[data-theme="…"]`. `applyTheme()` (game.js) is the only
+   place it is set.
+
+## Systems (state as of v0.7.41)
+
+- **Story mode** — `story.js` (pure catalogue + gating) + `game.js`. Title screen
+  (Continue / Story / Free), a stepping-stone chapter path (`#storyBoard`),
+  cutscenes on the tour engine. `S.inStory` is runtime; `S.save.story` persists.
+  Chapter One is *The Sampler* / *The Wrong-Colour Day* — the colours went on
+  strike (stopped answering to their names); painting re-attaches names. Seven
+  stones, the last a boss.
+- **Boss fight** — `boss.js` (pure math) + `game.js`. **The picture is the health
+  bar** (health = unpainted / total). X reclaims painted cells on a timer and
+  casts two spells (disable your held colour; freeze a share of the board).
+  **No-lose:** regen fades to 0 as you near done. All cadence/strength lives in
+  `boss.js` constants (`REGEN_*`, `ATTACK_*`, `CELL_LOCK_MS`, `LOCK_FRACTION`) —
+  it was tuned hard (the *freeze*, not the regen, was what made it feel brutal).
+- **Abilities** — `abilities.js`. Six: Beacon, Focus, Prism, Explode, Floodgate,
+  and (restored) Steady Hand. Pure charge economy, charges refill on level-up.
+  `triggerAbility()` (game.js) spends a charge then switches per effect; both
+  ability UIs iterate `ABILITIES` generically, so a new entry renders itself.
+- **Bonus rounds** — Overtime (free mode) and The Swap (story mode); opt-in chips,
+  never take the canvas unasked.
+- **Themes** — `themes.js`: `void` (default), `fae`, `cobalt` (unlocked by beating
+  the chapter-one boss). `settings.themePinned` (set when the player picks any
+  theme) makes their choice win in story too, instead of the chapter theme.
+- **Wardrobe / avatar** — 62 garments across 9 slots (shirt, bottoms, dress,
+  socks, shoes + outerwear, headwear, eyewear, neckwear); six render styles;
+  fixed-accent multicolor. The Outfits shop groups by slot.
+- **Dev mode** — `?dev` or type `devmode`; session-only (`S.dev`).
+
+## Release & branch workflow — READ THIS
+
+- Development branch: **`claude/avatar-rpg-story-mode-0biusc`**. **Once its PR is
+  merged to `main`, that PR is finished.** For the next change, reset the branch
+  onto the released main and start clean:
+  `git fetch origin main && git checkout -B claude/avatar-rpg-story-mode-0biusc origin/main`,
+  commit, push, open a **new** PR. Never stack new commits on already-merged
+  history.
+- **Cut a release** by dispatching `.github/workflows/weekly-release.yml`
+  (`workflow_dispatch`, `ref: main`). It runs `npm version patch` (bumps + tags
+  `vX.Y.Z`), pushes, then dispatches `release.yml` to build & publish the
+  installers for that tag — macOS `.dmg`/`.zip`, Windows `.exe`, Linux
+  `.AppImage`/`.tar.gz`, plus a `paintblob-web-*.zip`. ~5 minutes. **A release
+  only ships what is on `main`, so land the branch first.**
+- Weekly automation: `weekly-mystery.yml` bakes new pictures, `weekly-animate.yml`
+  tags one animated element per picture (see `docs/handing-off-to-an-agent.md` +
+  `docs/animating-pictures.md`), `weekly-release.yml` cuts the week's version.
+- This session (branch `avatar-rpg-story-mode`) shipped, in order: story mode +
+  boss + abilities overhaul + themes (through v0.7.37), the **wardrobe drop +
+  dev mode** (v0.7.38), two rounds of **boss balancing** (v0.7.39, v0.7.40), and
+  **theme-in-story + a 60s flash-and-grow hint + Steady Hand + a Story⇄Free swap
+  button** (v0.7.41).
+
+## Pending / good-to-know
+
+- **True two-tone dyeable garments** (independently recolourable panels) is the
+  planned fast-follow to fixed accents: port the Room's per-part colour model
+  (`house.colours` + a sub-part selection) onto the avatar — save shape, `part()`,
+  and the recolor UI.
+- **Pants reskins** (cargos / leggings / slacks / sweatpants) read subtly at
+  avatar scale; easy to punch up.
+- The boss-freeze ✕ marks can *look* like they sit on painted cells — that's the
+  big ✕ arms bleeding into neighbours; the freeze only ever locks *unfilled*
+  cells (verified).
+- Story art is placeholder flat-vector; real art swaps in via `npm run mapify`
+  (Flux prompts in `docs/story-art-prompts.md`). A story node names an id, not an
+  image, so nothing in story mode changes when art is replaced.
+- Verify anything visual by driving Chromium and screenshotting — the unit tests
+  cannot see "the wrong thing rendered".
