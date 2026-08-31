@@ -747,6 +747,36 @@
     ]
   },
   {
+    "id": "rain-blossom-island",
+    "title": "Rain Blossom Island",
+    "cells": 500,
+    "colours": 35,
+    "thumb": [
+      "#a07060",
+      "#dfa665",
+      "#f5d5a5",
+      "#6aa858",
+      "#336342"
+    ],
+    "difficulty": "normal",
+    "blind": true
+  },
+  {
+    "id": "rainbow-lava-bridge",
+    "title": "Rainbow Lava Bridge",
+    "cells": 500,
+    "colours": 33,
+    "thumb": [
+      "#d73c38",
+      "#fa613b",
+      "#f98740",
+      "#fbd65b",
+      "#84ea72"
+    ],
+    "difficulty": "normal",
+    "blind": true
+  },
+  {
     "id": "rainy-cottage",
     "title": "Rainy Cottage",
     "cells": 500,
@@ -799,6 +829,36 @@
       "Fantasy",
       "Abstract"
     ]
+  },
+  {
+    "id": "snow-lava-cliff-tree",
+    "title": "Snow Lava Cliff Tree",
+    "cells": 500,
+    "colours": 26,
+    "thumb": [
+      "#441d1d",
+      "#7c2a22",
+      "#f27234",
+      "#f78e47",
+      "#9a6d4d"
+    ],
+    "difficulty": "normal",
+    "blind": true
+  },
+  {
+    "id": "starlit-autumn-tree",
+    "title": "Starlit Autumn Tree",
+    "cells": 500,
+    "colours": 30,
+    "thumb": [
+      "#5b2a22",
+      "#85442b",
+      "#b06122",
+      "#e28e23",
+      "#f4c14b"
+    ],
+    "difficulty": "normal",
+    "blind": true
   },
   {
     "id": "steampunk-forest",
@@ -869,6 +929,21 @@
       "Spooky",
       "Water"
     ]
+  },
+  {
+    "id": "storm-sea-tree",
+    "title": "Storm Sea Tree",
+    "cells": 500,
+    "colours": 36,
+    "thumb": [
+      "#a3655a",
+      "#f26249",
+      "#51250c",
+      "#d3550e",
+      "#9b430e"
+    ],
+    "difficulty": "normal",
+    "blind": true
   },
   {
     "id": "sunset-tidepool",
