@@ -235,6 +235,21 @@
     ]
   },
   {
+    "id": "cosmic-rainbow-tidepool",
+    "title": "Cosmic Rainbow Tidepool",
+    "cells": 500,
+    "colours": 40,
+    "thumb": [
+      "#96251b",
+      "#e9938b",
+      "#ab321c",
+      "#db7f5a",
+      "#9d6a53"
+    ],
+    "difficulty": "normal",
+    "blind": true
+  },
+  {
     "id": "cosmic-still-life",
     "title": "Cosmic Still Life",
     "cells": 210,
@@ -359,6 +374,21 @@
     "themes": [
       "Fantasy"
     ]
+  },
+  {
+    "id": "forest-archway-planets",
+    "title": "Forest Archway Planets",
+    "cells": 500,
+    "colours": 40,
+    "thumb": [
+      "#3b1d1a",
+      "#ce8373",
+      "#622e1e",
+      "#8c4423",
+      "#b3652b"
+    ],
+    "difficulty": "normal",
+    "blind": true
   },
   {
     "id": "framed-tidepool-bird",
@@ -664,6 +694,21 @@
     ]
   },
   {
+    "id": "orchid-conservatory-dusk",
+    "title": "Orchid Conservatory Dusk",
+    "cells": 500,
+    "colours": 28,
+    "thumb": [
+      "#e59792",
+      "#22130c",
+      "#562914",
+      "#864920",
+      "#b0642d"
+    ],
+    "difficulty": "normal",
+    "blind": true
+  },
+  {
     "id": "peacock",
     "title": "Peacock",
     "cells": 1200,
@@ -773,6 +818,21 @@
       "Fantasy",
       "Spooky"
     ]
+  },
+  {
+    "id": "steaming-cup-ringed-planet",
+    "title": "Steaming Cup Ringed Planet",
+    "cells": 500,
+    "colours": 34,
+    "thumb": [
+      "#56201b",
+      "#67251f",
+      "#7d2f24",
+      "#9a3c2f",
+      "#95625b"
+    ],
+    "difficulty": "normal",
+    "blind": true
   },
   {
     "id": "stone-mosaic",
@@ -897,6 +957,21 @@
       "Fantasy",
       "Abstract"
     ]
+  },
+  {
+    "id": "tidepool-bridge",
+    "title": "Tidepool Bridge",
+    "cells": 500,
+    "colours": 35,
+    "thumb": [
+      "#a24040",
+      "#dcc7c4",
+      "#b23c16",
+      "#cf562b",
+      "#d5724b"
+    ],
+    "difficulty": "normal",
+    "blind": true
   },
   {
     "id": "tidepool-mosaic",
