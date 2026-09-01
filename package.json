@@ -1,6 +1,6 @@
 {
   "name": "paintblob",
-  "version": "0.7.49",
+  "version": "0.7.50",
   "description": "A frameless desktop paint-by-number toy with big satisfying paint blobs.",
   "main": "electron/main.cjs",
   "type": "module",
