@@ -27,6 +27,18 @@ import {
 import {
   SECONDS as SM_SECONDS, DELTA_FLOOR, buildRound, gridForLevel, deltaForLevel, renderedGap, scoreFor,
 } from '../src/shade-match.js';
+import {
+  ROUND_IDS as BONUS_ROUND_IDS, FIRST_MIN, FIRST_JITTER, GAP_MIN, GAP_JITTER, firstThreshold, nextThreshold, pickNext,
+} from '../src/bonus.js';
+import {
+  BASES as MIX_BASES, TOLERANCE as MIX_TOL, mix as mixWell, within as mixWithin, distance as mixDistance, targetFrom as mixTarget,
+} from '../src/mixer.js';
+import {
+  spawn as dripSpawn, step as dripStep, caught as dripCaught, missed as dripMissed, CATCH_BAND, PADDLE_W as DRIP_PADDLE_W,
+} from '../src/drips.js';
+import {
+  PADS as RECALL_PADS, seqLength as recallSeqLen, buildSequence as recallBuild, prefixOk as recallPrefixOk, complete as recallComplete,
+} from '../src/recall.js';
 // Aliased: THEMES is already taken further down by the picture-tag list.
 import { THEMES as APP_THEMES, DEFAULT_THEME, isTheme, themeOr, themeUnlocked } from '../src/themes.js';
 import {
@@ -927,15 +939,18 @@ test('low-stim mode: shipped in both saves, backfilled, hides story but keeps th
   assert.match(game, /classList\.toggle\('low-stim'/, 'applyLowStim must stamp html.low-stim');
   assert.match(game, /board\.lowStim = on/, 'applyLowStim must tell the board its hint should go calm');
 
-  // The story-only things bail early — the first-run tour and both bonus
-  // offers — and the title drops the Story door.
-  const guards = (game.match(/if \(S\.save\.settings\.lowStim\) return;/g) ?? []).length;
-  assert.ok(guards >= 3, `expected low-stim guards on the tour and bonus offers, found ${guards}`);
+  // Low-stim bails early out of the extras — the first-run tour, the recurring
+  // free-mode bonus offer, and story's Swap offer — and the title drops the
+  // Story door. (The free-mode offer folds the opt-out into the same guard, so
+  // match either the bare form or the compound one.)
+  const guards = (game.match(/if \(S\.save\.settings\.lowStim(?: \|\|[^)]+)?\) return;/g) ?? []).length;
+  assert.ok(guards >= 3, `expected low-stim guards on the tour and both bonus offers, found ${guards}`);
   assert.match(game, /if \(!lowStim\) add\('Story mode'/, 'the title must hide the Story door under low-stim');
 
-  // The stylesheet hides the story-only chrome…
+  // The stylesheet hides the story-only chrome — one shared bonus chip now, not
+  // the two per-game chips it replaced…
   const css = readSource('src/styles.css');
-  for (const sel of ['#bossHud', '#overtimeChip', '#shadeMatchChip', '#swapChip', '#storyPill', '\\[data-act="mode-swap"\\]']) {
+  for (const sel of ['#bossHud', '#bonusChip', '#swapChip', '#storyPill', '\\[data-act="mode-swap"\\]']) {
     assert.match(css, new RegExp(`html\\.low-stim ${sel}`), `styles.css must hide ${sel} under low-stim`);
   }
   // …but keeps the whole avatar layer: the widget and the points HUD are NOT in
@@ -1352,8 +1367,8 @@ test('a swap is pure and undoes itself; solved and placed agree', () => {
 test('the Swap is story mode’s bonus, and Overtime is free mode’s', () => {
   const game = readSource('src/game.js');
   // One or the other is offered, never both, and the split is on the story.
-  assert.match(game, /else if \(S\.inStory && isStoryPuzzle\(S\.puzzle\.id\)\) maybeOfferSwap\(\);\s*\n\s*else offerFreeBonus\(\);/,
-    'commitFill must offer the Swap on a story stone and a free-mode round otherwise');
+  assert.match(game, /else if \(S\.inStory && isStoryPuzzle\(S\.puzzle\.id\)\) maybeOfferSwap\(\);\s*\n\s*else maybeOfferBonus\(\);/,
+    'commitFill must offer the Swap on a story stone and a free-mode bonus otherwise');
   const offer = game.slice(game.indexOf('function maybeOfferSwap'), game.indexOf('function closeSwap'));
   assert.match(offer, /S\.filled\.size < 10/, 'the Swap waits until the player is into the picture');
   assert.match(offer, /S\.save\.settings\.overtime === false/, 'the Swap honours the bonus-round opt-out');
@@ -1388,23 +1403,34 @@ test('Overtime shows its rules before the clock too', () => {
   assert.match(game, /function renderOvertime[\s\S]*?if \(!S\.ot\.started\)/, 'renderOvertime must branch on the how-to panel');
 });
 
-test('a free-mode picture offers one bonus round from the rotation', () => {
+test('free mode weaves the bonus rounds in on a recurring, random cadence', () => {
   const game = readSource('src/game.js');
-  // The rotation, and the picker that stands in for a hardcoded single round.
-  assert.match(game, /const FREE_ROUNDS = \[[^\]]*'overtime'[^\]]*'shade-match'[^\]]*\]/,
-    'FREE_ROUNDS must list the free-mode rounds');
-  assert.match(game, /function offerFreeBonus\(\)[\s\S]*?maybeOfferShadeMatch\(\)[\s\S]*?maybeOfferOvertime\(\)/,
-    'offerFreeBonus must route to the chosen round');
-  // One round is picked per picture at load, so only a single chip is ever shown.
-  assert.match(game, /S\.freeRound = FREE_ROUNDS\[S\.bonusTurn\+\+ % FREE_ROUNDS\.length\]/,
-    'loadPuzzle must pick this picture’s free round');
-  // Shade Match gates exactly as Overtime does — into the picture, opt-out, low-stim —
-  // and its offer only ever un-hides the chip (never opens the round itself).
-  const offer = game.slice(game.indexOf('function maybeOfferShadeMatch'), game.indexOf('function closeShadeMatch'));
-  assert.match(offer, /S\.filled\.size < 10/, 'Shade Match waits until the player is into the picture');
-  assert.match(offer, /S\.save\.settings\.overtime === false/, 'Shade Match honours the bonus-round opt-out');
-  assert.match(offer, /S\.save\.settings\.lowStim/, 'Shade Match is suppressed in low-stim');
-  assert.match(offer, /classList\.remove\('hidden'\)/, 'Shade Match only ever un-hides its chip');
+  // One registry drives the shared chip: every round in ROUND_IDS is listed here,
+  // so a new game renders itself the moment it is added.
+  const reg = game.slice(game.indexOf('const BONUS_ROUNDS = ['), game.indexOf('const bonusById'));
+  for (const id of BONUS_ROUND_IDS) {
+    assert.match(reg, new RegExp(`id: '${id}'`), `BONUS_ROUNDS is missing '${id}'`);
+  }
+  // The scheduler is the only thing that shows the chip, and it stays opt-in: gated
+  // on low-stim / opt-out, held off while a round is open, spaced by nextBonusAt,
+  // and it only ever un-hides the chip — a round opens on a tap, never on its own.
+  const offer = game.slice(game.indexOf('function maybeOfferBonus'), game.indexOf('function armNextBonus'));
+  assert.match(offer, /settings\.lowStim \|\| S\.save\.settings\.overtime === false/, 'the offer honours low-stim and the opt-out');
+  assert.match(offer, /bonusRoundOpen\(\)/, 'the offer holds off while a round is open');
+  assert.match(offer, /filled < S\.nextBonusAt/, 'the offer waits for the next threshold');
+  assert.match(offer, /BONUS_LINGER/, 'an ignored chip lingers, then re-arms');
+  assert.match(offer, /pickNext\(BONUS_ROUNDS\.map\(\(r\) => r\.id\), S\.lastBonus\)/, 'the round is picked at random, never the last');
+  assert.match(offer, /showBonusChip\(round\)/, 'the offer only un-hides the shared chip');
+  // Every close re-arms the next (spaced-out) offer, so playing or dismissing one
+  // resets the gap rather than letting them pile up.
+  assert.match(game, /function armNextBonus\(\)[\s\S]*?S\.nextBonusAt = nextThreshold\(S\.filled\.size\)/,
+    'armNextBonus must push the next threshold out from where the picture is now');
+  // Load arms the first (early) threshold and clears any standing offer.
+  assert.match(game, /S\.nextBonusAt = firstThreshold\(\)/, 'loadPuzzle must arm the first bonus threshold');
+  // The chip's tap opens whatever is offered — one data-act, one handler.
+  assert.match(game, /case 'bonus':\s*\n\s*startBonus\(\)/, 'the shared chip routes through startBonus');
+  const start = game.slice(game.indexOf('function startBonus'), game.indexOf('function startBonus') + 240);
+  assert.match(start, /bonusById\(S\.bonusOffer\)/, 'startBonus opens the currently-offered round');
 });
 
 test('Shade Match shows its rules before the clock too', () => {
@@ -1454,6 +1480,148 @@ test('Shade Match gets harder with the level, and rewards depth', () => {
 test('the shade-match module stays pure — no DOM', () => {
   const src = readSource('src/shade-match.js');
   assert.ok(!/\bdocument\b|\bwindow\b|querySelector/.test(src), 'shade-match.js must run in node — no DOM');
+});
+
+/* ------------------------------------------- the recurring bonus scheduler */
+
+test('the bonus scheduler is rare, jittered, and never repeats a round', () => {
+  // The catalogue the board's registry is checked against elsewhere; here it is
+  // the source of truth for which rounds exist.
+  assert.deepEqual(BONUS_ROUND_IDS, ['overtime', 'shade-match', 'mixer', 'drips', 'recall'],
+    'the five rounds, in the pool');
+  // "Rare": the first offer comes early enough that a short picture still sees one,
+  // and every one after is tens of cells further on — a clear gap, not a metronome.
+  assert.ok(GAP_MIN > FIRST_MIN + FIRST_JITTER, 'the gap between offers must clear the opening window');
+  for (let seed = 1; seed <= 400; seed++) {
+    const rng = seededRng(seed);
+    const first = firstThreshold(rng);
+    assert.ok(first >= FIRST_MIN && first < FIRST_MIN + FIRST_JITTER, `first threshold ${first} out of range`);
+    const filled = 50 + (seed % 30);
+    const next = nextThreshold(filled, rng);
+    assert.ok(next >= filled + GAP_MIN && next < filled + GAP_MIN + GAP_JITTER, `next threshold ${next} out of range`);
+    assert.ok(next > filled, 'the next offer is always ahead of where the painting is');
+  }
+  // No two in a row: given a last id, pickNext never hands it back while others exist.
+  for (const last of BONUS_ROUND_IDS) {
+    for (let seed = 1; seed <= 200; seed++) {
+      assert.notEqual(pickNext(BONUS_ROUND_IDS, last, seededRng(seed)), last, `pickNext repeated ${last}`);
+    }
+  }
+  // A pool of one has nowhere else to go — it returns that one rather than nothing.
+  assert.equal(pickNext(['overtime'], 'overtime', seededRng(3)), 'overtime', 'a single-round pool returns its one round');
+});
+
+test('the bonus scheduler stays pure — no DOM', () => {
+  const src = readSource('src/bonus.js');
+  assert.ok(!/\bdocument\b|\bwindow\b|querySelector/.test(src), 'bonus.js must run in node — no DOM');
+});
+
+/* ------------------------------------------------------------- Colour Mixer */
+
+test('every Colour Mixer target is a real, reachable mix', () => {
+  // The target is built FROM a set of drops, so those very drops reproduce it —
+  // distance zero, comfortably inside tolerance. Sweep hard: no unreachable round.
+  for (let seed = 1; seed <= 2000; seed++) {
+    const t = mixTarget(seededRng(seed));
+    assert.equal(mixWell(t.counts), t.hex, 'the target hex is exactly the mix of its own counts');
+    assert.ok(mixWithin(mixWell(t.counts), t.hex), 'the making drops must count as a match');
+    assert.equal(mixDistance(t.hex, t.hex), 0, 'a colour is zero distance from itself');
+  }
+});
+
+test('the mixer well averages drops, and an empty well is blank', () => {
+  // Empty well: no colour yet, not a made-up grey.
+  assert.equal(mixWell(MIX_BASES.map(() => 0)), null, 'an empty well has no colour');
+  assert.equal(mixWithin(null, MIX_BASES[0].hex), false, 'a blank well never matches');
+  // Drop weighting: three parts red to one yellow sits nearer red than the reverse.
+  const redHeavy = mixWell([3, 1, 0, 0, 0]);
+  const yellowHeavy = mixWell([1, 3, 0, 0, 0]);
+  assert.ok(mixDistance(redHeavy, MIX_BASES[0].hex) < mixDistance(yellowHeavy, MIX_BASES[0].hex),
+    'more red drops pull the mix toward red');
+  // Tolerance is a couple of shades of slack — real, but not a barn door.
+  assert.ok(MIX_TOL > 0 && MIX_TOL < 60, 'the match tolerance is tight-ish');
+});
+
+test('the mixer module stays pure — no DOM', () => {
+  const src = readSource('src/mixer.js');
+  assert.ok(!/\bdocument\b|\bwindow\b|querySelector/.test(src), 'mixer.js must run in node — no DOM');
+});
+
+/* -------------------------------------------------------------- Drip Catch */
+
+test('drips fall on a 0..1 field and the paddle catches only near the floor', () => {
+  // Spawns start at the top, clear of the edges, coloured yours-or-not by chance.
+  for (let seed = 1; seed <= 300; seed++) {
+    const d = dripSpawn(seededRng(seed));
+    assert.equal(d.y, 0, 'a fresh drip starts at the top');
+    assert.ok(d.x >= 0.09 && d.x <= 0.91, `spawn x ${d.x} strayed to the edge`);
+    assert.equal(typeof d.match, 'boolean', 'a drip is yours or not');
+  }
+  // A step advances y and leaves the original alone (pure).
+  const start = { x: 0.5, y: 0.2, match: true };
+  const moved = dripStep(start, 0.5, 0.5);
+  assert.equal(start.y, 0.2, 'step must not mutate its input');
+  assert.ok(moved.y > start.y, 'a step carries the drip downward');
+  // Caught: in the catch band near the floor AND under the paddle. Above the band,
+  // or off to the side, is not a catch.
+  assert.ok(dripCaught({ x: 0.5, y: CATCH_BAND + 0.01 }, 0.5), 'a drip in the band under the paddle is caught');
+  assert.ok(!dripCaught({ x: 0.5, y: CATCH_BAND - 0.2 }, 0.5), 'too high to catch yet');
+  assert.ok(!dripCaught({ x: 0.5, y: CATCH_BAND + 0.01 }, 0.5 + DRIP_PADDLE_W), 'the paddle is not under it');
+  // Missed: fallen clean past the floor.
+  assert.ok(dripMissed({ x: 0.5, y: 1.01 }), 'past the floor is a miss');
+  assert.ok(!dripMissed({ x: 0.5, y: 0.99 }), 'still on the field is not a miss');
+});
+
+test('the drips module stays pure — no DOM', () => {
+  const src = readSource('src/drips.js');
+  assert.ok(!/\bdocument\b|\bwindow\b|querySelector/.test(src), 'drips.js must run in node — no DOM');
+});
+
+/* ---------------------------------------------------------- Palette Memory */
+
+test('the recall sequence grows by one each level and checks a playback', () => {
+  // Three to start, one longer every round; each pad in range.
+  for (let level = 0; level <= 10; level++) {
+    assert.equal(recallSeqLen(level), 3 + level, `length at level ${level}`);
+    const seq = recallBuild(level, seededRng(level + 1));
+    assert.equal(seq.length, 3 + level, `built length at level ${level}`);
+    assert.ok(seq.every((p) => p >= 0 && p < RECALL_PADS), `pads in range at level ${level}`);
+  }
+  const seq = [1, 3, 0, 2];
+  assert.ok(recallPrefixOk(seq, []), 'nothing tapped yet is a valid start');
+  assert.ok(recallPrefixOk(seq, [1, 3]), 'a correct partial is a valid prefix');
+  assert.ok(!recallPrefixOk(seq, [1, 2]), 'a wrong tap breaks the prefix');
+  assert.ok(!recallComplete(seq, [1, 3, 0]), 'a short-but-correct run is not complete');
+  assert.ok(recallComplete(seq, [1, 3, 0, 2]), 'the whole pattern back is complete');
+  assert.ok(!recallComplete(seq, [1, 3, 0, 1]), 'the whole length but wrong is not complete');
+});
+
+test('the recall module stays pure — no DOM', () => {
+  const src = readSource('src/recall.js');
+  assert.ok(!/\bdocument\b|\bwindow\b|querySelector/.test(src), 'recall.js must run in node — no DOM');
+});
+
+/* ------------------------------- every new round shows its rules first, too */
+
+test('Colour Mixer, Drip Catch and Palette Memory each hold the clock behind a how-to', () => {
+  // The same opt-in contract as Overtime/Shade Match: opening a round draws the
+  // how-to panel and starts NO clock; only Begin does. Miss this and the timer
+  // runs behind the instructions.
+  const game = readSource('src/game.js');
+  const rounds = [
+    { start: 'startMixer', begin: 'beginMixer', after: 'tickMixer', secs: 'MIX_SECONDS' },
+    { start: 'startDrips', begin: 'beginDrips', after: 'loopDrips', secs: 'DRIP_SECONDS' },
+    { start: 'startRecall', begin: 'beginRecall', after: 'recallPads', secs: 'RECALL_SECONDS' },
+  ];
+  for (const r of rounds) {
+    const start = game.slice(game.indexOf(`function ${r.start}`), game.indexOf(`function ${r.begin}`));
+    assert.ok(start.length > 50, `${r.start} has moved or gone`);
+    assert.match(start, /started: false/, `${r.start} must open on the how-to panel`);
+    assert.ok(!/setInterval|requestAnimationFrame/.test(start), `${r.start} must not start the clock`);
+    const begin = game.slice(game.indexOf(`function ${r.begin}`), game.indexOf(`function ${r.after}`));
+    assert.match(begin, new RegExp(`endsAt = Date\\.now\\(\\) \\+ ${r.secs} \\* 1000`), `${r.begin} starts its clock`);
+    assert.match(begin, /setInterval\(/, `${r.begin} runs the clock only once begun`);
+  }
 });
 
 test('Named answers a tap with the cell’s own colour, and is spent per cell', () => {
