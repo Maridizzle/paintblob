@@ -17,10 +17,34 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// The common theme labels, and the order they sort first in the Pictures
+// filter. Themes are NOT a closed set: a picture may carry any label, and a new
+// one (say "Trees") becomes its own filter category automatically. This list is
+// only the familiar core and its preferred order — everything else follows it,
+// alphabetically.
 export const THEMES = [
   'Animals', 'Flowers', 'Food', 'Fantasy', 'Space', 'Landscape', 'Spooky', 'Abstract', 'Water',
 ];
 export const DIFFICULTIES = ['chunky', 'normal', 'detailed', 'insane'];
+
+/**
+ * Canonical spelling for a theme label. Because categories are free-form, this
+ * is what stops "trees", "Trees" and " trees " from splintering into three:
+ * trim, collapse inner whitespace, Title-Case each word. The nine common themes
+ * above are already in this form, so normalising them changes nothing.
+ */
+export function normalizeTheme(raw) {
+  return String(raw).trim().replace(/\s+/g, ' ')
+    .replace(/\S+/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
+}
+
+/** A theme label is well-formed if it normalises to itself and reads as a short
+ *  category name (letters/digits, spaces, & / -). Keeps a stray path or blob of
+ *  markup out of the filter. */
+export function isThemeLabel(s) {
+  return typeof s === 'string' && s.length <= 24
+    && /^[A-Za-z0-9][A-Za-z0-9 &/-]*$/.test(s) && normalizeTheme(s) === s;
+}
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const PUZZLE_DIR = path.join(ROOT, 'puzzles');
@@ -51,7 +75,7 @@ export function applyTags({ check = false, dir = PUZZLE_DIR } = {}) {
   for (const entry of manifest) {
     const tag = tags[entry.id];
     const difficulty = tag?.difficulty ?? 'normal';
-    const themes = tag?.themes?.length ? tag.themes : undefined;
+    const themes = tag?.themes?.length ? tag.themes.map(normalizeTheme) : undefined;
     const before = JSON.stringify([entry.difficulty, entry.themes]);
     entry.difficulty = difficulty;
     if (themes) entry.themes = themes;

@@ -1405,8 +1405,11 @@ function bandVisible(list) {
   }
 }
 
-// The theme tags a picture can carry (see puzzles/tags.json). The Pictures
-// list offers these as a single-select dropdown; the values match the manifest.
+// The common theme tags, and the order they sort first in the Pictures filter.
+// Categories are NOT a fixed set: the dropdown is built from whatever themes the
+// manifest actually carries (see buildPicFilterBar), so a picture tagged with a
+// new label — "Trees", say — grows a new category on its own. This list only
+// decides which labels lead, and in what order; the rest follow alphabetically.
 const PICTURE_THEMES = [
   'Animals', 'Flowers', 'Food', 'Fantasy', 'Space', 'Landscape', 'Spooky', 'Abstract', 'Water',
 ];
@@ -1484,12 +1487,24 @@ function buildPicFilterBar() {
     ['all', 'All'], ['chunky', 'Chunky'], ['normal', 'Normal'],
     ['detailed', 'Detailed'], ['insane', 'Insane'],
   ], (v) => { f.difficulty = v; applyPicFilter(); }));
-  // Theme is a single-select dropdown rather than a segmented strip: nine
-  // values would wrap into an unreadable wall of chips.
+  // Theme is a single-select dropdown rather than a segmented strip: the list
+  // grows, and a dozen values would wrap into an unreadable wall of chips.
+  // Its options are the themes the pictures actually carry — the common ones
+  // (PICTURE_THEMES) lead in their set order, any others follow alphabetically —
+  // so a new category appears here the moment a picture is tagged with it, and
+  // an empty one never shows.
+  const used = new Set();
+  for (const p of S.manifest) for (const t of p.themes ?? []) used.add(t);
+  const themes = [
+    ...PICTURE_THEMES.filter((t) => used.has(t)),
+    ...[...used].filter((t) => !PICTURE_THEMES.includes(t)).sort((a, b) => a.localeCompare(b)),
+  ];
+  // A theme that no longer exists on any picture can't stay the active filter.
+  if (f.theme !== 'all' && !used.has(f.theme)) f.theme = 'all';
   const theme = document.createElement('select');
   theme.className = 'pic-theme';
   theme.setAttribute('aria-label', 'Filter by theme');
-  for (const [value, text] of [['all', 'Any theme'], ...PICTURE_THEMES.map((t) => [t, t])]) {
+  for (const [value, text] of [['all', 'Any theme'], ...themes.map((t) => [t, t])]) {
     const opt = document.createElement('option');
     opt.value = value;
     opt.textContent = text;

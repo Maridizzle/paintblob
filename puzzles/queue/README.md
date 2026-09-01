@@ -36,8 +36,11 @@ slugified:
 }
 ```
 
-- `themes` — 1–3 of: **Abstract, Animals, Fantasy, Flowers, Food, Landscape,
-  Space, Spooky, Water**.
+- `themes` — 1–3 labels. The common ones are **Abstract, Animals, Fantasy,
+  Flowers, Food, Landscape, Space, Spooky, Water**, but any label works and
+  grows its own filter category (e.g. `Trees`) with no code change. Spelling is
+  normalised (trimmed, Title-Cased), so a stray `trees` can't make a second
+  category next to `Trees`.
 - `difficulty` — optional, one of `chunky | normal | detailed | insane`
   (defaults to `normal`).
 
