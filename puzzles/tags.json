@@ -327,5 +327,109 @@
       "Fantasy",
       "Abstract"
     ]
+  },
+  "cosmic-rainbow-tidepool": {
+    "difficulty": "normal",
+    "themes": [
+      "Water",
+      "Space"
+    ]
+  },
+  "desert-milky-way": {
+    "difficulty": "normal",
+    "themes": [
+      "Landscape",
+      "Space"
+    ]
+  },
+  "forest-archway-planets": {
+    "difficulty": "normal",
+    "themes": [
+      "Landscape",
+      "Space"
+    ]
+  },
+  "framed-tidepool-bird": {
+    "difficulty": "normal",
+    "themes": [
+      "Water",
+      "Animals"
+    ]
+  },
+  "jellyfish-drift": {
+    "difficulty": "normal",
+    "themes": [
+      "Water",
+      "Animals"
+    ]
+  },
+  "mossy-forest-stream": {
+    "difficulty": "normal",
+    "themes": [
+      "Landscape",
+      "Water"
+    ]
+  },
+  "orchid-conservatory-dusk": {
+    "difficulty": "normal",
+    "themes": [
+      "Flowers"
+    ]
+  },
+  "steaming-cup-ringed-planet": {
+    "difficulty": "normal",
+    "themes": [
+      "Food",
+      "Space"
+    ]
+  },
+  "tea-among-the-planets": {
+    "difficulty": "normal",
+    "themes": [
+      "Food",
+      "Space"
+    ]
+  },
+  "tidepool-bridge": {
+    "difficulty": "normal",
+    "themes": [
+      "Water",
+      "Landscape"
+    ]
+  },
+  "starlit-autumn-tree": {
+    "difficulty": "normal",
+    "themes": [
+      "Landscape",
+      "Space"
+    ]
+  },
+  "rain-blossom-island": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Flowers"
+    ]
+  },
+  "rainbow-lava-bridge": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Landscape"
+    ]
+  },
+  "storm-sea-tree": {
+    "difficulty": "normal",
+    "themes": [
+      "Water",
+      "Landscape"
+    ]
+  },
+  "snow-lava-cliff-tree": {
+    "difficulty": "normal",
+    "themes": [
+      "Landscape",
+      "Fantasy"
+    ]
   }
 }

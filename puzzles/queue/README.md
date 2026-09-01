@@ -8,7 +8,7 @@ itself can import them).
 Every week, `.github/workflows/weekly-mystery.yml` runs
 `tools/bake-weekly-mystery.mjs`, which:
 
-- takes the next 5 images from this folder in filename order,
+- takes the next 5 **themed** images from this folder in filename order,
 - builds each one into a real puzzle and bakes it straight into
   `puzzles/*.json` + `puzzles/manifest.json` with `blind: true` — the same
   way the app's 4 built-in demo pictures ship,
@@ -16,6 +16,35 @@ Every week, `.github/workflows/weekly-mystery.yml` runs
 - and cuts a new app version so the pictures are just *there* — in the
   Pictures list, hidden as "Mystery picture" until solved — the moment
   someone is on that version. No download, no drag-and-drop.
+
+## Give every image a theme (required)
+
+The Pictures list filters by theme, and mysteries are filterable too (the
+theme shows; the title and thumbnail stay hidden until solved). So the bake
+**will not touch an image that has no theme** — it leaves it in the queue and,
+if that leaves fewer than five usable, the weekly run fails loudly rather than
+shipping a themeless mystery.
+
+Add an entry for each image to `puzzles/queue/tags.json`, keyed by the
+picture's id — the filename with its date prefix and extension stripped, then
+slugified:
+
+```json
+{
+  "koi-in-the-rain": { "themes": ["Animals", "Water"] },
+  "sunset-over-the-bay": { "themes": ["Landscape", "Water"], "difficulty": "detailed" }
+}
+```
+
+- `themes` — 1–3 of: **Abstract, Animals, Fantasy, Flowers, Food, Landscape,
+  Space, Spooky, Water**.
+- `difficulty` — optional, one of `chunky | normal | detailed | insane`
+  (defaults to `normal`).
+
+On bake the entry is copied into `puzzles/tags.json` (the source of truth the
+manifest is synced from) under the picture's final id and removed from here.
+Preview what the next run will pick — and check nothing is being skipped for a
+missing theme — with `node tools/bake-weekly-mystery.mjs --dry-run`.
 
 Name files so alphabetical order matches the order you want them released,
 e.g. a date prefix:

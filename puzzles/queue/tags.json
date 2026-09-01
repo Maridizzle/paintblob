@@ -1,0 +1,17 @@
+{
+  "_readme": [
+    "Themes (and optional difficulty) for each queued mystery picture, so the",
+    "weekly bake can tag it. A queued image with no usable entry here is left",
+    "in the queue and never baked — that is how no mystery ever ships untagged.",
+    "",
+    "Key: the picture's id — the queued filename with its date prefix and",
+    "extension removed, then slugified. For 2026-08-24-koi-in-the-rain.jpg the",
+    "key is \"koi-in-the-rain\".",
+    "  themes      1-3 of: Abstract, Animals, Fantasy, Flowers, Food, Landscape, Space, Spooky, Water",
+    "  difficulty  optional: chunky | normal | detailed | insane (default normal)",
+    "",
+    "On bake, tools/bake-weekly-mystery.mjs copies the entry into",
+    "puzzles/tags.json under the final id (the source of truth apply-tags reads)",
+    "and removes it from here. Underscore keys are ignored."
+  ]
+}

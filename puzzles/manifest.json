@@ -247,7 +247,11 @@
       "#9d6a53"
     ],
     "difficulty": "normal",
-    "blind": true
+    "blind": true,
+    "themes": [
+      "Water",
+      "Space"
+    ]
   },
   {
     "id": "cosmic-still-life",
@@ -300,7 +304,11 @@
       "#da6a33"
     ],
     "difficulty": "normal",
-    "blind": true
+    "blind": true,
+    "themes": [
+      "Landscape",
+      "Space"
+    ]
   },
   {
     "id": "dusk-harbour",
@@ -388,7 +396,11 @@
       "#b3652b"
     ],
     "difficulty": "normal",
-    "blind": true
+    "blind": true,
+    "themes": [
+      "Landscape",
+      "Space"
+    ]
   },
   {
     "id": "framed-tidepool-bird",
@@ -403,7 +415,11 @@
       "#3d3122"
     ],
     "difficulty": "normal",
-    "blind": true
+    "blind": true,
+    "themes": [
+      "Water",
+      "Animals"
+    ]
   },
   {
     "id": "greenhouse",
@@ -509,7 +525,11 @@
       "#f5ae61"
     ],
     "difficulty": "normal",
-    "blind": true
+    "blind": true,
+    "themes": [
+      "Water",
+      "Animals"
+    ]
   },
   {
     "id": "kintsugi-bowl-and-magnolias",
@@ -636,7 +656,11 @@
       "#60481a"
     ],
     "difficulty": "normal",
-    "blind": true
+    "blind": true,
+    "themes": [
+      "Landscape",
+      "Water"
+    ]
   },
   {
     "id": "nebula-peaks",
@@ -706,7 +730,10 @@
       "#b0642d"
     ],
     "difficulty": "normal",
-    "blind": true
+    "blind": true,
+    "themes": [
+      "Flowers"
+    ]
   },
   {
     "id": "peacock",
@@ -759,7 +786,11 @@
       "#336342"
     ],
     "difficulty": "normal",
-    "blind": true
+    "blind": true,
+    "themes": [
+      "Fantasy",
+      "Flowers"
+    ]
   },
   {
     "id": "rainbow-lava-bridge",
@@ -774,7 +805,11 @@
       "#84ea72"
     ],
     "difficulty": "normal",
-    "blind": true
+    "blind": true,
+    "themes": [
+      "Fantasy",
+      "Landscape"
+    ]
   },
   {
     "id": "rainy-cottage",
@@ -843,7 +878,11 @@
       "#9a6d4d"
     ],
     "difficulty": "normal",
-    "blind": true
+    "blind": true,
+    "themes": [
+      "Landscape",
+      "Fantasy"
+    ]
   },
   {
     "id": "starlit-autumn-tree",
@@ -858,7 +897,11 @@
       "#f4c14b"
     ],
     "difficulty": "normal",
-    "blind": true
+    "blind": true,
+    "themes": [
+      "Landscape",
+      "Space"
+    ]
   },
   {
     "id": "steampunk-forest",
@@ -892,7 +935,11 @@
       "#95625b"
     ],
     "difficulty": "normal",
-    "blind": true
+    "blind": true,
+    "themes": [
+      "Food",
+      "Space"
+    ]
   },
   {
     "id": "stone-mosaic",
@@ -943,7 +990,11 @@
       "#9b430e"
     ],
     "difficulty": "normal",
-    "blind": true
+    "blind": true,
+    "themes": [
+      "Water",
+      "Landscape"
+    ]
   },
   {
     "id": "sunset-tidepool",
@@ -977,7 +1028,11 @@
       "#795840"
     ],
     "difficulty": "normal",
-    "blind": true
+    "blind": true,
+    "themes": [
+      "Food",
+      "Space"
+    ]
   },
   {
     "id": "rhyme-that-stopped",
@@ -1046,7 +1101,11 @@
       "#d5724b"
     ],
     "difficulty": "normal",
-    "blind": true
+    "blind": true,
+    "themes": [
+      "Water",
+      "Landscape"
+    ]
   },
   {
     "id": "tidepool-mosaic",

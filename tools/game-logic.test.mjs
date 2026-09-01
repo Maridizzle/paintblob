@@ -2268,6 +2268,18 @@ test('the manifest is in sync with tags.json (every entry has a valid difficulty
   }
 });
 
+test('every picture in the manifest carries at least one theme (mysteries included)', () => {
+  // The Pictures list filters by theme; a themeless picture is invisible under
+  // every filter but "all". Mysteries are baked with a theme by
+  // bake-weekly-mystery.mjs (it refuses to bake an untagged file), so this
+  // invariant should hold for the whole library, blind pictures and all.
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles/manifest.json'), 'utf8'));
+  const bare = manifest.filter((p) => !(Array.isArray(p.themes) && p.themes.length));
+  assert.equal(bare.length, 0,
+    `these pictures have no theme — add one to puzzles/tags.json and run `
+    + `\`node tools/apply-tags.mjs\`: ${bare.map((p) => p.id).join(', ')}`);
+});
+
 test('tags.json is a sidecar: kept out of the web build, matches the theme list in the UI', () => {
   const apply = readSource('tools/apply-animations.mjs');
   assert.match(apply, /TAG_SIDECARS = new Set\(\[[^\]]*'tags\.json'/,
