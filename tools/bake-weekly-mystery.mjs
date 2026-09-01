@@ -5,6 +5,12 @@
 // Pictures built this way show up in the Pictures list the moment a player
 // is on an app version that includes them: no download, no drag-and-drop.
 //
+// A queued file is only baked if it (a) builds into a paintable puzzle and
+// (b) has a themes entry in puzzles/queue/tags.json — so a mystery can never
+// ship without a theme for the Pictures filter. The theme is copied into the
+// real puzzles/tags.json (the source of truth) before the puzzle is written,
+// so its manifest entry comes out themed with no extra apply-tags run.
+//
 //   node tools/bake-weekly-mystery.mjs [--count 5] [--dry-run]
 
 import fs from 'node:fs';
@@ -14,9 +20,12 @@ import { fileURLToPath } from 'node:url';
 import { decodeImage } from './lib/decode.mjs';
 import { buildPuzzle, DEFAULTS, slugify } from '../src/pipeline/build.js';
 import { writePuzzle, reportPuzzle } from './mapify.mjs';
+import { THEMES, DIFFICULTIES } from './apply-tags.mjs';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const QUEUE_DIR = path.join(ROOT, 'puzzles', 'queue');
+const QUEUE_TAGS = path.join(QUEUE_DIR, 'tags.json');
+const TAGS = path.join(ROOT, 'puzzles', 'tags.json');
 const MANIFEST = path.join(ROOT, 'puzzles', 'manifest.json');
 const IMAGE_RE = /\.(png|jpe?g)$/i;
 
@@ -30,6 +39,10 @@ function parseArgs(argv) {
   }
   return opts;
 }
+
+const readJson = (file, fallback) => {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
+};
 
 // The queue's date prefix (see puzzles/queue/README.md) exists only to
 // control pick order — it must not survive into the id or the revealed
@@ -71,6 +84,21 @@ function tryBuild(file) {
   }
 }
 
+/** Validate a queued picture's sidecar tag. Returns `{ difficulty, themes }`
+ *  when usable, or `{ error }` naming what's wrong so the file can be left in
+ *  the queue rather than baked untagged. */
+function normalizeTag(tag) {
+  if (!tag) return { error: 'no entry in puzzles/queue/tags.json' };
+  const themes = Array.isArray(tag.themes) ? tag.themes : [];
+  if (themes.length === 0) return { error: 'its themes list is empty' };
+  if (themes.length > 3) return { error: 'more than 3 themes' };
+  const unknown = themes.filter((t) => !THEMES.includes(t));
+  if (unknown.length) return { error: `unknown theme(s): ${unknown.join(', ')}` };
+  const difficulty = tag.difficulty ?? 'normal';
+  if (!DIFFICULTIES.includes(difficulty)) return { error: `unknown difficulty "${difficulty}"` };
+  return { difficulty, themes };
+}
+
 function main() {
   const opts = parseArgs(process.argv.slice(2));
 
@@ -78,46 +106,77 @@ function main() {
     ? fs.readdirSync(QUEUE_DIR).filter((f) => IMAGE_RE.test(f)).sort()
     : [];
 
+  // Underscore keys (the _readme) are not picture ids; drop them from lookup.
+  const queueTagsRaw = readJson(QUEUE_TAGS, {});
+  const queueTags = Object.fromEntries(
+    Object.entries(queueTagsRaw).filter(([k]) => !k.startsWith('_')),
+  );
+
   const picked = [];
-  const skipped = [];
+  const unpaintable = []; // built nothing paintable — left in the queue
+  const untagged = [];    // no usable themes entry — left in the queue
   for (const name of queued) {
     if (picked.length >= opts.count) break;
+    const stem = stripOrderPrefix(name).replace(IMAGE_RE, '');
+    const base = slugify(stem);
+    const tag = normalizeTag(queueTags[base]);
+    // Refuse before building: an untagged picture can never become a baked,
+    // themeless mystery. It waits in the queue until it has a theme.
+    if (tag.error) { untagged.push(`${name} — ${tag.error} (key "${base}")`); continue; }
     const puzzle = tryBuild(path.join(QUEUE_DIR, name));
-    if (puzzle) picked.push({ name, puzzle });
-    else skipped.push(name);
+    if (puzzle) picked.push({ name, base, stem, puzzle, tag });
+    else unpaintable.push(name);
   }
 
-  if (skipped.length) {
-    console.warn(`skipped (no paintable regions found), left in the queue: ${skipped.join(', ')}`);
+  if (unpaintable.length) {
+    console.warn(`skipped (no paintable regions found), left in the queue: ${unpaintable.join(', ')}`);
+  }
+  if (untagged.length) {
+    console.warn('skipped (add a themes entry to puzzles/queue/tags.json), left in the queue:');
+    for (const line of untagged) console.warn(`  ${line}`);
   }
 
   if (picked.length < opts.count) {
     console.error(
-      `only ${picked.length} usable picture(s) queued, need ${opts.count} — `
-      + 'add more PNG/JPEG files to puzzles/queue/ before this can run',
+      `only ${picked.length} tagged, paintable picture(s) queued, need ${opts.count} — `
+      + 'add PNG/JPEG files to puzzles/queue/ and give each a themes entry in '
+      + 'puzzles/queue/tags.json before this can run',
     );
     process.exit(1);
   }
 
+  // Assign final ids up front so tags.json can be written once, before any
+  // puzzle is baked: writePuzzle -> manifestEntry -> tagsFor(id) reads
+  // puzzles/tags.json fresh, so the theme lands on the manifest entry.
   const taken = existingIds();
-  for (const { name, puzzle } of picked) {
-    const stem = stripOrderPrefix(name).replace(IMAGE_RE, '');
-    const id = uniqueId(stem, taken);
+  const jobs = picked.map((p) => {
+    const id = uniqueId(p.stem, taken);
     taken.add(id);
-    const title = titleFrom(stem);
+    return { ...p, id, title: titleFrom(p.stem) };
+  });
 
-    if (opts.dryRun) {
-      console.log(`would bake: ${title} (${id}) — ${puzzle.cells.length} cells, from ${name}`);
-      continue;
+  if (opts.dryRun) {
+    for (const j of jobs) {
+      console.log(`would bake: ${j.title} (${j.id}) [${j.tag.themes.join(', ')}] — `
+        + `${j.puzzle.cells.length} cells, from ${j.name}`);
     }
-    const out = writePuzzle(puzzle, { id, title, blind: true });
-    fs.rmSync(path.join(QUEUE_DIR, name));
-    reportPuzzle(puzzle, title, out);
+    console.log(`would bake ${jobs.length} mystery picture(s) into puzzles/ — nothing written`);
+    return;
   }
 
-  console.log(opts.dryRun
-    ? `would bake ${picked.length} mystery picture(s) into puzzles/ — nothing written`
-    : `baked ${picked.length} mystery picture(s) into puzzles/`);
+  const bakedTags = readJson(TAGS, {});
+  for (const j of jobs) bakedTags[j.id] = { difficulty: j.tag.difficulty, themes: j.tag.themes };
+  fs.writeFileSync(TAGS, `${JSON.stringify(bakedTags, null, 2)}\n`);
+
+  for (const j of jobs) {
+    const out = writePuzzle(j.puzzle, { id: j.id, title: j.title, blind: true });
+    fs.rmSync(path.join(QUEUE_DIR, j.name));
+    delete queueTagsRaw[j.base];
+    reportPuzzle(j.puzzle, j.title, out);
+  }
+  fs.writeFileSync(QUEUE_TAGS, `${JSON.stringify(queueTagsRaw, null, 2)}\n`);
+
+  console.log(`baked ${jobs.length} mystery picture(s) into puzzles/`);
 }
 
 main();
