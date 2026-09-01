@@ -2194,11 +2194,14 @@ button {
 }
 .stone-open + .stone-label { color: inherit; font-weight: 600; }
 
-/* The way back to the path while a stone is being painted. Mirrors .undo-pill,
-   parked opposite it. */
+/* The way back to the path while a story stone is up. It shares the top-left
+   corner's duty with the undo pill (while painting) and the compare pill (once
+   finished) — but unlike those two, which are mutually exclusive, this one
+   stays up the whole time. So park it a row BELOW them, clear of both, instead
+   of landing on top of whichever is showing. */
 .story-pill {
   position: absolute;
-  top: 12px;
+  top: 52px;
   left: 12px;
   z-index: 15;
   padding: 7px 13px;
