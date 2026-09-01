@@ -684,14 +684,14 @@
   {
     "id": "nobodys-red",
     "title": "Nobody’s Red",
-    "cells": 92,
-    "colours": 18,
+    "cells": 171,
+    "colours": 16,
     "thumb": [
-      "#daa029",
-      "#ebad1f",
-      "#127549",
-      "#16be7b",
-      "#226ce3"
+      "#44adf1",
+      "#215cc8",
+      "#202d8e",
+      "#161a5d",
+      "#130b39"
     ],
     "difficulty": "normal",
     "themes": [
@@ -852,14 +852,14 @@
   {
     "id": "silent-e",
     "title": "Silent E Has The Last Word",
-    "cells": 103,
-    "colours": 15,
+    "cells": 107,
+    "colours": 16,
     "thumb": [
-      "#c0861d",
-      "#daa029",
-      "#ebad1f",
-      "#f4e2bb",
-      "#0fa86b"
+      "#4b1408",
+      "#923f19",
+      "#c66826",
+      "#e49f53",
+      "#f9dcab"
     ],
     "difficulty": "normal",
     "themes": [
@@ -1042,14 +1042,14 @@
   {
     "id": "rhyme-that-stopped",
     "title": "The Rhyme That Stopped",
-    "cells": 90,
-    "colours": 15,
+    "cells": 74,
+    "colours": 16,
     "thumb": [
-      "#cb8e58",
-      "#daa029",
-      "#f7ebd3",
-      "#ebad1f",
-      "#f4e2bb"
+      "#ee9a86",
+      "#742d0b",
+      "#16523a",
+      "#044dad",
+      "#022b86"
     ],
     "difficulty": "normal",
     "themes": [
@@ -1060,14 +1060,14 @@
   {
     "id": "thread-cupboard",
     "title": "The Thread Cupboard",
-    "cells": 118,
-    "colours": 17,
+    "cells": 151,
+    "colours": 16,
     "thumb": [
-      "#daa029",
-      "#ebad1f",
-      "#e5b83e",
-      "#f7cb47",
-      "#0fa86b"
+      "#792b13",
+      "#ad4718",
+      "#dd7620",
+      "#f3b354",
+      "#096a65"
     ],
     "difficulty": "normal",
     "themes": [
@@ -1078,14 +1078,14 @@
   {
     "id": "wrong-colour-day",
     "title": "The Wrong-Colour Day",
-    "cells": 113,
-    "colours": 10,
+    "cells": 110,
+    "colours": 14,
     "thumb": [
-      "#daa029",
-      "#ebad1f",
-      "#15c980",
-      "#226ce3",
-      "#100725"
+      "#6f3d13",
+      "#a56826",
+      "#e0ac5e",
+      "#16574b",
+      "#41847f"
     ],
     "difficulty": "normal",
     "themes": [

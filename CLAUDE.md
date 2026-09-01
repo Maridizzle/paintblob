@@ -150,8 +150,11 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
 - The boss-freeze ✕ marks can *look* like they sit on painted cells — that's the
   big ✕ arms bleeding into neighbours; the freeze only ever locks *unfilled*
   cells (verified).
-- Story art is placeholder flat-vector; real art swaps in via `npm run mapify`
-  (Flux prompts in `docs/story-art-prompts.md`). A story node names an id, not an
-  image, so nothing in story mode changes when art is replaced.
+- Story art: all seven stones now ship **real** LaChapelle-style art, mapped from
+  Flux renders via `npm run mapify --id <id>` (prompts + bake commands in
+  `docs/story-art-prompts.md`). A story node names an id, not an image, so a
+  re-bake (same id) touches no story code. The Story board sits over the Sampler
+  cloth backdrop (`src/story-sampler.jpg`, laid in by `.story-board`).
+  `tools/make-story-puzzles.mjs` is kept only as the placeholder/re-bake fallback.
 - Verify anything visual by driving Chromium and screenshotting — the unit tests
   cannot see "the wrong thing rendered".

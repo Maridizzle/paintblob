@@ -1,11 +1,17 @@
 # Story-mode art: Flux prompts
 
-Chapter one has seven stones. Stones **one and two** ship **real art**, mapped
-from Flux renders. Stones **three through seven** ship **placeholder art** —
-flat jewel-tone scenes baked by `tools/make-story-puzzles.mjs`, playable now,
-in the same register but plainly not the real thing. This file keeps the prompt
-for every stone: the two that made the real art (for a re-bake) and the five
-that are waiting to replace a placeholder.
+Chapter one has seven stones. **All seven now ship real art**, mapped from Flux
+renders — stones one and two first, then three through seven (the old
+flat-vector placeholders baked by `tools/make-story-puzzles.mjs` have been
+replaced). This file keeps the prompt for every stone so any of them can be
+re-baked. `tools/make-story-puzzles.mjs` is retained only as the placeholder
+fallback / re-bake reference; it is not run in the normal flow.
+
+The **"The Sampler" cutscene backdrop** below is now wired in as the **Story
+board backdrop** — the chosen render lives at `src/story-sampler.jpg` and
+`.story-board` (styles.css) lays it behind the chapter stepping-stones under a
+theme-tinted wash. It is a UI asset, not a puzzle, so it has no `puzzles/*.json`
+and is not baked.
 
 None of the story puzzles are in the `seed` chain — every one is committed
 static JSON — so `npm run seed` leaves all seven alone, and swapping real art in

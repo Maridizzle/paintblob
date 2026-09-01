@@ -2091,8 +2091,13 @@ button {
   z-index: 22;
   display: flex;
   flex-direction: column;
-  background: rgba(var(--shade-rgb), 0.6);
-  backdrop-filter: blur(4px);
+  /* The chapter is told over the Sampler cloth itself — the embroidered heirloom
+     the whole story is worked on. It sits behind the stepping-stones under a
+     heavy theme-tinted wash (var(--shade-rgb)) so the stones, the connecting
+     thread and the labels stay clearly on top in every theme. */
+  background:
+    linear-gradient(rgba(var(--shade-rgb), 0.8), rgba(var(--shade-rgb), 0.8)),
+    url('story-sampler.jpg') center / cover no-repeat;
   animation: fade 300ms ease both;
 }
 .story-board.hidden { display: none; }
