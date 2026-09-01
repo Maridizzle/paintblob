@@ -9,6 +9,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { normalizeTheme, isThemeLabel } from './apply-tags.mjs';
+
 import { ACHIEVEMENTS, Achievements, StreakTracker } from '../src/achievements.js';
 import {
   PASSIVE_HINT_INTERVAL, accruePassiveHint, grantHints, spendHint, pickHintTarget,
@@ -2244,13 +2246,18 @@ const PIC_TAGS = Object.entries(
   JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles/tags.json'), 'utf8')),
 ).filter(([id]) => !id.startsWith('_'));
 
-test('every tags.json entry names a real picture, a valid difficulty and known themes', () => {
+test('every tags.json entry names a real picture, a valid difficulty and well-formed themes', () => {
   for (const [id, tag] of PIC_TAGS) {
     assert.ok(fs.existsSync(puzzleFile(id)), `tags.json tags "${id}", which is not a puzzle`);
     assert.ok(DIFFICULTIES.includes(tag.difficulty), `${id}: unknown difficulty "${tag.difficulty}"`);
     assert.ok(Array.isArray(tag.themes), `${id}: themes must be an array`);
     assert.ok(tag.themes.length >= 1 && tag.themes.length <= 3, `${id}: want 1–3 themes`);
-    for (const t of tag.themes) assert.ok(THEMES.includes(t), `${id}: unknown theme "${t}"`);
+    // Themes are free-form — any label grows its own category — but each must be
+    // a tidy, canonical label (trimmed, Title Case) so "trees" and "Trees" can't
+    // splinter into two categories.
+    for (const t of tag.themes) {
+      assert.ok(isThemeLabel(t), `${id}: not a canonical theme label: ${JSON.stringify(t)}`);
+    }
   }
 });
 
@@ -2263,7 +2270,7 @@ test('the manifest is in sync with tags.json (every entry has a valid difficulty
     const want = tags[entry.id];
     assert.equal(entry.difficulty, want?.difficulty ?? 'normal',
       `${entry.id}: manifest difficulty out of date — run \`node tools/apply-tags.mjs\``);
-    assert.deepEqual(entry.themes ?? [], want?.themes ?? [],
+    assert.deepEqual(entry.themes ?? [], (want?.themes ?? []).map(normalizeTheme),
       `${entry.id}: manifest themes out of date — run \`node tools/apply-tags.mjs\``);
   }
 });
@@ -2280,14 +2287,31 @@ test('every picture in the manifest carries at least one theme (mysteries includ
     + `\`node tools/apply-tags.mjs\`: ${bare.map((p) => p.id).join(', ')}`);
 });
 
-test('tags.json is a sidecar: kept out of the web build, matches the theme list in the UI', () => {
+test('every theme on a manifest entry is a canonical, well-formed label', () => {
+  // Categories are free-form, so the guard against a typo'd or malformed label
+  // splintering the filter is that everything the manifest carries is canonical.
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles/manifest.json'), 'utf8'));
+  for (const p of manifest) {
+    for (const t of p.themes ?? []) {
+      assert.ok(isThemeLabel(t),
+        `${p.id}: manifest theme ${JSON.stringify(t)} is not canonical — run \`node tools/apply-tags.mjs\``);
+    }
+  }
+});
+
+test('tags.json is a sidecar kept out of the web build; the theme filter is data-driven', () => {
   const apply = readSource('tools/apply-animations.mjs');
   assert.match(apply, /TAG_SIDECARS = new Set\(\[[^\]]*'tags\.json'/,
     'tags.json must be in TAG_SIDECARS so build-web excludes it and the scanners skip it');
   const game = readSource('src/game.js');
+  // PICTURE_THEMES is only the preferred lead order for the common labels...
   for (const t of THEMES) {
-    assert.ok(game.includes(`'${t}'`), `PICTURE_THEMES in game.js is missing "${t}"`);
+    assert.ok(game.includes(`'${t}'`), `PICTURE_THEMES in game.js is missing the common theme "${t}"`);
   }
+  // ...but the dropdown's real options come from whatever themes the manifest
+  // carries, so a new category (e.g. Trees) appears with no code change.
+  assert.match(game, /for \(const p of S\.manifest\) for \(const t of p\.themes/,
+    'the theme filter must build its options from the manifest, not a fixed list');
 });
 
 test('the animation window plays for the 5-10 seconds it was asked to', () => {

@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { decodeImage } from './lib/decode.mjs';
 import { buildPuzzle, DEFAULTS, slugify } from '../src/pipeline/build.js';
 import { writePuzzle, reportPuzzle } from './mapify.mjs';
-import { THEMES, DIFFICULTIES } from './apply-tags.mjs';
+import { DIFFICULTIES, normalizeTheme, isThemeLabel } from './apply-tags.mjs';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const QUEUE_DIR = path.join(ROOT, 'puzzles', 'queue');
@@ -89,11 +89,19 @@ function tryBuild(file) {
  *  the queue rather than baked untagged. */
 function normalizeTag(tag) {
   if (!tag) return { error: 'no entry in puzzles/queue/tags.json' };
-  const themes = Array.isArray(tag.themes) ? tag.themes : [];
-  if (themes.length === 0) return { error: 'its themes list is empty' };
-  if (themes.length > 3) return { error: 'more than 3 themes' };
-  const unknown = themes.filter((t) => !THEMES.includes(t));
-  if (unknown.length) return { error: `unknown theme(s): ${unknown.join(', ')}` };
+  const raw = Array.isArray(tag.themes) ? tag.themes : [];
+  if (raw.length === 0) return { error: 'its themes list is empty' };
+  if (raw.length > 3) return { error: 'more than 3 themes' };
+  // Themes are free-form: any label is allowed, so a brand-new category (say
+  // "Trees") can be introduced straight from the queue and it becomes its own
+  // filter with no code change. Normalise the spelling and drop duplicates that
+  // differed only by case or spacing.
+  const themes = [];
+  for (const t of raw) {
+    const name = normalizeTheme(t);
+    if (!isThemeLabel(name)) return { error: `not a usable theme label: ${JSON.stringify(t)}` };
+    if (!themes.includes(name)) themes.push(name);
+  }
   const difficulty = tag.difficulty ?? 'normal';
   if (!DIFFICULTIES.includes(difficulty)) return { error: `unknown difficulty "${difficulty}"` };
   return { difficulty, themes };

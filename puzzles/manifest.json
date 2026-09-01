@@ -789,7 +789,8 @@
     "blind": true,
     "themes": [
       "Fantasy",
-      "Flowers"
+      "Flowers",
+      "Trees"
     ]
   },
   {
@@ -808,7 +809,8 @@
     "blind": true,
     "themes": [
       "Fantasy",
-      "Landscape"
+      "Landscape",
+      "Trees"
     ]
   },
   {
@@ -881,7 +883,8 @@
     "blind": true,
     "themes": [
       "Landscape",
-      "Fantasy"
+      "Fantasy",
+      "Trees"
     ]
   },
   {
@@ -900,7 +903,8 @@
     "blind": true,
     "themes": [
       "Landscape",
-      "Space"
+      "Space",
+      "Trees"
     ]
   },
   {
@@ -993,7 +997,8 @@
     "blind": true,
     "themes": [
       "Water",
-      "Landscape"
+      "Landscape",
+      "Trees"
     ]
   },
   {

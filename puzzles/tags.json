@@ -2,7 +2,10 @@
   "_readme": [
     "Difficulty + theme tags for the Pictures-list filters. Keyed by puzzle id.",
     "  difficulty  chunky | normal | detailed | insane  (how the picture was built)",
-    "  themes      1-3 of: Abstract, Animals, Fantasy, Flowers, Food, Landscape, Space, Spooky, Water",
+    "  themes      1-3 free-form labels. The common ones are Abstract, Animals,",
+    "              Fantasy, Flowers, Food, Landscape, Space, Spooky, Water, but any",
+    "              label works and grows its own filter category (e.g. Trees).",
+    "              Spelling is normalised (trim + Title Case), so keep it consistent.",
     "Source of truth: tools/apply-tags.mjs reads this and writes difficulty/themes",
     "into puzzles/manifest.json (the list reads the manifest, not the puzzle JSON).",
     "Missing id defaults to difficulty \"normal\", no themes. Underscore keys ignored."
@@ -401,35 +404,40 @@
     "difficulty": "normal",
     "themes": [
       "Landscape",
-      "Space"
+      "Space",
+      "Trees"
     ]
   },
   "rain-blossom-island": {
     "difficulty": "normal",
     "themes": [
       "Fantasy",
-      "Flowers"
+      "Flowers",
+      "Trees"
     ]
   },
   "rainbow-lava-bridge": {
     "difficulty": "normal",
     "themes": [
       "Fantasy",
-      "Landscape"
+      "Landscape",
+      "Trees"
     ]
   },
   "storm-sea-tree": {
     "difficulty": "normal",
     "themes": [
       "Water",
-      "Landscape"
+      "Landscape",
+      "Trees"
     ]
   },
   "snow-lava-cliff-tree": {
     "difficulty": "normal",
     "themes": [
       "Landscape",
-      "Fantasy"
+      "Fantasy",
+      "Trees"
     ]
   }
 }
