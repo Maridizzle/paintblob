@@ -39,6 +39,9 @@ import {
 import {
   PADS as RECALL_PADS, seqLength as recallSeqLen, buildSequence as recallBuild, prefixOk as recallPrefixOk, complete as recallComplete,
 } from '../src/recall.js';
+import {
+  PERKS, PERK_KINDS, perkTarget, pickBelow, pickBleed, pickContrast, pickRecall,
+} from '../src/perks.js';
 // Aliased: THEMES is already taken further down by the picture-tag list.
 import { THEMES as APP_THEMES, DEFAULT_THEME, isTheme, themeOr, themeUnlocked } from '../src/themes.js';
 import {
@@ -1601,6 +1604,126 @@ test('the recall module stays pure — no DOM', () => {
   assert.ok(!/\bdocument\b|\bwindow\b|querySelector/.test(src), 'recall.js must run in node — no DOM');
 });
 
+/* ---------------------------------------- bonus-round perks (the boon they give) */
+
+// A small board for the pickers: a column and a couple of off-to-the-side cells.
+// x/y are anchors; y grows downward (screen convention).
+const perkCells = () => [
+  { id: 0, colour: 0, anchor: { x: 10, y: 10 } }, // top
+  { id: 1, colour: 1, anchor: { x: 10, y: 30 } }, // straight below 0
+  { id: 2, colour: 2, anchor: { x: 60, y: 30 } }, // below 0 but far to the side
+  { id: 3, colour: 0, anchor: { x: 12, y: 50 } }, // lower still, same colour as 0
+];
+const perkPalette = [
+  { hex: '#000000' }, // 0 black
+  { hex: '#ffffff' }, // 1 white — the opposite of black
+  { hex: '#ff2020' }, // 2 red
+  { hex: '#000000' }, // 3 black
+];
+const noneFilled = () => ({ filled: new Set(), pending: new Set() });
+
+test('the perk catalogue has one entry per kind, each with a mark and blurb', () => {
+  assert.deepEqual(PERK_KINDS, ['twin', 'overflow', 'contrast', 'bleed', 'recall'], 'the five perks');
+  for (const kind of PERK_KINDS) {
+    const def = PERKS[kind];
+    assert.ok(def && def.name && def.mark && def.blurb, `${kind} needs a name, mark and blurb`);
+  }
+});
+
+test('Overflow drips straight down, and runs out at the floor', () => {
+  const cells = perkCells();
+  // From the top cell, the one directly below wins over the far-to-the-side one.
+  assert.equal(pickBelow(cells, cells[0], noneFilled())?.id, 1, 'nearest straight-down cell');
+  // With that one gone, the next lowest that still sits under it, not the side cell.
+  assert.equal(pickBelow(cells, cells[0], { filled: new Set([1]), pending: new Set() })?.id, 3,
+    'skips filled, prefers small horizontal drift over a nearer side cell');
+  // Nothing below the bottom cell — a drip off the edge of the picture.
+  assert.equal(pickBelow(cells, cells[3], noneFilled()), null, 'no cell below the floor');
+});
+
+test('Bleed takes the nearest open neighbour of any colour', () => {
+  const cells = perkCells();
+  assert.equal(pickBleed(cells, cells[0], noneFilled())?.id, 1, 'nearest by anchor, colour ignored');
+  assert.equal(pickBleed(cells, cells[0], { filled: new Set([1]), pending: new Set() })?.id, 3,
+    'skips the filled nearest, takes the next');
+});
+
+test('Contrast lays down the most opposite colour available', () => {
+  const cells = perkCells();
+  // from is black (colour 0) → white (colour 1) is farther than red (colour 2).
+  assert.equal(pickContrast(cells, cells[0], perkPalette, noneFilled())?.id, 1, 'white, the opposite of black');
+  assert.equal(pickContrast(cells, cells[0], perkPalette, { filled: new Set([1]), pending: new Set() })?.id, 2,
+    'white gone → red is the next farthest');
+});
+
+test('Recall reaches for a random open cell, and gives up when none are left', () => {
+  const cells = perkCells();
+  assert.equal(pickRecall(cells, noneFilled(), () => 0)?.id, 0, 'rng 0 → first open cell');
+  assert.equal(pickRecall(cells, noneFilled(), () => 0.99)?.id, 3, 'rng near 1 → last open cell');
+  assert.equal(pickRecall(cells, { filled: new Set([0, 1, 2, 3]), pending: new Set() }, () => 0), null,
+    'nothing left to remember');
+});
+
+test('perkTarget routes each kind, and twin takes the nearest same-colour cell', () => {
+  const cells = perkCells();
+  // twin: the just-filled cell (0) is already in `filled` when commitFill calls this,
+  // so the nearest OTHER same-colour cell (3) is the twin.
+  const opts = { filled: new Set([0]), pending: new Set(), palette: perkPalette };
+  assert.equal(perkTarget('twin', cells, cells[0], opts)?.id, 3, 'nearest same-colour twin');
+  assert.equal(perkTarget('overflow', cells, cells[0], opts)?.id, 1, 'overflow → below');
+  assert.equal(perkTarget('bleed', cells, cells[0], opts)?.id, 1, 'bleed → nearest neighbour');
+  assert.equal(perkTarget('contrast', cells, cells[0], opts)?.id, 1, 'contrast → opposite colour (white)');
+  assert.ok([1, 2, 3].includes(perkTarget('recall', cells, cells[0], { ...opts, rng: () => 0.5 })?.id),
+    'recall → some open cell');
+  assert.equal(perkTarget('nope', cells, cells[0], opts), null, 'an unknown kind takes nothing');
+});
+
+test('the perks module stays pure — no DOM', () => {
+  const src = readSource('src/perks.js');
+  assert.ok(!/\bdocument\b|\bwindow\b|querySelector/.test(src), 'perks.js must run in node — no DOM');
+});
+
+test('each bonus round grants its perk, and the old single Overtime flag is gone', () => {
+  const game = readSource('src/game.js');
+  // The five awards each hand out the mapped perk. (Overtime kept win/lose, so it
+  // grants a flat charge; the rest scale with how well you played.)
+  const awardGrants = [
+    ['awardOvertime', 'twin'],
+    ['awardShadeMatch', 'contrast'],
+    ['awardMixer', 'bleed'],
+    ['awardDrips', 'overflow'],
+    ['awardRecall', 'recall'],
+  ];
+  for (const [fn, kind] of awardGrants) {
+    const start = game.indexOf(`function ${fn}(`);
+    assert.ok(start > 0, `${fn} exists`);
+    const body = game.slice(start, game.indexOf('\n}', start));
+    assert.match(body, new RegExp(`grantPerk\\('${kind}'`), `${fn} must grant the '${kind}' perk`);
+    assert.match(body, /bankPoints\(/, `${fn} must still bank a few points`);
+  }
+  // The old boolean-for-the-whole-picture perk is fully replaced by S.perk.
+  assert.doesNotMatch(game, /\bS\.bogo\b/, 'S.bogo must be gone, replaced by S.perk');
+  assert.match(game, /S\.perk = \{ kind, charges: n \}/, 'grantPerk stores the charged perk on S');
+});
+
+test('a perk fills one extra cell per paint, free, and undo credits the right tub', () => {
+  const game = readSource('src/game.js');
+  const body = game.slice(game.indexOf('function commitFill'), game.indexOf('function undoLast'));
+  // The extra fill hangs off the real fill, spends a charge only when it finds a cell,
+  // and splits same-colour (twin) from different-colour (extra) for undo's sake.
+  assert.match(body, /perkTarget\(S\.perk\.kind, S\.cells, cell/, 'commitFill asks perks.js for the extra cell');
+  assert.match(body, /if \(--S\.perk\.charges <= 0\) S\.perk = null/, 'a charge is spent per extra fill');
+  assert.match(body, /bonus\.colour === cell\.colour \? twin = bonus : \(extra = bonus\)|if \(bonus\.colour === cell\.colour\) twin = bonus; else extra = bonus/,
+    'same colour rides the step; a different colour is recorded as extra');
+  assert.match(body, /extra: extra \? \{ id: extra\.id, colour: extra\.colour \} : null/, 'history records a different-colour bonus cell');
+  // undo hands the different-colour cell back to its OWN tub.
+  const undo = game.slice(game.indexOf('function undoLast'), game.indexOf('function undoLast') + 1400);
+  assert.match(undo, /if \(step\.extra\) \{/, 'undo unwinds a perk’s different-colour cell');
+  assert.match(undo, /S\.remaining\[step\.extra\.colour\]\+\+/, 'and credits it to the right colour');
+  // Reset clears the perk per picture.
+  assert.match(game, /S\.perk = null;\s*\n\s*syncPerk\(\);/, 'loadPuzzle resets the perk');
+});
+
 /* ------------------------------- every new round shows its rules first, too */
 
 test('Colour Mixer, Drip Catch and Palette Memory each hold the clock behind a how-to', () => {
@@ -1868,7 +1991,7 @@ test('the ramp is drawn fresh each round, never from the theme or the picture', 
 
 test('undo only takes back the cells that were counted', () => {
   // commitFill counts one cell per click, but an entry can carry more than
-  // one: Half Fill's batch and Overtime's doubled partner both ride along
+  // one: Half Fill's batch and a perk's same-colour bonus cell both ride along
   // free. Undo subtracting the whole length drove the lifetime tally below
   // what had actually been painted — silently, and every average computed
   // from it with it.
@@ -1886,23 +2009,24 @@ test('undo only takes back the cells that were counted', () => {
   }
 });
 
-test('the doubled fill is free, and rides in one undo', () => {
+test('a perk’s bonus cell is free, filled before the tub-empty check, in one undo', () => {
   const game = readSource('src/game.js');
-  // Structurally: the partner is filled before the tub-empty check, or an
+  // Structurally: the bonus cell is filled before the tub-empty check, or an
   // emptied tub would not be noticed and finish() could be missed.
   const body = game.slice(game.indexOf('function commitFill'), game.indexOf('function undoLast'));
-  const partnerAt = body.indexOf('const partner = S.bogo');
+  const perkAt = body.indexOf('if (S.perk && S.perk.charges > 0)');
   const emptyAt = body.indexOf('if (S.remaining[cell.colour] === 0)');
   const pushAt = body.indexOf('S.history.push');
-  assert.ok(partnerAt > 0 && emptyAt > partnerAt,
-    'the partner must be filled before the tub-empty check reads the count');
-  assert.ok(pushAt > partnerAt, 'the partner must be known before the history entry is written');
-  assert.match(body, /cells: partner \? \[cell\.id, partner\.id\] : \[cell\.id\]/,
-    'one click has to be one undo entry, not two');
-  // The partner must not reach grantPoints. Everything between the two is the
-  // primary's award, so the partner block simply must not mention points.
-  const block = body.slice(partnerAt, body.indexOf('S.save.stats.cells++'));
-  assert.ok(!/grantPoints|award/.test(block), 'the doubled cell must not be paid for');
+  assert.ok(perkAt > 0 && emptyAt > perkAt,
+    'the bonus cell must be filled before the tub-empty check reads the count');
+  assert.ok(pushAt > perkAt, 'the bonus cell must be known before the history entry is written');
+  // A same-colour twin folds into this step (one click, one undo); a different
+  // colour is carried in `extra` for its own undo (see the undo-tub test above).
+  assert.match(body, /cells: twin \? \[cell\.id, twin\.id\] : \[cell\.id\]/,
+    'a same-colour twin is one undo entry, not two');
+  // The bonus cell must not be paid for — the perk block grants no points.
+  const block = body.slice(perkAt, body.indexOf('S.save.stats.cells++'));
+  assert.ok(!/grantPoints|bankPoints/.test(block), 'the bonus cell must not be paid for');
 });
 
 test('a doubled fill takes the nearest unfilled cell of the same colour', () => {

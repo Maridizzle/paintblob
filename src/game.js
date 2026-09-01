@@ -18,7 +18,7 @@ import {
 import { WARDROBE_ITEMS } from './wardrobe.js';
 import { THEMES, DEFAULT_THEME, themeOr, themeUnlocked } from './themes.js';
 import {
-  SECONDS as OT_SECONDS, CHUNKS, COLS, rampFrom, randomStops, scramble, swap, isSolved, partnerFor,
+  SECONDS as OT_SECONDS, CHUNKS, COLS, rampFrom, randomStops, scramble, swap, isSolved,
 } from './overtime.js';
 import {
   COLOURS as SWAP_COLOURS, PAIRS as SWAP_PAIRS, SECONDS as SWAP_SECONDS, COLS as SWAP_COLS,
@@ -29,6 +29,7 @@ import { firstThreshold, nextThreshold, pickNext, LINGER as BONUS_LINGER } from 
 import { BASES as MIX_BASES, SECONDS as MIX_SECONDS, mix as mixWell, within as mixWithin, targetFrom as mixTarget } from './mixer.js';
 import { SECONDS as DRIP_SECONDS, spawn as dripSpawn, step as dripStep, caught as dripCaught, missed as dripMissed, fallSpeed as dripSpeed } from './drips.js';
 import { SECONDS as RECALL_SECONDS, buildSequence as recallBuild, prefixOk as recallPrefixOk, complete as recallComplete } from './recall.js';
+import { perkTarget, PERKS } from './perks.js';
 import { outlineSVG, outlineWeight } from './thumbnail.js';
 import { computePlayStats } from './playstats.js';
 import { Tour } from './tour.js';
@@ -78,9 +79,10 @@ const S = {
   // unbounded array of every cell ever painted does not belong in a save file,
   // and reopening a picture is a fresh start on it anyway.
   history: [],
-  // Overtime's prize, for this picture only. Session state like history —
-  // won at the board and spent at the board, never saved.
-  bogo: false,
+  // A won bonus round's perk, for this picture only: { kind, charges } or null.
+  // Every fill spends one charge to lay down a bonus cell (see perks.js). Session
+  // state like history — won at the board and spent at the board, never saved.
+  perk: null,
   // The running Overtime session, or null. UI-only and per-picture, like
   // history: it is played at the canvas and never saved.
   ot: null,
@@ -380,7 +382,8 @@ async function loadPuzzle(id) {
   S.finished = S.filled.size === S.cells.length;
   S.bursts = [];
   S.history = [];
-  S.bogo = false;
+  S.perk = null;
+  syncPerk();
   S.ot = null;
   closeOvertime();
   S.swap = null;
@@ -679,20 +682,32 @@ function commitFill(burst) {
   S.remaining[cell.colour]--;
   board.markFilled(cell.id);
 
-  // Overtime's prize: for the rest of the picture, a fill takes the nearest
-  // unfilled cell of the same colour with it. Applied here, before anything
-  // below reads S.remaining, so the tub-empty check and finish() both see the
-  // real count. The partner grants nothing — no points, no cell tally, no
-  // streak — for the same reason Half Fill's batch does not: a free cell that
-  // paid would double the coin income of every picture it was won on, and the
-  // shop is priced against the level curve.
-  const partner = S.bogo
-    ? partnerFor(S.cells, cell, { colour: cell.colour, filled: S.filled, pending: S.pending })
-    : null;
-  if (partner) {
-    S.filled.add(partner.id);
-    S.remaining[partner.colour]--;
-    board.markFilled(partner.id);
+  // A won bonus round's perk: for its next few fills, each cell you paint also
+  // lays down ONE more, chosen by the perk (perks.js) — the twin beside it, the
+  // cell below, an opposite colour, a neighbour, a forgotten corner. Applied
+  // here, before anything below reads S.remaining, so the tub-empty check and
+  // finish() both see the real count. The bonus cell grants nothing — no points,
+  // no cell tally, no streak — for the same reason Half Fill's batch does not: a
+  // free cell that paid would double the coin income of every picture, and the
+  // shop is priced against the level curve. A charge is spent only when the perk
+  // actually finds a cell to take (an edge cell with nothing below it sits out).
+  //
+  // A same-colour take (Doubled Brush) rides this step's own colour on undo; a
+  // different-colour take carries its own colour in `extra` so undo credits the
+  // right tub, not this one.
+  let twin = null;   // same colour as `cell` — folds into this step's cells
+  let extra = null;  // a different colour — recorded separately for undo
+  if (S.perk && S.perk.charges > 0) {
+    const bonus = perkTarget(S.perk.kind, S.cells, cell,
+      { filled: S.filled, pending: S.pending, palette: S.puzzle.palette });
+    if (bonus) {
+      S.filled.add(bonus.id);
+      S.remaining[bonus.colour]--;
+      board.markFilled(bonus.id);
+      if (bonus.colour === cell.colour) twin = bonus; else extra = bonus;
+      if (--S.perk.charges <= 0) S.perk = null;
+      syncPerk();
+    }
   }
 
   S.save.stats.cells++;
@@ -736,10 +751,14 @@ function commitFill(burst) {
   // recomputed later: `award` folds in a Golden Cell and a Colour Surge that
   // may both have expired by the time this is taken back.
   S.history.push({
-    cells: partner ? [cell.id, partner.id] : [cell.id],
+    cells: twin ? [cell.id, twin.id] : [cell.id],
     // How many of those never counted towards stats — see `free` in undoLast.
-    free: partner ? 1 : 0,
+    free: twin ? 1 : 0,
     colour: cell.colour,
+    // A different-colour bonus cell (Overflow / Contrast / Bleed / Recall): its
+    // own id and colour, so undo hands the credit back to the right tub, not this
+    // step's colour.
+    extra: extra ? { id: extra.id, colour: extra.colour } : null,
     points: award,
     muted,
     hint: hinted,
@@ -781,11 +800,19 @@ function undoLast() {
   }
   S.remaining[step.colour] += step.cells.length;
 
-  // Only the cells that were counted come back off. A batch handed over for
-  // free — Half Fill's half, Overtime's doubled partner — never reached
-  // stats.cells on the way in, so subtracting its length here drove the
-  // lifetime tally down below what had actually been painted, and every
-  // average computed from it with it.
+  // A perk's different-colour bonus cell comes back off with its OWN colour
+  // credited — it never rode step.colour (see commitFill's `extra`).
+  if (step.extra) {
+    S.filled.delete(step.extra.id);
+    board.markUnfilled(step.extra.id);
+    S.remaining[step.extra.colour]++;
+  }
+
+  // Only the cells that were counted come back off. A cell handed over for
+  // free — a perk's bonus cell, whether the same-colour twin folded in here or
+  // the different-colour `extra` above — never reached stats.cells on the way
+  // in, so subtracting its length here drove the lifetime tally down below what
+  // had actually been painted, and every average computed from it with it.
   const paid = step.cells.length - (step.free ?? 0);
   stats.cells -= paid;
   stats.undos = (stats.undos ?? 0) + 1;
@@ -3209,9 +3236,8 @@ function endOvertime(won) {
 }
 
 function awardOvertime() {
-  S.bogo = true;
-  toast({ icon: '◑', name: 'Doubled brush',
-    desc: 'Every cell you fill now takes its nearest neighbour with it.' }, '', { sticky: true });
+  bankPoints(10);            // Overtime is win/lose, so a small flat purse
+  grantPerk('twin', 12);
 }
 
 /** The ramp in its right order, under the player's attempt. */
@@ -3436,20 +3462,9 @@ function endShadeMatch() {
 // through the same level-up/charge plumbing the paint path uses, then saved —
 // this runs outside commitFill, so it banks itself.
 function awardShadeMatch(reached) {
-  const pts = smScore(reached);
-  if (pts <= 0) return;
-  const beforeLevel = levelForPoints(S.save.stats.pointsEarned);
-  grantPoints(S.save.stats, pts);
-  const afterLevel = levelForPoints(S.save.stats.pointsEarned);
-  for (let lv = beforeLevel + 1; lv <= afterLevel; lv++) grantLevelUpCharges(S.save.avatar.abilities, lv);
-  if (afterLevel > beforeLevel) {
-    toast({ icon: '⭐', name: `Level ${afterLevel}`, desc: 'Your avatar levelled up.' }, '', { sticky: true });
-  }
-  syncAvatarWidget();
-  syncAbilityRow();
-  bumpPointsHud(pts);
-  persist();
-  toast({ icon: '◧', name: `+${pts} points`, desc: `Shade Match — you found ${reached}. A sharp eye.` }, '', { sticky: true });
+  if (reached <= 0) return;
+  bankPoints(smScore(reached));
+  grantPerk('contrast', Math.min(18, 8 + reached));
 }
 
 // Overtime lays the right answer under a loss to teach it; Shade Match hides
@@ -3629,17 +3644,8 @@ function endMixer(won) {
 // Points for a match, worth more the more clock you left on it — a quick eye
 // beats a slow grind to the same colour.
 function awardMixer(secLeft) {
-  const pts = 12 + Math.round(secLeft * 0.8);
-  const beforeLevel = levelForPoints(S.save.stats.pointsEarned);
-  grantPoints(S.save.stats, pts);
-  const afterLevel = levelForPoints(S.save.stats.pointsEarned);
-  for (let lv = beforeLevel + 1; lv <= afterLevel; lv++) grantLevelUpCharges(S.save.avatar.abilities, lv);
-  if (afterLevel > beforeLevel) toast({ icon: '⭐', name: `Level ${afterLevel}`, desc: 'Your avatar levelled up.' }, '', { sticky: true });
-  syncAvatarWidget();
-  syncAbilityRow();
-  bumpPointsHud(pts);
-  persist();
-  toast({ icon: '⬗', name: `+${pts} points`, desc: 'Colour Mixer — a good match.' }, '', { sticky: true });
+  bankPoints(12 + Math.round(secLeft * 0.8));
+  grantPerk('bleed', Math.min(20, 10 + Math.round(secLeft / 3)));
 }
 
 function closeMixer() {
@@ -3873,18 +3879,9 @@ function endDrips() {
 }
 
 function awardDrips(reached) {
-  const pts = reached * 3;
-  if (pts <= 0) return;
-  const beforeLevel = levelForPoints(S.save.stats.pointsEarned);
-  grantPoints(S.save.stats, pts);
-  const afterLevel = levelForPoints(S.save.stats.pointsEarned);
-  for (let lv = beforeLevel + 1; lv <= afterLevel; lv++) grantLevelUpCharges(S.save.avatar.abilities, lv);
-  if (afterLevel > beforeLevel) toast({ icon: '⭐', name: `Level ${afterLevel}`, desc: 'Your avatar levelled up.' }, '', { sticky: true });
-  syncAvatarWidget();
-  syncAbilityRow();
-  bumpPointsHud(pts);
-  persist();
-  toast({ icon: '◒', name: `+${pts} points`, desc: `Drip Catch — you caught ${reached}.` }, '', { sticky: true });
+  if (reached <= 0) return;
+  bankPoints(reached * 3);
+  grantPerk('overflow', Math.min(20, 8 + Math.floor(reached / 2)));
 }
 
 function closeDrips() {
@@ -4065,18 +4062,9 @@ function endRecall(reached) {
 }
 
 function awardRecall(reached) {
-  const pts = reached * 6;
-  if (pts <= 0) return;
-  const beforeLevel = levelForPoints(S.save.stats.pointsEarned);
-  grantPoints(S.save.stats, pts);
-  const afterLevel = levelForPoints(S.save.stats.pointsEarned);
-  for (let lv = beforeLevel + 1; lv <= afterLevel; lv++) grantLevelUpCharges(S.save.avatar.abilities, lv);
-  if (afterLevel > beforeLevel) toast({ icon: '⭐', name: `Level ${afterLevel}`, desc: 'Your avatar levelled up.' }, '', { sticky: true });
-  syncAvatarWidget();
-  syncAbilityRow();
-  bumpPointsHud(pts);
-  persist();
-  toast({ icon: '◇', name: `+${pts} points`, desc: `Palette Memory — ${reached} rounds.` }, '', { sticky: true });
+  if (reached <= 0) return;
+  bankPoints(reached * 6);
+  grantPerk('recall', Math.min(20, 8 + reached * 2));
 }
 
 function closeRecall() {
@@ -4397,6 +4385,48 @@ function syncNamed() {
   if (!pill) return;
   pill.classList.toggle('hidden', S.named <= 0);
   if (S.named > 0) pill.textContent = `✦ Named ×${S.named}`;
+}
+
+// The active-perk pill — a sibling of #namedPill. Shows the won round's boon and
+// its remaining charges (`◒ Overflow · 12 left`), hidden when nothing is active.
+function syncPerk() {
+  const pill = $('perkPill');
+  if (!pill) return;
+  const active = !!(S.perk && S.perk.charges > 0);
+  pill.classList.toggle('hidden', !active);
+  if (active) {
+    const def = PERKS[S.perk.kind];
+    pill.textContent = `${def.mark} ${def.name} · ${S.perk.charges} left`;
+  }
+}
+
+// Hand the player a perk for their next `charges` fills, and announce it. Winning
+// a second round while one is active simply replaces it with the new one.
+function grantPerk(kind, charges) {
+  const n = Math.max(1, Math.round(charges));
+  const def = PERKS[kind];
+  S.perk = { kind, charges: n };
+  syncPerk();
+  toast({ icon: def.mark, name: def.name, desc: `${def.blurb} — for your next ${n} fills.` }, '', { sticky: true });
+}
+
+// The shared points path for a won bonus round: grant, roll any level-ups (with
+// their ability charges and a toast), pulse the HUD. The perk is the headline
+// reward now, so the points land quietly — no toast of their own, just the bump.
+function bankPoints(pts) {
+  if (pts <= 0) return;
+  const before = levelForPoints(S.save.stats.pointsEarned);
+  grantPoints(S.save.stats, pts);
+  const after = levelForPoints(S.save.stats.pointsEarned);
+  for (let lv = before + 1; lv <= after; lv++) grantLevelUpCharges(S.save.avatar.abilities, lv);
+  if (after > before) {
+    toast({ icon: '⭐', name: `Level ${after}`, desc: 'Your avatar levelled up.' }, '', { sticky: true });
+    sfx.play('achievement');
+  }
+  syncAvatarWidget();
+  syncAbilityRow();
+  bumpPointsHud(pts);
+  persist();
 }
 
 function syncSoundIcon() {

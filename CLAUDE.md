@@ -108,6 +108,14 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
   random**: `bonus.js` (pure) sets the rare, jittered cadence and picks the next
   round (never a repeat); game.js drives one shared `#bonusChip` from a `BONUS_ROUNDS`
   registry — add an entry and it schedules itself.
+  Winning a round grants a **temporary per-fill perk** (`perks.js`, pure) + a few
+  points: for its next N fills, every cell you paint lays down one more — a
+  same-colour twin (Overtime), the cell below (Drips), an opposite colour (Shade
+  Match), a neighbour (Mixer), or a random forgotten cell (Recall). Held on
+  `S.perk = { kind, charges }` (session-only, generalised from the old `S.bogo`),
+  spent in `commitFill`, shown in `#perkPill`. Same-colour takes ride the fill's
+  undo step; different-colour takes carry their own colour in the step's `extra`
+  so undo credits the right tub.
 - **Themes** — `themes.js`: `void` (default), `fae`, `cobalt` (unlocked by beating
   the chapter-one boss). `settings.themePinned` (set when the player picks any
   theme) makes their choice win in story too, instead of the chapter theme.
