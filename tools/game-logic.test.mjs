@@ -24,6 +24,9 @@ import { WARDROBE_ITEMS } from '../src/wardrobe.js';
 import {
   CHUNKS, MIN_STEP, labL, rampFrom, randomStops, lerpHue, scramble, swap, isSolved, placedCount, partnerFor,
 } from '../src/overtime.js';
+import {
+  SECONDS as SM_SECONDS, DELTA_FLOOR, buildRound, gridForLevel, deltaForLevel, renderedGap, scoreFor,
+} from '../src/shade-match.js';
 // Aliased: THEMES is already taken further down by the picture-tag list.
 import { THEMES as APP_THEMES, DEFAULT_THEME, isTheme, themeOr, themeUnlocked } from '../src/themes.js';
 import {
@@ -932,7 +935,7 @@ test('low-stim mode: shipped in both saves, backfilled, hides story but keeps th
 
   // The stylesheet hides the story-only chrome…
   const css = readSource('src/styles.css');
-  for (const sel of ['#bossHud', '#overtimeChip', '#swapChip', '#storyPill', '\\[data-act="mode-swap"\\]']) {
+  for (const sel of ['#bossHud', '#overtimeChip', '#shadeMatchChip', '#swapChip', '#storyPill', '\\[data-act="mode-swap"\\]']) {
     assert.match(css, new RegExp(`html\\.low-stim ${sel}`), `styles.css must hide ${sel} under low-stim`);
   }
   // …but keeps the whole avatar layer: the widget and the points HUD are NOT in
@@ -1349,8 +1352,8 @@ test('a swap is pure and undoes itself; solved and placed agree', () => {
 test('the Swap is story mode’s bonus, and Overtime is free mode’s', () => {
   const game = readSource('src/game.js');
   // One or the other is offered, never both, and the split is on the story.
-  assert.match(game, /else if \(S\.inStory && isStoryPuzzle\(S\.puzzle\.id\)\) maybeOfferSwap\(\);\s*\n\s*else maybeOfferOvertime\(\);/,
-    'commitFill must offer the Swap on a story stone and Overtime otherwise');
+  assert.match(game, /else if \(S\.inStory && isStoryPuzzle\(S\.puzzle\.id\)\) maybeOfferSwap\(\);\s*\n\s*else offerFreeBonus\(\);/,
+    'commitFill must offer the Swap on a story stone and a free-mode round otherwise');
   const offer = game.slice(game.indexOf('function maybeOfferSwap'), game.indexOf('function closeSwap'));
   assert.match(offer, /S\.filled\.size < 10/, 'the Swap waits until the player is into the picture');
   assert.match(offer, /S\.save\.settings\.overtime === false/, 'the Swap honours the bonus-round opt-out');
@@ -1383,6 +1386,74 @@ test('Overtime shows its rules before the clock too', () => {
   assert.match(begin, /setInterval\(tickOvertime/, 'the clock only ticks once begun');
   // renderOvertime draws the panel off the started flag.
   assert.match(game, /function renderOvertime[\s\S]*?if \(!S\.ot\.started\)/, 'renderOvertime must branch on the how-to panel');
+});
+
+test('a free-mode picture offers one bonus round from the rotation', () => {
+  const game = readSource('src/game.js');
+  // The rotation, and the picker that stands in for a hardcoded single round.
+  assert.match(game, /const FREE_ROUNDS = \[[^\]]*'overtime'[^\]]*'shade-match'[^\]]*\]/,
+    'FREE_ROUNDS must list the free-mode rounds');
+  assert.match(game, /function offerFreeBonus\(\)[\s\S]*?maybeOfferShadeMatch\(\)[\s\S]*?maybeOfferOvertime\(\)/,
+    'offerFreeBonus must route to the chosen round');
+  // One round is picked per picture at load, so only a single chip is ever shown.
+  assert.match(game, /S\.freeRound = FREE_ROUNDS\[S\.bonusTurn\+\+ % FREE_ROUNDS\.length\]/,
+    'loadPuzzle must pick this picture’s free round');
+  // Shade Match gates exactly as Overtime does — into the picture, opt-out, low-stim —
+  // and its offer only ever un-hides the chip (never opens the round itself).
+  const offer = game.slice(game.indexOf('function maybeOfferShadeMatch'), game.indexOf('function closeShadeMatch'));
+  assert.match(offer, /S\.filled\.size < 10/, 'Shade Match waits until the player is into the picture');
+  assert.match(offer, /S\.save\.settings\.overtime === false/, 'Shade Match honours the bonus-round opt-out');
+  assert.match(offer, /S\.save\.settings\.lowStim/, 'Shade Match is suppressed in low-stim');
+  assert.match(offer, /classList\.remove\('hidden'\)/, 'Shade Match only ever un-hides its chip');
+});
+
+test('Shade Match shows its rules before the clock too', () => {
+  const game = readSource('src/game.js');
+  const start = game.slice(game.indexOf('function startShadeMatch'), game.indexOf('function beginShadeMatch'));
+  assert.ok(start.length > 50, 'startShadeMatch has moved or gone');
+  assert.match(start, /started: false/, 'startShadeMatch must open on the how-to panel');
+  assert.ok(!/setInterval/.test(start), 'the clock must not start until Begin');
+  const begin = game.slice(game.indexOf('function beginShadeMatch'), game.indexOf('function tickShadeMatch'));
+  assert.match(begin, /endsAt = Date\.now\(\) \+ SM_SECONDS \* 1000/, 'beginShadeMatch starts the clock');
+  assert.match(begin, /setInterval\(tickShadeMatch/, 'the clock only ticks once begun');
+  assert.match(game, /function renderShadeMatch[\s\S]*?if \(!S\.sm\.started\)/, 'renderShadeMatch must branch on the how-to panel');
+});
+
+test('a Shade Match round has exactly one odd tile, always findable', () => {
+  // Sweep every difficulty level deterministically: the odd tile is one, it is a
+  // real different hex, and the gap the eye is given never drops below the floor,
+  // so a round is only ever hard, never impossible.
+  for (let level = 0; level <= 14; level++) {
+    for (let seed = 1; seed <= 120; seed++) {
+      const r = buildRound(level, seededRng(seed + level * 1000));
+      assert.equal(r.swatches.length, r.cols * r.rows, `level ${level}: grid size`);
+      const odd = r.swatches.filter((s) => s !== r.base);
+      assert.equal(odd.length, 1, `level ${level}: exactly one odd tile`);
+      assert.equal(r.swatches[r.oddIndex], r.odd, `level ${level}: oddIndex points at the odd tile`);
+      assert.notEqual(r.odd, r.base, `level ${level}: the odd tile is a real different shade`);
+      assert.ok(renderedGap(r) >= DELTA_FLOOR - 1e-6, `level ${level}: rendered gap ${renderedGap(r)} below floor`);
+    }
+  }
+});
+
+test('Shade Match gets harder with the level, and rewards depth', () => {
+  // Grid grows then holds; the difference shrinks toward the floor and stops; the
+  // score climbs — all monotonic, so "harder" is always felt in one direction.
+  for (let l = 1; l <= 12; l++) {
+    assert.ok(deltaForLevel(l) <= deltaForLevel(l - 1) + 1e-9, `delta must not grow at level ${l}`);
+    assert.ok(deltaForLevel(l) >= DELTA_FLOOR - 1e-9, `delta must never dip below the floor at ${l}`);
+    const g = gridForLevel(l);
+    const prev = gridForLevel(l - 1);
+    assert.ok(g.cols * g.rows >= prev.cols * prev.rows, `grid must not shrink at level ${l}`);
+    assert.ok(scoreFor(l) > scoreFor(l - 1), `score must climb at level ${l}`);
+  }
+  assert.equal(scoreFor(0), 0, 'a blank run scores nothing');
+  assert.ok(SM_SECONDS >= 20 && SM_SECONDS <= 90, 'the round is a short one');
+});
+
+test('the shade-match module stays pure — no DOM', () => {
+  const src = readSource('src/shade-match.js');
+  assert.ok(!/\bdocument\b|\bwindow\b|querySelector/.test(src), 'shade-match.js must run in node — no DOM');
 });
 
 test('Named answers a tap with the cell’s own colour, and is spent per cell', () => {

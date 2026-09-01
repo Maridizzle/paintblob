@@ -24,6 +24,7 @@ import {
   COLOURS as SWAP_COLOURS, PAIRS as SWAP_PAIRS, SECONDS as SWAP_SECONDS, COLS as SWAP_COLS,
   scramble as swapScramble, swap as swapNames, isSolved as swapSolved,
 } from './swap.js';
+import { SECONDS as SM_SECONDS, buildRound as smRound, scoreFor as smScore } from './shade-match.js';
 import { outlineSVG, outlineWeight } from './thumbnail.js';
 import { computePlayStats } from './playstats.js';
 import { Tour } from './tour.js';
@@ -86,6 +87,14 @@ const S = {
   swap: null,
   swapOffered: false,
   named: 0,
+  // Shade Match — a free-mode bonus round, Overtime's sibling. Same per-picture,
+  // never-saved shape: a running session or null, and the once-per-picture latch.
+  sm: null,
+  smOffered: false,
+  // Which free-mode round this picture offers, chosen at load so only one chip is
+  // ever shown; `bonusTurn` rotates the choice across pictures. Session-only.
+  freeRound: 'overtime',
+  bonusTurn: 0,
   // The boss fight — X taking painted cells back and throwing spells while you
   // paint the last stone. Same per-picture, never-saved shape as ot/swap: it
   // runs only while a boss stone is loaded and unfinished, and holds its own
@@ -370,6 +379,12 @@ async function loadPuzzle(id) {
   S.named = 0;
   closeSwap();
   syncNamed();
+  S.sm = null;
+  S.smOffered = false;
+  closeShadeMatch();
+  // Pick this picture's free-mode bonus round, rotating for variety. Only the
+  // chosen one's chip is ever offered, so two never crowd the corner.
+  S.freeRound = FREE_ROUNDS[S.bonusTurn++ % FREE_ROUNDS.length];
   stopBoss(); // tear down any fight from the picture we are leaving
   S.selected = -1;
   S.revealFrom = S.finished ? 0 : -1;
@@ -722,7 +737,7 @@ function commitFill(burst) {
 
   if (S.filled.size === S.cells.length) finish();
   else if (S.inStory && isStoryPuzzle(S.puzzle.id)) maybeOfferSwap();
-  else maybeOfferOvertime();
+  else offerFreeBonus();
 }
 
 /**
@@ -3269,6 +3284,242 @@ function tapChunk(slot) {
   if (isSolved(ot.order)) endOvertime(true);
 }
 
+/* -------------------------------------------------- free-mode bonus rounds */
+
+// The optional rounds free mode can offer, in rotation. loadPuzzle picks one per
+// picture (S.freeRound) so only a single chip is ever shown — a picture is never
+// crowded by two. Story mode has its own single round (the Swap) and is not in
+// here. A new round is one entry plus its maybeOffer*/start* pair.
+const FREE_ROUNDS = ['overtime', 'shade-match'];
+
+// Offers the free round this picture drew, standing in for a hardcoded single
+// round in the paint path; each maybeOffer* still runs its own gates.
+function offerFreeBonus() {
+  if (S.freeRound === 'shade-match') maybeOfferShadeMatch();
+  else maybeOfferOvertime();
+}
+
+/* ------------------------------------------------------------ shade match */
+
+// Spot the odd swatch, then a harder grid, for as long as the clock holds. A
+// free-mode sibling of Overtime on the same bones: a chip that only ever
+// un-hides itself, a how-to before the clock, a 200ms tick, and a reward carried
+// out — here plain points, scaled by how deep you got. shade-match.js is the
+// colour arithmetic; this is the board.
+
+function maybeOfferShadeMatch() {
+  if (S.smOffered || S.sm || S.finished) return;
+  if (S.save.settings.lowStim) return; // a bonus round is an extra low-stim hides
+  if (S.save.settings.overtime === false) return; // the shared bonus opt-out
+  if (S.filled.size < 10) return;
+  S.smOffered = true;
+  $('shadeMatchChip').classList.remove('hidden');
+}
+
+function closeShadeMatch() {
+  const el = $('shadeMatch');
+  if (el) { el.classList.add('hidden'); el.textContent = ''; }
+  $('shadeMatchChip')?.classList.add('hidden');
+  if (S.sm?.timer) clearInterval(S.sm.timer);
+  S.sm = null;
+}
+
+// Opens on the how-to and does NOT start the clock — the seconds begin on Begin
+// (beginShadeMatch), the same contract Overtime and the Swap keep.
+function startShadeMatch() {
+  if (S.sm || !S.puzzle) return;
+  $('shadeMatchChip').classList.add('hidden');
+  S.sm = { level: 0, round: smRound(0), endsAt: 0, timer: 0, started: false };
+  renderShadeMatch();
+}
+
+function beginShadeMatch() {
+  if (!S.sm || S.sm.started) return;
+  S.sm.started = true;
+  S.sm.endsAt = Date.now() + SM_SECONDS * 1000;
+  renderShadeMatch();
+  S.sm.timer = setInterval(tickShadeMatch, 200);
+}
+
+function tickShadeMatch() {
+  if (!S.sm) return;
+  const left = Math.max(0, S.sm.endsAt - Date.now());
+  const bar = $('shadeMatch').querySelector('.ot-time i');
+  if (bar) bar.style.width = `${(left / (SM_SECONDS * 1000)) * 100}%`;
+  const clock = $('shadeMatch').querySelector('.ot-clock');
+  if (clock) clock.textContent = `${Math.ceil(left / 1000)}s`;
+  if (left <= 0) endShadeMatch();
+}
+
+// A right tap advances a level (a bigger grid, a smaller difference) and buys a
+// little time back, capped so a hot streak can't bank the clock; a wrong one
+// flashes the tile and docks three seconds.
+function tapTile(i) {
+  const sm = S.sm;
+  if (!sm || !sm.timer) return;
+  if (i === sm.round.oddIndex) {
+    sm.level += 1;
+    sm.round = smRound(sm.level);
+    sm.endsAt = Math.min(Date.now() + SM_SECONDS * 1000, sm.endsAt + 1500);
+    sfx.play('pick', 3);
+    renderSmGrid();
+  } else {
+    sm.endsAt -= 3000;
+    sfx.play('nope');
+    const tile = $('shadeMatch').querySelector('.sm-grid')?.children[i];
+    if (tile) { tile.classList.add('miss'); setTimeout(() => tile.classList.remove('miss'), 320); }
+    if (sm.endsAt - Date.now() <= 0) endShadeMatch();
+  }
+}
+
+function endShadeMatch() {
+  if (!S.sm) return;
+  clearInterval(S.sm.timer);
+  S.sm.timer = 0;
+  const reached = S.sm.level;
+  const card = $('shadeMatch').querySelector('.ot-card');
+  card?.classList.add(reached > 0 ? 'won' : 'lost');
+  showSmScore(card, reached);
+  sfx.play(reached > 0 ? 'achievement' : 'nope');
+  setTimeout(() => {
+    closeShadeMatch();
+    if (reached > 0) awardShadeMatch(reached);
+  }, reached > 0 ? 1700 : 2200);
+}
+
+// The reward: plain points, scaled by how deep you got (scoreFor), granted
+// through the same level-up/charge plumbing the paint path uses, then saved —
+// this runs outside commitFill, so it banks itself.
+function awardShadeMatch(reached) {
+  const pts = smScore(reached);
+  if (pts <= 0) return;
+  const beforeLevel = levelForPoints(S.save.stats.pointsEarned);
+  grantPoints(S.save.stats, pts);
+  const afterLevel = levelForPoints(S.save.stats.pointsEarned);
+  for (let lv = beforeLevel + 1; lv <= afterLevel; lv++) grantLevelUpCharges(S.save.avatar.abilities, lv);
+  if (afterLevel > beforeLevel) {
+    toast({ icon: '⭐', name: `Level ${afterLevel}`, desc: 'Your avatar levelled up.' }, '', { sticky: true });
+  }
+  syncAvatarWidget();
+  syncAbilityRow();
+  bumpPointsHud(pts);
+  persist();
+  toast({ icon: '◧', name: `+${pts} points`, desc: `Shade Match — you found ${reached}. A sharp eye.` }, '', { sticky: true });
+}
+
+// Overtime lays the right answer under a loss to teach it; Shade Match hides
+// nothing, so its end card just states the score.
+function showSmScore(card, reached) {
+  if (!card) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'ot-answer sm-score';
+  const big = document.createElement('div');
+  big.className = 'sm-score-big';
+  big.textContent = reached > 0 ? `Found ${reached}` : 'Time';
+  const sub = document.createElement('div');
+  sub.className = 'ot-hint';
+  sub.textContent = reached > 0 ? `+${smScore(reached)} points` : 'No odd ones this time.';
+  wrap.append(big, sub);
+  card.append(wrap);
+}
+
+function renderShadeMatch() {
+  const el = $('shadeMatch');
+  el.textContent = '';
+  el.classList.remove('hidden');
+  const card = document.createElement('div');
+  card.className = 'ot-card';
+
+  // The how-to, shown before the clock. A grid of one colour and no numbers
+  // explains nothing on its own, so — like Overtime — it says the rule once and
+  // shows a tiny example with the odd tile ringed, then starts only on Begin.
+  if (!S.sm.started) {
+    const h = document.createElement('div');
+    h.className = 'ot-how';
+    h.innerHTML =
+      '<div class="ot-how-title">Shade Match</div>' +
+      '<div class="ot-how-body"></div>' +
+      '<div class="ot-how-demo"></div>' +
+      '<div class="ot-how-body two"></div>';
+    h.querySelector('.ot-how-body').textContent =
+      'A grid of one colour — but for a single tile that is a shade off.';
+    h.querySelector('.ot-how-body.two').textContent =
+      'Tap the odd one. Each you find, the next is harder: a bigger grid, a '
+      + 'smaller difference. Find as many as you can before the time runs out.';
+    const demo = h.querySelector('.ot-how-demo');
+    const dr = smRound(0);
+    dr.swatches.forEach((hex, i) => {
+      const chip = document.createElement('div');
+      chip.className = `ot-how-chip${i === dr.oddIndex ? ' sm-how-odd' : ''}`;
+      chip.style.background = hex;
+      demo.append(chip);
+    });
+    const begin = document.createElement('button');
+    begin.className = 'primary';
+    begin.textContent = 'Begin';
+    begin.addEventListener('click', beginShadeMatch);
+    const quit = document.createElement('button');
+    quit.className = 'tour-skip';
+    quit.textContent = 'Not now';
+    quit.addEventListener('click', closeShadeMatch);
+    const foot = document.createElement('div');
+    foot.className = 'ot-how-foot';
+    foot.append(quit, begin);
+    card.append(h, foot);
+    el.append(card);
+    return;
+  }
+
+  const head = document.createElement('div');
+  head.className = 'ot-head';
+  const title = document.createElement('div');
+  title.className = 'ot-title';
+  title.textContent = 'Shade Match';
+  const clock = document.createElement('div');
+  clock.className = 'ot-clock';
+  clock.textContent = `${SM_SECONDS}s`;
+  const quit = document.createElement('button');
+  quit.className = 'icon';
+  quit.textContent = '✕';
+  quit.title = 'Leave it';
+  quit.addEventListener('click', endShadeMatch);
+  head.append(title, clock, quit);
+
+  const time = document.createElement('div');
+  time.className = 'ot-time';
+  time.append(document.createElement('i'));
+
+  const grid = document.createElement('div');
+  grid.className = 'sm-grid';
+
+  const hint = document.createElement('div');
+  hint.className = 'ot-hint sm-hint';
+
+  card.append(head, time, grid, hint);
+  el.append(card);
+  renderSmGrid();
+}
+
+// Only the grid changes between levels, so a right tap rebuilds just this, not
+// the whole card — which keeps the timer bar from flickering back to full.
+function renderSmGrid() {
+  const el = $('shadeMatch');
+  const grid = el.querySelector('.sm-grid');
+  const hint = el.querySelector('.sm-hint');
+  if (!grid || !S.sm) return;
+  const { swatches, cols } = S.sm.round;
+  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  grid.textContent = '';
+  swatches.forEach((hex, i) => {
+    const b = document.createElement('button');
+    b.className = 'sm-tile';
+    b.style.background = hex;
+    b.addEventListener('click', () => tapTile(i));
+    grid.append(b);
+  });
+  if (hint) hint.textContent = `Level ${S.sm.level + 1} — find the odd shade.`;
+}
+
 /* ---------------------------------------------------------------- the swap */
 
 // Story mode's bonus round, offered by a chip the way Overtime is — but only on
@@ -3954,6 +4205,9 @@ document.addEventListener('click', async (e) => {
       break;
     case 'overtime':
       startOvertime();
+      break;
+    case 'shade-match':
+      startShadeMatch();
       break;
     case 'swap':
       startSwap();

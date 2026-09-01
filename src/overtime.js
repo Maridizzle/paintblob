@@ -70,7 +70,7 @@ export function labL(hex) {
  * stuck, and twenty-four halvings land inside a millionth. There is no closed
  * form to reach for here: the sRGB transfer curve is piecewise.
  */
-function lightForL(hue, sat, target) {
+export function lightForL(hue, sat, target) {
   let lo = 0;
   let hi = 1;
   for (let i = 0; i < 24; i++) {
