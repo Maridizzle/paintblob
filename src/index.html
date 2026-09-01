@@ -95,6 +95,15 @@
       <!-- Named counter: shows while the Swap's boon is being spent. -->
       <div id="namedPill" class="named-pill hidden"></div>
 
+      <!-- Shade Match: a free-mode bonus. Spot the swatch that is a shade off,
+           then a harder grid, for as long as the clock holds. Opt-in like
+           Overtime — the chip only ever offers; it never opens itself. -->
+      <button id="shadeMatchChip" class="ot-chip sm-chip hidden" data-act="shade-match">
+        <span class="ot-chip-mark">◧</span>
+        <span class="ot-chip-text">Shade Match<i>spot the odd shade</i></span>
+      </button>
+      <div id="shadeMatch" class="overtime sm-overlay hidden"></div>
+
       <!-- Shown only while a story stone is being painted: the way back to the
            path without leaving story mode. Mirrors the undo pill. -->
       <button id="storyPill" class="story-pill hidden" data-act="story-board"

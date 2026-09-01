@@ -2364,6 +2364,39 @@ button {
   transition: width 300ms ease;
 }
 
+/* ============================================================== shade match */
+
+/* The grid of swatches. Square tiles with a hair of gap, so the seams read as a
+   grid without a border stealing contrast from the colours themselves. */
+.sm-grid {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  max-width: 340px;
+  margin: 4px auto 0;
+}
+.sm-tile {
+  aspect-ratio: 1 / 1;
+  border: none;
+  border-radius: 8px;
+  padding: 0;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: transform 0.08s ease;
+}
+.sm-tile:active { transform: scale(0.95); }
+/* A wrong tap flashes the tile you hit — a miss you can see, said in no words. */
+.sm-tile.miss { animation: sm-miss 0.32s ease; }
+@keyframes sm-miss {
+  0%, 100% { box-shadow: none; }
+  45% { box-shadow: 0 0 0 3px rgba(224, 64, 42, 0.95); }
+}
+.sm-hint, .sm-score { text-align: center; }
+.sm-score-big { font-size: 22px; font-weight: 750; color: var(--text); }
+/* The odd tile in the how-to's little example gets a ring, so the one-line rule
+   lands as a picture too. */
+.sm-how-odd { box-shadow: 0 0 0 2px var(--accent); }
+
 /* On a touchscreen the last swatch tapped would stay lifted and read as picked. */
 @media (pointer: coarse) {
   .swatch:hover { transform: none; }
@@ -2382,6 +2415,7 @@ button {
    ever firing. */
 html.low-stim [data-act="mode-swap"],
 html.low-stim #overtimeChip,
+html.low-stim #shadeMatchChip,
 html.low-stim #swapChip,
 html.low-stim #bossHud,
 html.low-stim #storyPill,
