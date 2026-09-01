@@ -25,6 +25,10 @@ import {
   scramble as swapScramble, swap as swapNames, isSolved as swapSolved,
 } from './swap.js';
 import { SECONDS as SM_SECONDS, buildRound as smRound, scoreFor as smScore } from './shade-match.js';
+import { firstThreshold, nextThreshold, pickNext, LINGER as BONUS_LINGER } from './bonus.js';
+import { BASES as MIX_BASES, SECONDS as MIX_SECONDS, mix as mixWell, within as mixWithin, targetFrom as mixTarget } from './mixer.js';
+import { SECONDS as DRIP_SECONDS, spawn as dripSpawn, step as dripStep, caught as dripCaught, missed as dripMissed, fallSpeed as dripSpeed } from './drips.js';
+import { SECONDS as RECALL_SECONDS, buildSequence as recallBuild, prefixOk as recallPrefixOk, complete as recallComplete } from './recall.js';
 import { outlineSVG, outlineWeight } from './thumbnail.js';
 import { computePlayStats } from './playstats.js';
 import { Tour } from './tour.js';
@@ -80,21 +84,27 @@ const S = {
   // The running Overtime session, or null. UI-only and per-picture, like
   // history: it is played at the canvas and never saved.
   ot: null,
-  otOffered: false,
   // The Swap — story mode's bonus round, Overtime's sibling. Same per-picture,
   // never-saved shape. `named` is the boon it grants: a countdown of cells that
   // fill themselves with their own colour, the colours answering again.
   swap: null,
   swapOffered: false,
   named: 0,
-  // Shade Match — a free-mode bonus round, Overtime's sibling. Same per-picture,
-  // never-saved shape: a running session or null, and the once-per-picture latch.
+  // The free-mode bonus rounds beyond Overtime — Shade Match, Colour Mixer, Drip
+  // Catch, Palette Memory. Each is a running session or null, same per-picture,
+  // never-saved shape as `ot`.
   sm: null,
-  smOffered: false,
-  // Which free-mode round this picture offers, chosen at load so only one chip is
-  // ever shown; `bonusTurn` rotates the choice across pictures. Session-only.
-  freeRound: 'overtime',
-  bonusTurn: 0,
+  mixer: null,
+  drips: null,
+  recall: null,
+  // The recurring bonus scheduler (bonus.js): which round the corner chip is
+  // offering right now (or null), the cell counts the next offer is due at and
+  // this one appeared at, and the last id offered so the same game never repeats.
+  // All cells-painted counters; session-only, never saved.
+  bonusOffer: null,
+  nextBonusAt: 0,
+  bonusShownAt: 0,
+  lastBonus: null,
   // The boss fight — X taking painted cells back and throwing spells while you
   // paint the last stone. Same per-picture, never-saved shape as ot/swap: it
   // runs only while a boss stone is loaded and unfinished, and holds its own
@@ -372,19 +382,23 @@ async function loadPuzzle(id) {
   S.history = [];
   S.bogo = false;
   S.ot = null;
-  S.otOffered = false;
   closeOvertime();
   S.swap = null;
   S.swapOffered = false;
   S.named = 0;
   closeSwap();
   syncNamed();
-  S.sm = null;
-  S.smOffered = false;
-  closeShadeMatch();
-  // Pick this picture's free-mode bonus round, rotating for variety. Only the
-  // chosen one's chip is ever offered, so two never crowd the corner.
-  S.freeRound = FREE_ROUNDS[S.bonusTurn++ % FREE_ROUNDS.length];
+  S.sm = null; closeShadeMatch();
+  S.mixer = null; closeMixer();
+  S.drips = null; closeDrips();
+  S.recall = null; closeRecall();
+  // Arm the recurring bonus scheduler for a fresh picture: no chip up, the first
+  // offer due early, nothing offered yet.
+  S.bonusOffer = null;
+  S.lastBonus = null;
+  S.bonusShownAt = 0;
+  S.nextBonusAt = firstThreshold();
+  hideBonusChip();
   stopBoss(); // tear down any fight from the picture we are leaving
   S.selected = -1;
   S.revealFrom = S.finished ? 0 : -1;
@@ -737,7 +751,7 @@ function commitFill(burst) {
 
   if (S.filled.size === S.cells.length) finish();
   else if (S.inStory && isStoryPuzzle(S.puzzle.id)) maybeOfferSwap();
-  else offerFreeBonus();
+  else maybeOfferBonus();
 }
 
 /**
@@ -2984,10 +2998,10 @@ function renderSettings(body) {
   slider('Blob opacity', 'opacity', 0.25, 1, 0.05, (v) => `${Math.round(v * 100)}%`);
 
   if (!settings.lowStim) {
-  toggle('Overtime', 'overtime', (on) => {
-    // Turning it off mid-picture retires the offer but never yanks a session
-    // out from under someone already sixty seconds into one.
-    if (!on) $('overtimeChip')?.classList.add('hidden');
+  toggle('Bonus rounds', 'overtime', (on) => {
+    // Turning it off mid-picture retires the pending offer but never yanks a
+    // session out from under someone already playing one.
+    if (!on) hideBonusChip();
   });
 
   const guide = row('clickable');
@@ -3052,25 +3066,78 @@ function applyLowStim() {
   // sound choice applies once more.
   sfx?.setEnabled(on ? false : (S.save.settings.sound !== false));
 }
-/* ------------------------------------------------------------- overtime */
+/* --------------------------------------------------- free-mode bonus rounds */
+
+// The optional rounds free mode weaves through a picture. One corner chip serves
+// them all: the scheduler (bonus.js) decides when a bonus is due and which one,
+// then labels the shared chip for it. Tapping the chip opens that round — every
+// round is opt-in, so nothing ever takes the canvas unasked. Story mode has its
+// own single round (the Swap) and is not in here.
+//
+// A round is one registry entry — { id, mark, label, tag, start, active } — plus
+// its start*/…/close* set below. `active` lets the scheduler hold off while a
+// round is open; each `close*` calls armNextBonus() so the next one is spaced out.
+const BONUS_ROUNDS = [
+  { id: 'overtime', mark: '◑', label: 'Overtime', tag: 'put the shades in order', start: startOvertime, active: () => !!S.ot },
+  { id: 'shade-match', mark: '◧', label: 'Shade Match', tag: 'spot the odd shade', start: startShadeMatch, active: () => !!S.sm },
+  { id: 'mixer', mark: '⬗', label: 'Colour Mixer', tag: 'mix to match', start: startMixer, active: () => !!S.mixer },
+  { id: 'drips', mark: '◒', label: 'Drip Catch', tag: 'catch your colour', start: startDrips, active: () => !!S.drips },
+  { id: 'recall', mark: '◇', label: 'Palette Memory', tag: 'repeat the sequence', start: startRecall, active: () => !!S.recall },
+];
+const bonusById = (id) => BONUS_ROUNDS.find((r) => r.id === id);
+const bonusRoundOpen = () => BONUS_ROUNDS.some((r) => r.active());
 
 /**
- * Offers it, once per picture, and only ever as a chip. A sixty-second
- * takeover of a toy that floats on your desktop would be the most annoying
- * thing in it, so this never starts anything by itself.
- *
- * Unlike the version this replaces there is no gate on the picture and no
- * exclusion for a blind one: the ramp is generated, so it is always playable
- * and it gives nothing away about what is being painted.
+ * The recurring offer, called on every fill. It only ever un-hides the shared
+ * chip — never opens a round — so a bonus never takes the canvas without a tap.
+ * A chip left ignored for a while gives up and re-arms, so the next pop-up is a
+ * fresh random game rather than the same one stuck in the corner.
  */
-function maybeOfferOvertime() {
-  if (S.otOffered || S.ot || S.bogo || S.finished) return;
-  if (S.save.settings.lowStim) return; // a bonus round is an extra low-stim hides
-  if (S.save.settings.overtime === false) return;
-  if (S.filled.size < 10) return;
-  S.otOffered = true;
-  $('overtimeChip').classList.remove('hidden');
+function maybeOfferBonus() {
+  if (S.save.settings.lowStim || S.save.settings.overtime === false) return;
+  if (S.finished || bonusRoundOpen()) return;
+  const filled = S.filled.size;
+  if (S.bonusOffer) {
+    if (filled - S.bonusShownAt >= BONUS_LINGER) { hideBonusChip(); armNextBonus(); }
+    return;
+  }
+  if (filled < S.nextBonusAt) return;
+  const round = bonusById(pickNext(BONUS_ROUNDS.map((r) => r.id), S.lastBonus));
+  S.bonusOffer = round.id;
+  S.lastBonus = round.id;
+  S.bonusShownAt = filled;
+  showBonusChip(round);
 }
+
+/** Forgets the current offer and spaces the next one out (rare, jittered).
+ *  Called from every round's close, so playing or dismissing one resets the gap. */
+function armNextBonus() {
+  S.bonusOffer = null;
+  S.nextBonusAt = nextThreshold(S.filled.size);
+}
+
+function showBonusChip(round) {
+  const chip = $('bonusChip');
+  if (!chip) return;
+  chip.querySelector('.ot-chip-mark').textContent = round.mark;
+  chip.querySelector('.ot-chip-text').innerHTML = `${round.label}<i>${round.tag}</i>`;
+  chip.classList.remove('hidden');
+}
+
+function hideBonusChip() {
+  $('bonusChip')?.classList.add('hidden');
+}
+
+// The chip's one job: open the round it is currently offering. From here the round
+// runs exactly as any other — its own how-to, clock and reward.
+function startBonus() {
+  const round = bonusById(S.bonusOffer);
+  hideBonusChip();
+  S.bonusOffer = null;
+  round?.start();
+}
+
+/* ------------------------------------------------------------- overtime */
 
 function closeOvertime() {
   const el = $('overtime');
@@ -3078,9 +3145,10 @@ function closeOvertime() {
     el.classList.add('hidden');
     el.textContent = '';
   }
-  $('overtimeChip')?.classList.add('hidden');
+  hideBonusChip();
   if (S.ot?.timer) clearInterval(S.ot.timer);
   S.ot = null;
+  armNextBonus();
 }
 
 // Opening the round shows the how-to panel first and does NOT start the clock —
@@ -3089,7 +3157,7 @@ function closeOvertime() {
 // off; a fresh ramp is generated here so the how-to's own demo can show it.
 function startOvertime() {
   if (S.ot || !S.puzzle) return;
-  $('overtimeChip').classList.add('hidden');
+  hideBonusChip();
   S.ot = {
     ramp: rampFrom(randomStops()),
     order: scramble(CHUNKS),
@@ -3284,51 +3352,28 @@ function tapChunk(slot) {
   if (isSolved(ot.order)) endOvertime(true);
 }
 
-/* -------------------------------------------------- free-mode bonus rounds */
-
-// The optional rounds free mode can offer, in rotation. loadPuzzle picks one per
-// picture (S.freeRound) so only a single chip is ever shown — a picture is never
-// crowded by two. Story mode has its own single round (the Swap) and is not in
-// here. A new round is one entry plus its maybeOffer*/start* pair.
-const FREE_ROUNDS = ['overtime', 'shade-match'];
-
-// Offers the free round this picture drew, standing in for a hardcoded single
-// round in the paint path; each maybeOffer* still runs its own gates.
-function offerFreeBonus() {
-  if (S.freeRound === 'shade-match') maybeOfferShadeMatch();
-  else maybeOfferOvertime();
-}
-
 /* ------------------------------------------------------------ shade match */
 
 // Spot the odd swatch, then a harder grid, for as long as the clock holds. A
-// free-mode sibling of Overtime on the same bones: a chip that only ever
-// un-hides itself, a how-to before the clock, a 200ms tick, and a reward carried
-// out — here plain points, scaled by how deep you got. shade-match.js is the
-// colour arithmetic; this is the board.
-
-function maybeOfferShadeMatch() {
-  if (S.smOffered || S.sm || S.finished) return;
-  if (S.save.settings.lowStim) return; // a bonus round is an extra low-stim hides
-  if (S.save.settings.overtime === false) return; // the shared bonus opt-out
-  if (S.filled.size < 10) return;
-  S.smOffered = true;
-  $('shadeMatchChip').classList.remove('hidden');
-}
+// free-mode sibling of Overtime on the same bones — a how-to before the clock, a
+// 200ms tick, a reward carried out (points, scaled by how deep you got).
+// shade-match.js is the colour arithmetic; this is the board. The offer is the
+// shared scheduler's job (maybeOfferBonus).
 
 function closeShadeMatch() {
   const el = $('shadeMatch');
   if (el) { el.classList.add('hidden'); el.textContent = ''; }
-  $('shadeMatchChip')?.classList.add('hidden');
+  hideBonusChip();
   if (S.sm?.timer) clearInterval(S.sm.timer);
   S.sm = null;
+  armNextBonus();
 }
 
 // Opens on the how-to and does NOT start the clock — the seconds begin on Begin
 // (beginShadeMatch), the same contract Overtime and the Swap keep.
 function startShadeMatch() {
   if (S.sm || !S.puzzle) return;
-  $('shadeMatchChip').classList.add('hidden');
+  hideBonusChip();
   S.sm = { level: 0, round: smRound(0), endsAt: 0, timer: 0, started: false };
   renderShadeMatch();
 }
@@ -3518,6 +3563,592 @@ function renderSmGrid() {
     grid.append(b);
   });
   if (hint) hint.textContent = `Level ${S.sm.level + 1} — find the odd shade.`;
+}
+
+/* ----------------------------------------------------------- colour mixer */
+
+// Mix drops of the base paints to match the target swatch before the clock. The
+// well is a running drop-weighted average (mixer.js); a close-enough mix ends it.
+// Its own bits are the target/well pair, the base row and a Clear; the rest is
+// the shared how-to / clock / points shape.
+
+function startMixer() {
+  if (S.mixer || !S.puzzle) return;
+  hideBonusChip();
+  S.mixer = { counts: MIX_BASES.map(() => 0), target: mixTarget().hex, endsAt: 0, timer: 0, started: false };
+  renderMixer();
+}
+
+function beginMixer() {
+  if (!S.mixer || S.mixer.started) return;
+  S.mixer.started = true;
+  S.mixer.endsAt = Date.now() + MIX_SECONDS * 1000;
+  renderMixer();
+  S.mixer.timer = setInterval(tickMixer, 200);
+}
+
+function tickMixer() {
+  if (!S.mixer) return;
+  const left = Math.max(0, S.mixer.endsAt - Date.now());
+  const bar = $('mixer').querySelector('.ot-time i');
+  if (bar) bar.style.width = `${(left / (MIX_SECONDS * 1000)) * 100}%`;
+  const clock = $('mixer').querySelector('.ot-clock');
+  if (clock) clock.textContent = `${Math.ceil(left / 1000)}s`;
+  if (left <= 0) endMixer(false);
+}
+
+function tapBase(i) {
+  const m = S.mixer;
+  if (!m || !m.timer) return;
+  m.counts[i] += 1;
+  sfx.play('pick', 0);
+  renderWell();
+  if (mixWithin(mixWell(m.counts), m.target)) endMixer(true);
+}
+
+function clearWell() {
+  const m = S.mixer;
+  if (!m || !m.timer) return;
+  m.counts = MIX_BASES.map(() => 0);
+  sfx.play('pick', 3);
+  renderWell();
+}
+
+function endMixer(won) {
+  if (!S.mixer) return;
+  clearInterval(S.mixer.timer);
+  S.mixer.timer = 0;
+  const card = $('mixer').querySelector('.ot-card');
+  card?.classList.add(won ? 'won' : 'lost');
+  const secLeft = Math.ceil(Math.max(0, S.mixer.endsAt - Date.now()) / 1000);
+  showMixResult(card, won);
+  sfx.play(won ? 'achievement' : 'nope');
+  setTimeout(() => { closeMixer(); if (won) awardMixer(secLeft); }, won ? 1600 : 2200);
+}
+
+// Points for a match, worth more the more clock you left on it — a quick eye
+// beats a slow grind to the same colour.
+function awardMixer(secLeft) {
+  const pts = 12 + Math.round(secLeft * 0.8);
+  const beforeLevel = levelForPoints(S.save.stats.pointsEarned);
+  grantPoints(S.save.stats, pts);
+  const afterLevel = levelForPoints(S.save.stats.pointsEarned);
+  for (let lv = beforeLevel + 1; lv <= afterLevel; lv++) grantLevelUpCharges(S.save.avatar.abilities, lv);
+  if (afterLevel > beforeLevel) toast({ icon: '⭐', name: `Level ${afterLevel}`, desc: 'Your avatar levelled up.' }, '', { sticky: true });
+  syncAvatarWidget();
+  syncAbilityRow();
+  bumpPointsHud(pts);
+  persist();
+  toast({ icon: '⬗', name: `+${pts} points`, desc: 'Colour Mixer — a good match.' }, '', { sticky: true });
+}
+
+function closeMixer() {
+  const el = $('mixer');
+  if (el) { el.classList.add('hidden'); el.textContent = ''; }
+  hideBonusChip();
+  if (S.mixer?.timer) clearInterval(S.mixer.timer);
+  S.mixer = null;
+  armNextBonus();
+}
+
+function showMixResult(card, won) {
+  if (!card) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'ot-answer';
+  const big = document.createElement('div');
+  big.className = 'sm-score-big';
+  big.textContent = won ? 'Matched' : 'Time';
+  const sub = document.createElement('div');
+  sub.className = 'ot-hint';
+  sub.textContent = won ? 'Spot on.' : 'Not quite — the two never met.';
+  wrap.append(big, sub);
+  card.append(wrap);
+}
+
+function renderMixer() {
+  const el = $('mixer');
+  el.textContent = '';
+  el.classList.remove('hidden');
+  const card = document.createElement('div');
+  card.className = 'ot-card';
+
+  if (!S.mixer.started) {
+    const h = document.createElement('div');
+    h.className = 'ot-how';
+    h.innerHTML =
+      '<div class="ot-how-title">Colour Mixer</div>' +
+      '<div class="ot-how-body"></div>' +
+      '<div class="ot-how-demo mix-how-demo"></div>' +
+      '<div class="ot-how-body two"></div>';
+    h.querySelector('.ot-how-body').textContent =
+      'Match the target swatch by mixing drops of the base paints.';
+    h.querySelector('.ot-how-body.two').textContent =
+      'Tap a paint to add a drop; the well blends toward it. Get close enough '
+      + 'before time runs out. Clear the well to start the mix over.';
+    const demo = h.querySelector('.mix-how-demo');
+    const t = mixTarget();
+    const chipM = document.createElement('div'); chipM.className = 'ot-how-chip'; chipM.style.background = mixWell(t.counts);
+    const arrow = document.createElement('div'); arrow.className = 'mix-how-arrow'; arrow.textContent = '→';
+    const chipT = document.createElement('div'); chipT.className = 'ot-how-chip'; chipT.style.background = t.hex;
+    demo.append(chipM, arrow, chipT);
+    const begin = document.createElement('button'); begin.className = 'primary'; begin.textContent = 'Begin'; begin.addEventListener('click', beginMixer);
+    const quit = document.createElement('button'); quit.className = 'tour-skip'; quit.textContent = 'Not now'; quit.addEventListener('click', closeMixer);
+    const foot = document.createElement('div'); foot.className = 'ot-how-foot'; foot.append(quit, begin);
+    card.append(h, foot);
+    el.append(card);
+    return;
+  }
+
+  const head = document.createElement('div');
+  head.className = 'ot-head';
+  const title = document.createElement('div'); title.className = 'ot-title'; title.textContent = 'Colour Mixer';
+  const clock = document.createElement('div'); clock.className = 'ot-clock'; clock.textContent = `${MIX_SECONDS}s`;
+  const quit = document.createElement('button'); quit.className = 'icon'; quit.textContent = '✕'; quit.title = 'Leave it';
+  quit.addEventListener('click', () => endMixer(false));
+  head.append(title, clock, quit);
+
+  const time = document.createElement('div'); time.className = 'ot-time'; time.append(document.createElement('i'));
+
+  const swatches = document.createElement('div');
+  swatches.className = 'mix-swatches';
+  const target = document.createElement('div'); target.className = 'mix-target'; target.style.background = S.mixer.target;
+  target.append(Object.assign(document.createElement('span'), { textContent: 'target' }));
+  const well = document.createElement('div'); well.className = 'mix-well mix-empty';
+  well.append(Object.assign(document.createElement('span'), { textContent: 'your mix' }));
+  swatches.append(target, well);
+
+  const bases = document.createElement('div');
+  bases.className = 'mix-bases';
+  MIX_BASES.forEach((b, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'mix-base';
+    btn.style.background = b.hex;
+    btn.title = b.name;
+    btn.addEventListener('click', () => tapBase(i));
+    bases.append(btn);
+  });
+
+  const foot = document.createElement('div');
+  foot.className = 'mix-foot';
+  const clear = document.createElement('button'); clear.className = 'tour-skip'; clear.textContent = 'Clear well';
+  clear.addEventListener('click', clearWell);
+  foot.append(clear);
+
+  card.append(head, time, swatches, bases, foot);
+  el.append(card);
+  renderWell();
+}
+
+// Repaints just the well from the current drops, so a tap doesn't rebuild the row
+// or flicker the timer bar.
+function renderWell() {
+  const el = $('mixer');
+  const well = el.querySelector('.mix-well');
+  if (!well || !S.mixer) return;
+  const m = mixWell(S.mixer.counts);
+  well.style.background = m ?? 'transparent';
+  well.classList.toggle('mix-empty', m == null);
+}
+
+/* ------------------------------------------------------------- drip catch */
+
+// Paint drips fall; slide the held tub to catch the ones that are your colour and
+// let the rest go. The one real-time round: its own requestAnimationFrame loop
+// lives here (drips.js is the pure spawn/step/catch maths), started on Begin and
+// cancelled on close so it never runs behind a shut overlay.
+
+const DRIP_COLOURS = ['#e23b3b', '#f2994a', '#f2c94c', '#3bbf6b', '#3b6fe2', '#9b59b6'];
+
+function startDrips() {
+  if (S.drips || !S.puzzle) return;
+  hideBonusChip();
+  const mine = Math.floor(Math.random() * DRIP_COLOURS.length);
+  S.drips = {
+    colour: DRIP_COLOURS[mine],
+    others: DRIP_COLOURS.filter((_, i) => i !== mine),
+    list: [], nextId: 1, paddleX: 0.5, score: 0,
+    endsAt: 0, lastTs: 0, sinceSpawn: 0, raf: 0, timer: 0, started: false,
+  };
+  renderDrips();
+}
+
+function beginDrips() {
+  if (!S.drips || S.drips.started) return;
+  S.drips.started = true;
+  S.drips.endsAt = Date.now() + DRIP_SECONDS * 1000;
+  renderDrips();
+  S.drips.lastTs = performance.now();
+  S.drips.raf = requestAnimationFrame(loopDrips);
+  S.drips.timer = setInterval(() => {
+    if (!S.drips) return;
+    const left = Math.max(0, S.drips.endsAt - Date.now());
+    const bar = $('drips').querySelector('.ot-time i');
+    if (bar) bar.style.width = `${(left / (DRIP_SECONDS * 1000)) * 100}%`;
+    const clock = $('drips').querySelector('.ot-clock');
+    if (clock) clock.textContent = `${Math.ceil(left / 1000)}s`;
+  }, 200);
+}
+
+// One animation frame: age every drip, resolve any the paddle met or that fell
+// past, spawn a new one when due. dt is clamped so a backgrounded tab that pauses
+// rAF can't teleport a drip through the paddle on the catch-up frame.
+function loopDrips(ts) {
+  const d = S.drips;
+  if (!d || !d.started) return;
+  const dt = Math.min(0.05, (ts - d.lastTs) / 1000);
+  d.lastTs = ts;
+  const speed = dripSpeed(Math.floor(d.score / 5));
+
+  d.sinceSpawn += dt * 1000;
+  const gap = Math.max(520, 900 - d.score * 12);
+  if (d.sinceSpawn >= gap && d.list.length < 6) {
+    d.sinceSpawn = 0;
+    const s = dripSpawn(Math.random);
+    d.list.push({ ...s, id: d.nextId++, colour: s.match ? d.colour : d.others[Math.floor(Math.random() * d.others.length)] });
+  }
+
+  const survivors = [];
+  for (const drip of d.list) {
+    const moved = dripStep(drip, dt, speed);
+    if (dripCaught(moved, d.paddleX)) {
+      if (moved.match) { d.score += 1; sfx.play('pick', 3); flashScore(true); }
+      else { d.score = Math.max(0, d.score - 1); sfx.play('nope'); flashScore(false); }
+      continue;
+    }
+    if (dripMissed(moved)) continue;
+    survivors.push(moved);
+  }
+  d.list = survivors;
+  paintDrips();
+
+  if (Date.now() >= d.endsAt) { endDrips(); return; }
+  d.raf = requestAnimationFrame(loopDrips);
+}
+
+function flashScore(good) {
+  const s = $('drips')?.querySelector('.drips-score');
+  if (!s || !S.drips) return;
+  s.textContent = String(S.drips.score);
+  s.classList.remove('good', 'bad');
+  void s.offsetWidth; // restart the flash
+  s.classList.add(good ? 'good' : 'bad');
+}
+
+function paintDrips() {
+  const field = $('drips')?.querySelector('.drips-field');
+  if (!field || !S.drips) return;
+  field.querySelectorAll('.drip').forEach((n) => n.remove());
+  for (const drip of S.drips.list) {
+    const el = document.createElement('div');
+    el.className = 'drip';
+    el.style.left = `${drip.x * 100}%`;
+    el.style.top = `${drip.y * 100}%`;
+    el.style.background = drip.colour;
+    field.append(el);
+  }
+  const paddle = field.querySelector('.drips-paddle');
+  if (paddle) paddle.style.left = `${S.drips.paddleX * 100}%`;
+}
+
+function movePaddle(clientX) {
+  const field = $('drips')?.querySelector('.drips-field');
+  if (!field || !S.drips) return;
+  const r = field.getBoundingClientRect();
+  S.drips.paddleX = Math.max(0.05, Math.min(0.95, (clientX - r.left) / r.width));
+  const paddle = field.querySelector('.drips-paddle');
+  if (paddle) paddle.style.left = `${S.drips.paddleX * 100}%`;
+}
+
+function endDrips() {
+  if (!S.drips) return;
+  if (S.drips.raf) cancelAnimationFrame(S.drips.raf);
+  clearInterval(S.drips.timer);
+  S.drips.raf = 0; S.drips.timer = 0;
+  const reached = S.drips.score;
+  const card = $('drips').querySelector('.ot-card');
+  card?.classList.add(reached > 0 ? 'won' : 'lost');
+  showDripResult(card, reached);
+  sfx.play(reached > 0 ? 'achievement' : 'nope');
+  setTimeout(() => { closeDrips(); if (reached > 0) awardDrips(reached); }, reached > 0 ? 1600 : 2200);
+}
+
+function awardDrips(reached) {
+  const pts = reached * 3;
+  if (pts <= 0) return;
+  const beforeLevel = levelForPoints(S.save.stats.pointsEarned);
+  grantPoints(S.save.stats, pts);
+  const afterLevel = levelForPoints(S.save.stats.pointsEarned);
+  for (let lv = beforeLevel + 1; lv <= afterLevel; lv++) grantLevelUpCharges(S.save.avatar.abilities, lv);
+  if (afterLevel > beforeLevel) toast({ icon: '⭐', name: `Level ${afterLevel}`, desc: 'Your avatar levelled up.' }, '', { sticky: true });
+  syncAvatarWidget();
+  syncAbilityRow();
+  bumpPointsHud(pts);
+  persist();
+  toast({ icon: '◒', name: `+${pts} points`, desc: `Drip Catch — you caught ${reached}.` }, '', { sticky: true });
+}
+
+function closeDrips() {
+  const el = $('drips');
+  if (el) { el.classList.add('hidden'); el.textContent = ''; }
+  hideBonusChip();
+  if (S.drips?.raf) cancelAnimationFrame(S.drips.raf);
+  if (S.drips?.timer) clearInterval(S.drips.timer);
+  S.drips = null;
+  armNextBonus();
+}
+
+function showDripResult(card, reached) {
+  if (!card) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'ot-answer';
+  const big = document.createElement('div'); big.className = 'sm-score-big'; big.textContent = reached > 0 ? `Caught ${reached}` : 'Time';
+  const sub = document.createElement('div'); sub.className = 'ot-hint'; sub.textContent = reached > 0 ? `+${reached * 3} points` : 'None caught this time.';
+  wrap.append(big, sub);
+  card.append(wrap);
+}
+
+function renderDrips() {
+  const el = $('drips');
+  el.textContent = '';
+  el.classList.remove('hidden');
+  const card = document.createElement('div');
+  card.className = 'ot-card';
+
+  if (!S.drips.started) {
+    const h = document.createElement('div');
+    h.className = 'ot-how';
+    h.innerHTML =
+      '<div class="ot-how-title">Drip Catch</div>' +
+      '<div class="ot-how-body"></div>' +
+      '<div class="ot-how-demo drips-how-demo"></div>' +
+      '<div class="ot-how-body two"></div>';
+    h.querySelector('.ot-how-body').textContent = 'Paint is dripping. This one is yours:';
+    const chip = document.createElement('div');
+    chip.className = 'ot-how-chip drip';
+    chip.style.position = 'static';
+    chip.style.background = S.drips.colour;
+    h.querySelector('.drips-how-demo').append(chip);
+    h.querySelector('.ot-how-body.two').textContent =
+      'Slide the tub along the bottom to catch your colour, and let every other '
+      + 'colour fall past. A wrong catch costs you one.';
+    const begin = document.createElement('button'); begin.className = 'primary'; begin.textContent = 'Begin'; begin.addEventListener('click', beginDrips);
+    const quit = document.createElement('button'); quit.className = 'tour-skip'; quit.textContent = 'Not now'; quit.addEventListener('click', closeDrips);
+    const foot = document.createElement('div'); foot.className = 'ot-how-foot'; foot.append(quit, begin);
+    card.append(h, foot);
+    el.append(card);
+    return;
+  }
+
+  const head = document.createElement('div');
+  head.className = 'ot-head';
+  const title = document.createElement('div'); title.className = 'ot-title'; title.textContent = 'Drip Catch';
+  const clock = document.createElement('div'); clock.className = 'ot-clock'; clock.textContent = `${DRIP_SECONDS}s`;
+  const quit = document.createElement('button'); quit.className = 'icon'; quit.textContent = '✕'; quit.title = 'Leave it'; quit.addEventListener('click', endDrips);
+  head.append(title, clock, quit);
+
+  const time = document.createElement('div'); time.className = 'ot-time'; time.append(document.createElement('i'));
+
+  const bar = document.createElement('div');
+  bar.className = 'drips-bar';
+  const mine = document.createElement('span'); mine.className = 'drips-mine'; mine.style.background = S.drips.colour;
+  const label = document.createElement('span'); label.className = 'drips-mine-label'; label.textContent = 'your colour';
+  const score = document.createElement('span'); score.className = 'drips-score'; score.textContent = '0';
+  bar.append(mine, label, score);
+
+  const field = document.createElement('div');
+  field.className = 'drips-field';
+  const paddle = document.createElement('div'); paddle.className = 'drips-paddle'; paddle.style.background = S.drips.colour; paddle.style.left = '50%';
+  field.append(paddle);
+  field.addEventListener('pointermove', (e) => movePaddle(e.clientX));
+  field.addEventListener('pointerdown', (e) => movePaddle(e.clientX));
+
+  card.append(head, time, bar, field);
+  el.append(card);
+  paintDrips();
+}
+
+/* --------------------------------------------------------- palette memory */
+
+// Four colour pads flash a pattern; play it back, and each round it grows by one.
+// recall.js is the sequence and the checking; the flash, the taps and the clock
+// are here. Every timer guards on S.recall, so a stray one after close no-ops.
+
+const RECALL_COLOURS = ['#e23b3b', '#f2c94c', '#3b6fe2', '#3bbf6b'];
+
+function startRecall() {
+  if (S.recall || !S.puzzle) return;
+  hideBonusChip();
+  S.recall = { level: 0, score: 0, seq: recallBuild(0), taps: [], phase: 'watch', endsAt: 0, timer: 0, flashTimer: 0, started: false };
+  renderRecall();
+}
+
+function beginRecall() {
+  if (!S.recall || S.recall.started) return;
+  S.recall.started = true;
+  S.recall.endsAt = Date.now() + RECALL_SECONDS * 1000;
+  renderRecall();
+  S.recall.timer = setInterval(() => {
+    if (!S.recall) return;
+    const left = Math.max(0, S.recall.endsAt - Date.now());
+    const bar = $('recall').querySelector('.ot-time i');
+    if (bar) bar.style.width = `${(left / (RECALL_SECONDS * 1000)) * 100}%`;
+    const clock = $('recall').querySelector('.ot-clock');
+    if (clock) clock.textContent = `${Math.ceil(left / 1000)}s`;
+    if (left <= 0) endRecall(S.recall.score);
+  }, 200);
+  playSequence();
+}
+
+function recallPads() {
+  return $('recall')?.querySelectorAll('.recall-pad') ?? [];
+}
+
+// Flashes the pattern pad by pad, then hands the turn over.
+function playSequence() {
+  const r = S.recall;
+  if (!r) return;
+  r.phase = 'watch';
+  r.taps = [];
+  updateRecallHint();
+  recallPads().forEach((p) => p.classList.remove('lit'));
+  let i = 0;
+  const stepFlash = () => {
+    if (!S.recall) return;
+    if (i >= r.seq.length) { r.phase = 'input'; updateRecallHint(); return; }
+    const pad = recallPads()[r.seq[i]];
+    if (pad) { pad.classList.add('lit'); sfx.play('pick', r.seq[i]); }
+    r.flashTimer = setTimeout(() => {
+      if (pad) pad.classList.remove('lit');
+      i += 1;
+      r.flashTimer = setTimeout(stepFlash, 180);
+    }, 440);
+  };
+  r.flashTimer = setTimeout(stepFlash, 500);
+}
+
+function tapPad(i) {
+  const r = S.recall;
+  if (!r || r.phase !== 'input') return;
+  r.taps.push(i);
+  const pad = recallPads()[i];
+  if (pad) { pad.classList.add('lit'); setTimeout(() => pad.classList.remove('lit'), 180); }
+  if (!recallPrefixOk(r.seq, r.taps)) { sfx.play('nope'); endRecall(r.score); return; }
+  sfx.play('pick', i);
+  if (recallComplete(r.seq, r.taps)) {
+    r.level += 1;
+    r.score = r.level;
+    r.seq = recallBuild(r.level);
+    r.phase = 'watch';
+    updateRecallHint();
+    setTimeout(() => { if (S.recall) playSequence(); }, 620);
+  }
+}
+
+function updateRecallHint() {
+  const hint = $('recall')?.querySelector('.recall-hint');
+  if (!hint || !S.recall) return;
+  hint.textContent = S.recall.phase === 'watch'
+    ? `Round ${S.recall.level + 1} — watch…`
+    : 'Your turn — tap it back.';
+}
+
+function endRecall(reached) {
+  if (!S.recall) return;
+  clearInterval(S.recall.timer);
+  clearTimeout(S.recall.flashTimer);
+  S.recall.timer = 0; S.recall.flashTimer = 0;
+  const card = $('recall').querySelector('.ot-card');
+  card?.classList.add(reached > 0 ? 'won' : 'lost');
+  showRecallResult(card, reached);
+  sfx.play(reached > 0 ? 'achievement' : 'nope');
+  setTimeout(() => { closeRecall(); if (reached > 0) awardRecall(reached); }, reached > 0 ? 1600 : 2200);
+}
+
+function awardRecall(reached) {
+  const pts = reached * 6;
+  if (pts <= 0) return;
+  const beforeLevel = levelForPoints(S.save.stats.pointsEarned);
+  grantPoints(S.save.stats, pts);
+  const afterLevel = levelForPoints(S.save.stats.pointsEarned);
+  for (let lv = beforeLevel + 1; lv <= afterLevel; lv++) grantLevelUpCharges(S.save.avatar.abilities, lv);
+  if (afterLevel > beforeLevel) toast({ icon: '⭐', name: `Level ${afterLevel}`, desc: 'Your avatar levelled up.' }, '', { sticky: true });
+  syncAvatarWidget();
+  syncAbilityRow();
+  bumpPointsHud(pts);
+  persist();
+  toast({ icon: '◇', name: `+${pts} points`, desc: `Palette Memory — ${reached} rounds.` }, '', { sticky: true });
+}
+
+function closeRecall() {
+  const el = $('recall');
+  if (el) { el.classList.add('hidden'); el.textContent = ''; }
+  hideBonusChip();
+  if (S.recall?.timer) clearInterval(S.recall.timer);
+  if (S.recall?.flashTimer) clearTimeout(S.recall.flashTimer);
+  S.recall = null;
+  armNextBonus();
+}
+
+function showRecallResult(card, reached) {
+  if (!card) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'ot-answer';
+  const big = document.createElement('div'); big.className = 'sm-score-big'; big.textContent = reached > 0 ? `${reached} rounds` : 'Missed';
+  const sub = document.createElement('div'); sub.className = 'ot-hint'; sub.textContent = reached > 0 ? `+${reached * 6} points` : 'Not this time.';
+  wrap.append(big, sub);
+  card.append(wrap);
+}
+
+function renderRecall() {
+  const el = $('recall');
+  el.textContent = '';
+  el.classList.remove('hidden');
+  const card = document.createElement('div');
+  card.className = 'ot-card';
+
+  if (!S.recall.started) {
+    const h = document.createElement('div');
+    h.className = 'ot-how';
+    h.innerHTML =
+      '<div class="ot-how-title">Palette Memory</div>' +
+      '<div class="ot-how-body"></div>' +
+      '<div class="ot-how-body two"></div>';
+    h.querySelector('.ot-how-body').textContent =
+      'The pads flash a pattern. Watch it, then tap it back.';
+    h.querySelector('.ot-how-body.two').textContent =
+      'Get it right and the next pattern is one longer. Go as far as you can.';
+    const begin = document.createElement('button'); begin.className = 'primary'; begin.textContent = 'Begin'; begin.addEventListener('click', beginRecall);
+    const quit = document.createElement('button'); quit.className = 'tour-skip'; quit.textContent = 'Not now'; quit.addEventListener('click', closeRecall);
+    const foot = document.createElement('div'); foot.className = 'ot-how-foot'; foot.append(quit, begin);
+    card.append(h, foot);
+    el.append(card);
+    return;
+  }
+
+  const head = document.createElement('div');
+  head.className = 'ot-head';
+  const title = document.createElement('div'); title.className = 'ot-title'; title.textContent = 'Palette Memory';
+  const clock = document.createElement('div'); clock.className = 'ot-clock'; clock.textContent = `${RECALL_SECONDS}s`;
+  const quit = document.createElement('button'); quit.className = 'icon'; quit.textContent = '✕'; quit.title = 'Leave it'; quit.addEventListener('click', () => endRecall(S.recall.score));
+  head.append(title, clock, quit);
+
+  const time = document.createElement('div'); time.className = 'ot-time'; time.append(document.createElement('i'));
+
+  const pads = document.createElement('div');
+  pads.className = 'recall-pads';
+  RECALL_COLOURS.forEach((hex, i) => {
+    const pad = document.createElement('button');
+    pad.className = 'recall-pad';
+    pad.style.background = hex;
+    pad.addEventListener('click', () => tapPad(i));
+    pads.append(pad);
+  });
+
+  const hint = document.createElement('div'); hint.className = 'ot-hint recall-hint';
+
+  card.append(head, time, pads, hint);
+  el.append(card);
+  updateRecallHint();
 }
 
 /* ---------------------------------------------------------------- the swap */
@@ -4203,11 +4834,8 @@ document.addEventListener('click', async (e) => {
         syncAbilityFan();
       }
       break;
-    case 'overtime':
-      startOvertime();
-      break;
-    case 'shade-match':
-      startShadeMatch();
+    case 'bonus':
+      startBonus();
       break;
     case 'swap':
       startSwap();

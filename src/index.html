@@ -79,9 +79,12 @@
       <!-- Overtime: the picture squinted down to thirty blocks of one hue for
            sixty seconds. Offered by a chip you can ignore — it never takes the
            canvas without being asked. -->
-      <button id="overtimeChip" class="ot-chip hidden" data-act="overtime">
+      <!-- The one bonus chip: the scheduler labels it for whichever round is due
+           (game.js showBonusChip), and it only ever offers — tapping opens that
+           round (startBonus). Its mark/label are set at offer time. -->
+      <button id="bonusChip" class="ot-chip hidden" data-act="bonus">
         <span class="ot-chip-mark">◑</span>
-        <span class="ot-chip-text">Overtime<i>60s · win a doubled brush</i></span>
+        <span class="ot-chip-text">Bonus round<i>a quick game</i></span>
       </button>
       <div id="overtime" class="overtime hidden"></div>
 
@@ -95,14 +98,12 @@
       <!-- Named counter: shows while the Swap's boon is being spent. -->
       <div id="namedPill" class="named-pill hidden"></div>
 
-      <!-- Shade Match: a free-mode bonus. Spot the swatch that is a shade off,
-           then a harder grid, for as long as the clock holds. Opt-in like
-           Overtime — the chip only ever offers; it never opens itself. -->
-      <button id="shadeMatchChip" class="ot-chip sm-chip hidden" data-act="shade-match">
-        <span class="ot-chip-mark">◧</span>
-        <span class="ot-chip-text">Shade Match<i>spot the odd shade</i></span>
-      </button>
+      <!-- The free-mode bonus-round overlays, all opened via the one #bonusChip
+           above. Each stays empty until its round renders into it. -->
       <div id="shadeMatch" class="overtime sm-overlay hidden"></div>
+      <div id="mixer" class="overtime mixer-overlay hidden"></div>
+      <div id="drips" class="overtime drips-overlay hidden"></div>
+      <div id="recall" class="overtime recall-overlay hidden"></div>
 
       <!-- Shown only while a story stone is being painted: the way back to the
            path without leaving story mode. Mirrors the undo pill. -->

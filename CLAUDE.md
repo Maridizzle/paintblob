@@ -99,8 +99,15 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
   and (restored) Steady Hand. Pure charge economy, charges refill on level-up.
   `triggerAbility()` (game.js) spends a charge then switches per effect; both
   ability UIs iterate `ABILITIES` generically, so a new entry renders itself.
-- **Bonus rounds** — Overtime (free mode) and The Swap (story mode); opt-in chips,
-  never take the canvas unasked.
+- **Bonus rounds** — free mode weaves **five** optional rounds through a picture
+  (Overtime, Shade Match, Colour Mixer, Drip Catch, Palette Memory); story mode has
+  its own single round, The Swap. All are opt-in corner chips that never take the
+  canvas unasked. Each is a pure module (`overtime.js` / `shade-match.js` /
+  `mixer.js` / `drips.js` / `recall.js`) + Overtime-shaped game.js wiring
+  (start→how-to→begin→tick→end→award→close). The free-mode rounds **recur at
+  random**: `bonus.js` (pure) sets the rare, jittered cadence and picks the next
+  round (never a repeat); game.js drives one shared `#bonusChip` from a `BONUS_ROUNDS`
+  registry — add an entry and it schedules itself.
 - **Themes** — `themes.js`: `void` (default), `fae`, `cobalt` (unlocked by beating
   the chapter-one boss). `settings.themePinned` (set when the player picks any
   theme) makes their choice win in story too, instead of the chapter theme.
