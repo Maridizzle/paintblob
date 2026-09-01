@@ -2338,6 +2338,15 @@ button {
 }
 .named-pill.hidden { display: none; }
 
+/* The perk pill borrows the Named pill's shape but the primary accent, so a
+   free-mode bonus-round boon reads apart from story mode's Named counter. (The
+   two never show together — Named is story-only, perks are free-only.) */
+.perk-pill {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: none;
+}
+
 /* The boss health bar: X's grip on the last stone, top-centre over the picture.
    Drains as you paint, ticks back up when X takes cells. Never eats a tap. */
 .boss-hud {
