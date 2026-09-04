@@ -88,7 +88,14 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
   cutscenes on the tour engine. `S.inStory` is runtime; `S.save.story` persists.
   Chapter One is *The Sampler* / *The Wrong-Colour Day* — the colours went on
   strike (stopped answering to their names); painting re-attaches names. Seven
-  stones, the last a boss.
+  stones, the last a boss. Cutscenes are `CHAPTERS[].scenes` (speakers Y/Ee/X via
+  `letters.js`), triggered `onEnter` / `afterDone: <stone>` (via `pendingBoardScene`
+  on the next board open) / `beforeStone: <stone>`. Beating the boss plays the
+  **`epilogue`** scene (`afterDone: 'wrong-colour-day'`) — the chapter lands local
+  (this cloth is saved, Ee still short) and the cliffhanger goes world-scale (X was
+  one hand; the silence took the rest of the world). The finished board then shows a
+  `#chapterNext` "Chapter Two" teaser. Adding a scene is data-only — it just adds a
+  `story.seen` key, no save-shape change.
 - **Boss fight** — `boss.js` (pure math) + `game.js`. **The picture is the health
   bar** (health = unpainted / total). X reclaims painted cells on a timer and
   casts two spells (disable your held colour; freeze a share of the board).

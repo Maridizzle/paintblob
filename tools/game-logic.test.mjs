@@ -1073,18 +1073,24 @@ test('a scene plays once: per-scene keys, with the old one-flag-per-chapter hono
   assert.equal(sceneSeen(undefined, 1, 'opening'), false, 'a missing story never throws');
 });
 
-test('the chapter has an opening, two interstitials, and a boss intro, each triggered right', () => {
+test('the chapter has an opening, three interstitials (incl. a boss epilogue), and a boss intro', () => {
   const ch = getChapter(1);
   assert.equal(onEnterScene(ch)?.id, 'opening', 'a chapter needs an opening (onEnter) scene');
   assert.ok(beforeStoneScene(ch, 'wrong-colour-day'), 'the boss stone must have an intro');
   assert.equal(beforeStoneScene(ch, 'blue-reportedly'), undefined, 'a normal stone has no beforeStone scene');
 
   const afterDone = ch.scenes.filter((s) => s.trigger?.afterDone);
-  assert.equal(afterDone.length, 2, 'two interstitials between the opening and the boss');
+  assert.equal(afterDone.length, 3, 'two mid-chapter interstitials plus the after-boss epilogue');
   for (const s of afterDone) {
     assert.ok(ch.nodes.some((n) => n.id === s.trigger.afterDone),
       `interstitial "${s.id}" triggers on an unknown stone "${s.trigger.afterDone}"`);
   }
+  // The epilogue hangs off the boss, and sits LAST in the array so pendingBoardScene
+  // (which returns the first owed afterDone scene) can't hand it back before the
+  // earlier two have played.
+  assert.equal(afterDone[afterDone.length - 1].id, 'epilogue', 'the epilogue is the last afterDone scene');
+  assert.equal(ch.scenes.find((s) => s.id === 'epilogue').trigger.afterDone, 'wrong-colour-day',
+    'the epilogue fires after the boss stone is beaten');
 });
 
 test('pendingBoardScene owes an interstitial only once its stone is done, and only once', () => {
@@ -1097,6 +1103,31 @@ test('pendingBoardScene owes an interstitial only once its stone is done, and on
   assert.equal(pendingBoardScene(ch, doneSave)?.id, scene.id, 'owed the first time you reach the board after its stone is done');
   const seenSave = { progress: { [stone]: { done: true } }, story: { seen: { [sceneKey(1, scene.id)]: true } } };
   assert.equal(pendingBoardScene(ch, seenSave), null, 'and never again once it has played');
+});
+
+test('the after-boss epilogue is owed once the whole chapter is done, then never again', () => {
+  const ch = getChapter(1);
+  // Every stone done, and the two mid-chapter interstitials already seen — so the
+  // only thing pending on the next return to the board is the epilogue.
+  const progress = {};
+  for (const n of ch.nodes) progress[n.puzzle] = { done: true };
+  const seen = { [sceneKey(1, 'thread')]: true, [sceneKey(1, 'rhyme')]: true };
+  const save = { progress, story: { chapter: 1, seen } };
+  assert.equal(pendingBoardScene(ch, save)?.id, 'epilogue', 'the epilogue is owed after the boss is beaten');
+  seen[sceneKey(1, 'epilogue')] = true;
+  assert.equal(pendingBoardScene(ch, save), null, 'the epilogue plays exactly once');
+});
+
+test('the finished board keeps the Chapter Two cliffhanger in view', () => {
+  const html = readSource('src/index.html');
+  assert.match(html, /id="chapterNext"/, 'a Chapter Two teaser element lives in the story scroll');
+  const game = readSource('src/game.js');
+  const body = game.slice(game.indexOf('function renderStoryBoard'), game.indexOf('async function openStone'));
+  assert.match(body, /ch\.nodes\.every\(\(n\) => nodeState\(n, S\.save, true\) === 'done'\)/,
+    'the teaser shows only when every stone is a real ✓ (not merely dev-opened)');
+  assert.match(body, /\$\('chapterNext'\)\.classList\.toggle\('hidden', !allDone\)|\$\('chapterNext'\)/,
+    'renderStoryBoard toggles the teaser');
+  assert.match(body, /Chapter Two/, 'the teaser names Chapter Two');
 });
 
 test('every story puzzle id is a real manifest entry, and only story ids read as story', () => {
