@@ -42,6 +42,31 @@ export const THEMES = [
     // themeUnlocked).
     unlockedBy: 'wrong-colour-day',
   },
+  {
+    id: 'bloom',
+    label: 'Wildlight',
+    blurb: 'A bioluminescent jungle: emerald and jade lit from within, gold at every light source.',
+    // Chapter two's FIRST-act look — the lush, over-grown, glowing world just
+    // past the Sampler's frame, maximal jewel colour (Act II strips it to
+    // black). It is also earned for keeping anywhere by beating the Hoarder, the
+    // mini-boss that caps Act I, so it carries `unlockedBy` like cobalt does.
+    // (`chapter` is documentary; the ambient hand-off is story.js chapterTheme.)
+    chapter: 2,
+    unlockedBy: 'the-hoarder',
+  },
+  {
+    id: 'nightcut',
+    label: 'Nightcut',
+    blurb: 'Black and white only. One light, and everything it carves out of the dark.',
+    // Chapter two's SECOND-act look — the moment the colour goes out of the
+    // world. Tenebrism as carved darkness: black is solid, one white light,
+    // midtones collapse. Worn by Act II automatically (story.js chapterTheme
+    // flips to it the moment the Hoarder is beaten); earned for keeping anywhere
+    // by beating the chapter boss, The Fade — whose stone ships with Act II, so
+    // until then the picker draws this locked, which is exactly right.
+    chapter: 2,
+    unlockedBy: 'the-fade',
+  },
 ];
 
 const BY_ID = new Map(THEMES.map((t) => [t.id, t]));

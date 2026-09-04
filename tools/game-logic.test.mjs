@@ -48,9 +48,12 @@ import {
   CHAPTERS, DEFAULT_CHAPTER, getChapter, chapterOr, defaultStory, nodeState,
   isStoryPuzzle, isBossPuzzle, openingSeen, sceneSeen, sceneKey,
   onEnterScene, beforeStoneScene, pendingBoardScene,
+  bossKitFor, chapterUnlocked, chapterTheme, chapterReleased, isChapter,
 } from '../src/story.js';
 import {
   healthFraction, regenCount, pickWipeTargets, pickLockTargets, chooseAttack, difficultyMult,
+  BOSS_KITS, bossKit, DEFAULT_KIT,
+  REGEN_INTERVAL_MS, ATTACK_INTERVAL_MS, FIRST_ATTACK_MS, COLOUR_DISABLE_MS, CELL_LOCK_MS, LOCK_FRACTION,
 } from '../src/boss.js';
 import { letterSVG, isSpeaker } from '../src/letters.js';
 import {
@@ -1118,16 +1121,147 @@ test('the after-boss epilogue is owed once the whole chapter is done, then never
   assert.equal(pendingBoardScene(ch, save), null, 'the epilogue plays exactly once');
 });
 
-test('the finished board keeps the Chapter Two cliffhanger in view', () => {
+test('a completed chapter opens a real door onward, not a dead-end teaser', () => {
   const html = readSource('src/index.html');
-  assert.match(html, /id="chapterNext"/, 'a Chapter Two teaser element lives in the story scroll');
+  assert.match(html, /id="chapterNext"/, 'the end-of-chapter card lives in the story scroll');
   const game = readSource('src/game.js');
   const body = game.slice(game.indexOf('function renderStoryBoard'), game.indexOf('async function openStone'));
   assert.match(body, /ch\.nodes\.every\(\(n\) => nodeState\(n, S\.save, true\) === 'done'\)/,
-    'the teaser shows only when every stone is a real ✓ (not merely dev-opened)');
-  assert.match(body, /\$\('chapterNext'\)\.classList\.toggle\('hidden', !allDone\)|\$\('chapterNext'\)/,
-    'renderStoryBoard toggles the teaser');
-  assert.match(body, /Chapter Two/, 'the teaser names Chapter Two');
+    'the card shows only when every stone is a real ✓ (not merely dev-opened)');
+  assert.match(body, /const onward = canEnterChapter\(nextId\)/,
+    'onward is the one reachability predicate — exists AND earned AND art shipped (or dev)');
+  assert.match(body, /const teased = !onward && isChapter\(nextId\)/,
+    'a chapter that exists but is not enterable yet gets a coming-soon teaser, not the button');
+  assert.match(body, /goToChapter\(nextId\)/, 'the advance control moves to the next chapter');
+  assert.match(body, /Begin Chapter/, 'a real "Begin Chapter …" button when it is a real door');
+});
+
+test('the advance door is one predicate — earned AND released, dev bypasses both', () => {
+  const game = readSource('src/game.js');
+  const fn = game.slice(game.indexOf('function canEnterChapter'), game.indexOf('async function goToChapter'));
+  assert.match(fn, /if \(S\.dev\) return true/, 'dev mode reaches any chapter, so locked art stays buildable');
+  assert.match(fn, /chapterUnlocked\(id, S\.save\) && chapterReleased\(getChapter\(id\)\)/,
+    'a non-dev player needs the chapter earned AND its art shipped');
+  // Every entry point routes through it — no back door.
+  const gate = game.slice(game.indexOf('async function goToChapter'), game.indexOf('async function openStoryBoard'));
+  assert.match(gate, /if \(!canEnterChapter\(id\)\) return;/, 'goToChapter refuses anything canEnterChapter refuses');
+  const title = game.slice(game.indexOf('function renderChapterTitle'), game.indexOf('function renderStoryBoard'));
+  assert.match(title, /canEnterChapter\(ch\.id - 1\)/, 'the ‹ arrow is gated');
+  assert.match(title, /canEnterChapter\(ch\.id \+ 1\)/, 'the › arrow is gated');
+  // And boot never strands a plain player on an un-released chapter.
+  assert.match(game, /!S\.dev && !chapterReleased\(getChapter\(S\.save\.story\.chapter\)\)/,
+    'boot clamps a non-dev save off an un-released chapter');
+});
+
+test('chapter two stays locked until its art ships', () => {
+  // A tripwire: Chapter Two ships with placeholder art, so it must NOT be
+  // released. The PR that bakes real art flips this and updates this test in the
+  // same diff — so the gate can never melt away by accident.
+  assert.equal(getChapter(2).released, false, 'chapter two is held back until its pictures are painted');
+  assert.equal(chapterReleased(getChapter(2)), false, 'chapterReleased agrees it is not shipped');
+  assert.equal(chapterReleased(getChapter(1)), true, 'chapter one (no flag) is released');
+  assert.equal(chapterReleased({}), true, 'a chapter with no released flag counts as released');
+});
+
+// ---- Chapter Two + the saga backbone (M1) ------------------------------------
+
+test('chapter two is a coherent, built Act-I path that names its boss kit', () => {
+  const ch = getChapter(2);
+  assert.equal(ch.id, 2);
+  assert.ok(ch.title && ch.label && ch.place, 'a chapter needs a title, a label and a place');
+  assert.ok(isTheme(ch.theme), `chapter theme "${ch.theme}" is not a real theme`);
+  const ids = ch.nodes.map((n) => n.id);
+  assert.equal(new Set(ids).size, ids.length, 'stone ids must be unique');
+  assert.equal(ch.nodes.at(-1).kind, 'boss', 'the act ends on a boss');
+  // The mid-boss carries a NON-default kit — the whole point of Act I.
+  const boss = ch.nodes.at(-1);
+  assert.equal(boss.kit, 'hoarder', 'the Hoarder runs the hoarder kit');
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles/manifest.json'), 'utf8'));
+  const built = new Set(manifest.map((p) => p.id));
+  for (const node of ch.nodes) {
+    assert.ok(node.puzzle && built.has(node.puzzle), `stone "${node.id}" names a missing puzzle "${node.puzzle}"`);
+  }
+});
+
+test('every chapter lays out one board spot per stone', () => {
+  for (const ch of CHAPTERS) {
+    assert.ok(Array.isArray(ch.spots), `chapter ${ch.id} carries its own spots`);
+    assert.equal(ch.spots.length, ch.nodes.length,
+      `chapter ${ch.id}: ${ch.spots.length} spots for ${ch.nodes.length} stones`);
+    for (const [x, y] of ch.spots) {
+      assert.ok(x >= 0 && x <= 100 && y >= 0 && y <= 100, 'spots are board percentages');
+    }
+  }
+});
+
+test('renderStoryBoard names the chapter from its label, not a hard-coded "One"', () => {
+  const game = readSource('src/game.js');
+  assert.match(game, /Chapter \$\{ch\.label/, 'the header reads the chapter label');
+  assert.doesNotMatch(game, /`Chapter One · \$\{ch\.title\}`/, 'the hard-coded "Chapter One" header is gone');
+});
+
+test('every boss node names a kit that the registry actually defines', () => {
+  for (const ch of CHAPTERS) {
+    for (const node of ch.nodes.filter((n) => n.kind === 'boss')) {
+      const kitId = bossKitFor(node.puzzle);
+      assert.ok(BOSS_KITS[kitId], `boss "${node.id}" names kit "${kitId}" which is not in BOSS_KITS`);
+      assert.equal(bossKit(kitId).mode, BOSS_KITS[kitId].mode, 'bossKit resolves the same kit');
+    }
+  }
+  assert.equal(bossKitFor('wrong-colour-day'), 'attrition', 'chapter one keeps the original fight');
+  assert.equal(bossKitFor('the-hoarder'), 'hoarder');
+  assert.equal(bossKitFor('no-such-puzzle'), 'attrition', 'an unknown boss falls back to attrition');
+  assert.equal(bossKit('no-such-kit').id, DEFAULT_KIT, 'an unknown kit falls back to the default');
+});
+
+test('the attrition kit preserves chapter one\'s exact cadence and strengths', () => {
+  const a = BOSS_KITS.attrition;
+  assert.equal(a.mode, 'attrition');
+  assert.equal(a.regenIntervalMs, REGEN_INTERVAL_MS);
+  assert.equal(a.attackIntervalMs, ATTACK_INTERVAL_MS);
+  assert.equal(a.firstAttackMs, FIRST_ATTACK_MS);
+  assert.equal(a.colourDisableMs, COLOUR_DISABLE_MS);
+  assert.equal(a.cellLockMs, CELL_LOCK_MS);
+  assert.equal(a.lockFraction, LOCK_FRACTION);
+  assert.ok(a.regenFrac > 0, 'attrition drains');
+  // The Hoarder is the interruption, not the drain: no regen, always your colour.
+  assert.equal(BOSS_KITS.hoarder.mode, 'hoarder');
+  assert.equal(BOSS_KITS.hoarder.regenFrac, 0, 'the Hoarder does not drain');
+});
+
+test('the Hoarder always grabs the colour in hand, and never your last', () => {
+  const game = readSource('src/game.js');
+  const body = game.slice(game.indexOf('function hoarderAttack'), game.indexOf('function syncBossHud'));
+  assert.match(body, /const i = S\.selected/, 'it targets the held colour, not a random one');
+  assert.match(body, /others === 0/, 'it stands down rather than freeze your only colour (no-lose)');
+  assert.match(body, /c\.colour === i/, 'it locks that colour\'s own cells');
+  // startBoss picks the kit and names the HUD from it (no hard-coded boss name).
+  assert.match(game, /const kit = bossKit\(bossKitFor\(id\)\)/, 'startBoss resolves the kit');
+  assert.match(game, /\.boss-hud-name'\)[\s\S]{0,60}textContent = kit\.name/, 'the HUD wears the kit name');
+  assert.doesNotMatch(readSource('src/index.html'), /boss-hud-name">The Wrong-Colour Day/,
+    'the boss name is no longer hard-coded in the markup');
+});
+
+test('chapters unlock one leg at a time, gated on the previous boss', () => {
+  assert.equal(chapterUnlocked(1, { progress: {} }), true, 'the first chapter is always open');
+  assert.equal(chapterUnlocked(2, { progress: {} }), false, 'chapter two waits for chapter one\'s boss');
+  const ch1boss = getChapter(1).nodes.at(-1).puzzle;
+  assert.equal(chapterUnlocked(2, doneSaveOf(ch1boss)), true, 'beating it opens chapter two');
+  assert.equal(chapterUnlocked(3, doneSaveOf(ch1boss)), false, 'no chapter three exists to unlock yet');
+});
+
+test('chapterTheme hands out the chapter look, ready to switch at an act break', () => {
+  assert.equal(chapterTheme(getChapter(1), { progress: {} }), 'fae');
+  assert.equal(chapterTheme(getChapter(2), { progress: {} }), 'bloom', 'chapter two wears bloom in Act I');
+  // Clearing the act break is the moment the light goes out of the world: the
+  // chapter flips from its first look to its second, and both must be real.
+  const ch2 = getChapter(2);
+  const brk = ch2.nodes.find((n) => n.id === ch2.actBreak);
+  assert.ok(brk, 'the act break names a real stone');
+  assert.ok(isTheme(ch2.theme2), `theme2 "${ch2.theme2}" is not a real theme`);
+  assert.equal(chapterTheme(ch2, doneSaveOf(brk.puzzle)), 'nightcut', 'beating the Hoarder darkens the world');
+  // A chapter with no second look keeps its one theme whatever is done.
+  assert.equal(chapterTheme(getChapter(1), doneSaveOf('wrong-colour-day')), 'fae');
 });
 
 test('every story puzzle id is a real manifest entry, and only story ids read as story', () => {
@@ -1176,7 +1310,7 @@ test('opening a free picture in story mode drops cleanly back to free mode', () 
 });
 
 test('the letters are drawable, wash-shaded, and never do colour maths', () => {
-  for (const id of ['Y', 'Ee', 'X']) {
+  for (const id of ['Y', 'Ee', 'X', 'Hoarder']) {
     assert.ok(isSpeaker(id), `${id} should be a known speaker`);
     const svg = letterSVG(id);
     assert.match(svg, /^<svg/, `${id} must render an svg`);

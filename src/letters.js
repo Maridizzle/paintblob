@@ -100,7 +100,32 @@ function drawX() {
   </svg>`;
 }
 
-const DRAW = { Y: drawY, Ee: drawEe, X: drawX };
+// The Hoarder — a pair of brackets with nothing between them but what it has
+// grabbed: the mark that sets a thing aside and keeps it. Two curved arms, each
+// built from four short bars bowing outward (this file draws no curves), leaning
+// in round a heap; the eyes sit low between them as if peering over the pile,
+// and the mouth is a small wanting grin. The heap is three translucent washes,
+// so it needs no colour of its own — the body wears --hot, the colour of the
+// gold it is clutching, where X wears the grey of nothing at all.
+function drawHoarder() {
+  const left = bar(41, 14, 32, 30, 13) + bar(32, 30, 29, 50, 13) + bar(29, 50, 32, 70, 13) + bar(32, 70, 41, 86, 13);
+  const right = bar(59, 14, 68, 30, 13) + bar(68, 30, 71, 50, 13) + bar(71, 50, 68, 70, 13) + bar(68, 70, 59, 86, 13);
+  return `<svg class="lt lt-hoarder" viewBox="0 0 100 100" width="96" height="96" aria-hidden="true">
+    <g class="lt-flip">
+      <path class="lt-body" d="${left}${right}"/>
+      <!-- a shadow down the inside of each arm, a thin light along the outer bow -->
+      <path d="${bar(35, 32, 33, 50, 4)}${bar(65, 32, 67, 50, 4)}" fill="rgba(0,0,0,0.16)"/>
+      <path d="${bar(30, 30, 27, 50, 3)}${bar(70, 30, 73, 50, 3)}" fill="rgba(255,255,255,0.14)"/>
+      <!-- the hoard: a clutched heap, low between the arms -->
+      <circle cx="44" cy="77" r="7" fill="rgba(255,255,255,0.22)"/>
+      <circle cx="56" cy="79" r="6" fill="rgba(0,0,0,0.22)"/>
+      <circle cx="50" cy="70" r="6.5" fill="rgba(255,255,255,0.3)"/>
+      ${face(50, 52, 7, 5, '<path d="M45 62 Q50 67 55 62" fill="none" stroke="rgba(30,10,22,0.55)" stroke-width="2.4" stroke-linecap="round"/>')}
+    </g>
+  </svg>`;
+}
+
+const DRAW = { Y: drawY, Ee: drawEe, X: drawX, Hoarder: drawHoarder };
 
 export function isSpeaker(id) {
   return Object.prototype.hasOwnProperty.call(DRAW, id);

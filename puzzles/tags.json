@@ -296,6 +296,41 @@
       "Flowers"
     ]
   },
+  "dusk-gate": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
+  "glowvine-path": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
+  "mandala-clearing": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
+  "moth-lantern": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
+  "the-hoarder": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
   "thread-cupboard": {
     "difficulty": "normal",
     "themes": [
