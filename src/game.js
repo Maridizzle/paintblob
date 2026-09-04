@@ -36,11 +36,11 @@ import { Tour } from './tour.js';
 import {
   getChapter, chapterOr, defaultStory, nodeState, isStoryPuzzle, isBossPuzzle,
   onEnterScene, beforeStoneScene, pendingBoardScene, sceneKey, sceneSeen,
+  bossKitFor, chapterUnlocked, chapterTheme, isChapter,
 } from './story.js';
 import {
   regenCount, pickWipeTargets, pickLockTargets, chooseAttack, difficultyMult,
-  healthFraction, REGEN_INTERVAL_MS, ATTACK_INTERVAL_MS, FIRST_ATTACK_MS,
-  COLOUR_DISABLE_MS, CELL_LOCK_MS,
+  healthFraction, bossKit,
 } from './boss.js';
 import { letterSVG } from './letters.js';
 import {
@@ -3073,7 +3073,7 @@ function applyTheme() {
   const id = S.save.settings.lowStim
     ? DEFAULT_THEME
     : (S.inStory && !S.save.settings.themePinned)
-      ? getChapter(S.save.story.chapter).theme
+      ? chapterTheme(getChapter(S.save.story.chapter), S.save)
       : S.save.settings.theme;
   document.documentElement.dataset.theme = themeOr(id);
 }
@@ -4458,18 +4458,34 @@ function cellLocked(id) {
 function startBoss(id) {
   stopBoss(); // never two fights at once
   const entry = S.manifest.find((p) => p.id === id);
-  S.boss = { mult: difficultyMult(entry?.difficulty), disabled: null, timers: [] };
+  // Which fight this boss runs: its kit — mode, cadence and strengths — comes
+  // from boss.js, chosen by the story node's `kit`. Chapter One's boss is
+  // `attrition` and plays exactly as before; a mini-boss brings its own mode.
+  const kit = bossKit(bossKitFor(id));
+  S.boss = {
+    mode: kit.mode,
+    mult: difficultyMult(entry?.difficulty),
+    regenFrac: kit.regenFrac,
+    colourDisableMs: kit.colourDisableMs,
+    cellLockMs: kit.cellLockMs,
+    disabled: null,
+    timers: [],
+  };
   board.bossLocks = null;
-  // Regen ticks from the off; the hud counts down twice a second; the first
-  // spell holds back a grace beat so the fight opens on the drain alone, then
-  // settles into its own cadence.
-  S.boss.timers.push(setInterval(bossRegenTick, REGEN_INTERVAL_MS));
+  // The HUD wears the kit's name — Chapter One hard-coded it in the markup;
+  // now every boss names itself.
+  const nameEl = $('bossHud')?.querySelector('.boss-hud-name');
+  if (nameEl) nameEl.textContent = kit.name;
+  // Regen ticks from the off (a no-op for a kit that doesn't drain); the hud
+  // counts down twice a second; the first spell holds back a grace beat so the
+  // fight opens quietly, then settles into the kit's cadence.
+  S.boss.timers.push(setInterval(bossRegenTick, kit.regenIntervalMs));
   S.boss.timers.push(setInterval(syncBossHud, 500));
   S.boss.timers.push(setTimeout(function armAttacks() {
     if (!S.boss) return;
     bossAttackTick();
-    S.boss.timers.push(setInterval(bossAttackTick, ATTACK_INTERVAL_MS));
-  }, FIRST_ATTACK_MS));
+    S.boss.timers.push(setInterval(bossAttackTick, kit.attackIntervalMs));
+  }, kit.firstAttackMs));
   syncBossHud();
 }
 
@@ -4488,7 +4504,7 @@ function stopBoss() {
 // never outrun the ending.
 function bossRegenTick() {
   if (!bossActive()) return;
-  const n = regenCount(S.cells.length, S.filled.size, S.boss.mult);
+  const n = regenCount(S.cells.length, S.filled.size, S.boss.mult, S.boss.regenFrac);
   if (!n) return;
   for (const id of pickWipeTargets([...S.filled], n)) {
     const cell = S.cells[id];
@@ -4506,25 +4522,55 @@ function bossRegenTick() {
   ensureFrame();
 }
 
-// One spell: freeze the colour in hand, or freeze a third of what is left to
-// paint. X will not freeze your only remaining colour, or one already frozen,
-// so you are never left with nothing you can do.
+// One attack, of whichever shape this boss's kit fights in. attrition is the
+// original X; hoarder is the Hoarder. Each still leaves you something to paint.
 function bossAttackTick() {
   if (!bossActive()) return;
+  if (S.boss.mode === 'hoarder') hoarderAttack();
+  else attritionAttack();
+}
+
+// The original X: freeze the colour in hand, or freeze a share of what is left
+// to paint — its own pick. X will not freeze your only remaining colour, or one
+// already frozen, so you are never left with nothing you can do.
+function attritionAttack() {
   const now = performance.now();
   const others = S.remaining.filter((r, i) => r > 0 && i !== S.selected).length;
   const canDisable = S.selected >= 0 && !isColourDisabled(S.selected) && others > 0;
   if (chooseAttack(Math.random, canDisable) === 'colour') {
-    S.boss.disabled = { colour: S.selected, end: now + COLOUR_DISABLE_MS };
+    S.boss.disabled = { colour: S.selected, end: now + S.boss.colourDisableMs };
     nextTub(); // step off the colour X just froze
     toast({ icon: '✕', name: 'X takes a colour', desc: 'That paint won’t answer for a moment — use another.' });
   } else {
     const unfilled = S.cells.filter((c) => !S.filled.has(c.id) && !S.pending.has(c.id)).map((c) => c.id);
     const locked = pickLockTargets(unfilled);
-    board.bossLocks = { cells: new Set(locked), end: now + CELL_LOCK_MS };
+    board.bossLocks = { cells: new Set(locked), end: now + S.boss.cellLockMs };
     board.dirty = true;
     toast({ icon: '✕', name: 'X freezes the board', desc: `${locked.length} cells crossed out — they thaw in a moment.` });
   }
+  sfx.play('nope');
+  syncTubs();
+  ensureFrame();
+}
+
+// The Hoarder: it always grabs the colour in your HAND — freezing that tub and
+// crossing out that colour's still-unpainted cells — so you are forever knocked
+// off the paint you were laying and have to pick up another. It holds only one
+// colour at a time (the next grab replaces this one), and never your last, so
+// there is always something to paint.
+function hoarderAttack() {
+  const now = performance.now();
+  const i = S.selected;
+  const others = S.remaining.filter((r, k) => r > 0 && k !== i).length;
+  if (i < 0 || isColourDisabled(i) || S.remaining[i] === 0 || others === 0) return;
+  S.boss.disabled = { colour: i, end: now + S.boss.colourDisableMs };
+  const held = S.cells
+    .filter((c) => c.colour === i && !S.filled.has(c.id) && !S.pending.has(c.id))
+    .map((c) => c.id);
+  board.bossLocks = { cells: new Set(held), end: now + S.boss.cellLockMs };
+  board.dirty = true;
+  nextTub(); // step off the colour it just grabbed
+  toast({ icon: '✕', name: 'The Hoarder grabs a colour', desc: 'It took the one in your hand — pick up another and paint on.' });
   sfx.play('nope');
   syncTubs();
   ensureFrame();
@@ -4631,7 +4677,7 @@ function showTitle() {
     // Low-stim never routes into the story, so Continue always means "back to
     // painting" for that player, whatever mode the save was last left in.
     const story = S.save.story.mode === 'story' && !lowStim;
-    add('Continue', story ? 'Back to the Sampler' : 'Back to painting', true,
+    add('Continue', story ? `Back to ${getChapter(S.save.story.chapter).place ?? 'the story'}` : 'Back to painting', true,
       () => (story ? enterStory() : enterFree()));
   }
   // The story door is one of the extras low-stim hides.
@@ -4713,11 +4759,19 @@ function playScene(scene, finishLabel, onDone) {
   setTimeout(() => tour.start(steps, { finishLabel, onEnd: () => onDone?.() }), 0);
 }
 
-// Where the seven stones sit on the board, first to last — a thread winding up
-// the cloth. Percentages of the path box, hand-placed so the walk climbs.
-const STONE_SPOTS = [
-  [30, 90], [64, 81], [39, 69], [69, 56], [33, 44], [61, 31], [48, 16],
-];
+// A stone's board position now lives on its chapter (story.js `spots`), so each
+// chapter lays out its own winding path and its own number of stones.
+
+// Move to another chapter — only ever one that exists and is unlocked. Re-enters
+// through enterStory so the destination's opening scene plays the first time and
+// its ambient look is applied; a revisit just shows the board.
+async function goToChapter(id) {
+  if (!isChapter(id) || !chapterUnlocked(id, S.save)) return;
+  S.save.story.chapter = chapterOr(id);
+  persist(true);
+  closeStoryBoard();
+  await enterStory();
+}
 
 async function openStoryBoard() {
   S.inStory = true;
@@ -4738,16 +4792,47 @@ function closeStoryBoard() {
   $('storyBoard').classList.add('hidden');
 }
 
+// The chapter name in the story bar, flanked by ‹ › arrows to the neighbouring
+// UNLOCKED chapters — the saga's spine is walkable once you have opened more of
+// it. An arrow that leads nowhere is left off, so there are no dead controls.
+function renderChapterTitle(ch) {
+  const host = $('storyChapter');
+  host.textContent = '';
+  const arrow = (glyph, targetId, title) => {
+    const a = document.createElement('button');
+    a.className = 'chapter-arrow';
+    a.type = 'button';
+    a.textContent = glyph;
+    a.title = title;
+    a.addEventListener('click', () => goToChapter(targetId));
+    return a;
+  };
+  if (isChapter(ch.id - 1) && chapterUnlocked(ch.id - 1, S.save)) {
+    host.append(arrow('‹', ch.id - 1, 'Earlier chapter'));
+  }
+  const name = document.createElement('span');
+  name.className = 'chapter-name';
+  name.textContent = `Chapter ${ch.label ?? 'One'} · ${ch.title}`;
+  host.append(name);
+  if (isChapter(ch.id + 1) && chapterUnlocked(ch.id + 1, S.save)) {
+    host.append(arrow('›', ch.id + 1, 'Next chapter'));
+  }
+}
+
 function renderStoryBoard() {
   const ch = getChapter(S.save.story.chapter);
-  $('storyChapter').textContent = `Chapter One · ${ch.title}`;
+  renderChapterTitle(ch);
   const path = $('storyPath');
   path.textContent = '';
+
+  // Each stone's spot comes from the chapter; [50,50] is a last-ditch centre so a
+  // mis-counted layout still draws rather than throwing.
+  const spotAt = (i) => ch.spots?.[i] ?? [50, 50];
 
   // The thread through the stones, drawn behind them. An SVG built through the
   // DOM API rather than innerHTML so the CSP never has to trust a string; the
   // one path inside it carries only presentation attributes, which it allows.
-  const spots = ch.nodes.map((_, i) => STONE_SPOTS[i] ?? [50, 50]);
+  const spots = ch.nodes.map((_, i) => spotAt(i));
   const d = spots.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join(' ');
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('class', 'story-thread');
@@ -4767,8 +4852,8 @@ function renderStoryBoard() {
   const guide = document.createElement('div');
   guide.className = 'story-guide';
   guide.innerHTML = letterSVG('Y');
-  guide.style.left = `${STONE_SPOTS[0][0] - 15}%`;
-  guide.style.top = `${STONE_SPOTS[0][1] - 4}%`;
+  guide.style.left = `${spots[0][0] - 15}%`;
+  guide.style.top = `${spots[0][1] - 4}%`;
   path.append(guide);
 
   // Progressive unlock: each stone opens only once the one before it on the
@@ -4777,7 +4862,7 @@ function renderStoryBoard() {
   // forces every predecessor "done", so every built stone opens at once.
   let prevDone = true;
   ch.nodes.forEach((node, i) => {
-    const [x, y] = STONE_SPOTS[i] ?? [50, 50];
+    const [x, y] = spots[i];
     const state = nodeState(node, S.save, S.dev || prevDone);
     prevDone = state === 'done';
     const wrap = document.createElement('div');
@@ -4802,24 +4887,41 @@ function renderStoryBoard() {
     path.append(wrap);
   });
 
-  // Chapter One's landing: once every stone is a genuine ✓ (real save progress,
-  // not just dev-opened), the board keeps the world-scale cliffhanger in view —
-  // the Sampler is safe, the world is not. Built once, then shown/hidden.
+  // The end-of-chapter card. Once every stone is a genuine ✓ (real progress, not
+  // just dev-opened) it opens the way ONWARD — a real button into the next
+  // chapter when one has shipped and is unlocked, or a "more to come" line until
+  // it has. This is the door the chapter path used to lack (the teaser was a
+  // dead end); the epilogue's cliffhanger has already played by the time it shows.
   const next = $('chapterNext');
   if (next) {
     const allDone = ch.nodes.every((n) => nodeState(n, S.save, true) === 'done');
+    next.textContent = '';
     next.classList.toggle('hidden', !allDone);
-    if (allDone && !next.childElementCount) {
+    if (allDone) {
+      const nextId = ch.id + 1;
+      const onward = isChapter(nextId) && chapterUnlocked(nextId, S.save);
       const mark = document.createElement('div');
       mark.className = 'chapter-next-mark';
-      mark.textContent = '…';
+      mark.textContent = onward ? '→' : '…';
       const head = document.createElement('div');
       head.className = 'chapter-next-title';
-      head.textContent = 'Chapter Two';
-      const sub = document.createElement('div');
-      sub.className = 'chapter-next-sub';
-      sub.textContent = 'The Sampler is safe. The world is not. — coming soon';
-      next.append(mark, head, sub);
+      head.textContent = onward
+        ? `Chapter ${getChapter(nextId).label} · ${getChapter(nextId).title}`
+        : 'The road goes on';
+      next.append(mark, head);
+      if (onward) {
+        const go = document.createElement('button');
+        go.className = 'primary chapter-next-go';
+        go.type = 'button';
+        go.textContent = `Begin Chapter ${getChapter(nextId).label}`;
+        go.addEventListener('click', () => goToChapter(nextId));
+        next.append(go);
+      } else {
+        const sub = document.createElement('div');
+        sub.className = 'chapter-next-sub';
+        sub.textContent = 'More of this chapter is still to come.';
+        next.append(sub);
+      }
     }
   }
 }

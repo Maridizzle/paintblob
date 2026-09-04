@@ -26,6 +26,15 @@ export const CHAPTERS = [
     // somewhere you arrived.
     theme: 'fae',
     blurb: 'The cloth where every colour was first told its name.',
+    label: 'One',
+    // Named in the "Continue" subtitle and anywhere a chapter's place is spoken.
+    place: 'the Sampler',
+    // The story-mode bonus round this chapter offers (game.js dispatches on it).
+    storyRound: 'swap',
+    // Where the seven stones sit on the board, first→last — a thread winding up
+    // the cloth. Percentages of the path box, hand-placed so the walk climbs.
+    // Lives on the chapter (not game.js) so each chapter carries its own path.
+    spots: [[30, 90], [64, 81], [39, 69], [69, 56], [33, 44], [61, 31], [48, 16]],
 
     // The stepping-stone path. Order is narrative order — the board draws them
     // along a winding thread in this order, the boss is last, and each stone
@@ -46,6 +55,8 @@ export const CHAPTERS = [
       { id: 'silent-e', title: 'Silent E Has The Last Word', kind: 'stone', puzzle: 'silent-e',
         note: 'An E gone quiet, holding the last word of a sentence nobody can finish.' },
       { id: 'wrong-colour-day', title: 'The Wrong-Colour Day', kind: 'boss', puzzle: 'wrong-colour-day',
+        // The original fight. Its mode + tuning live in boss.js under this kit id.
+        kit: 'attrition',
         note: 'The bottom of the Sampler, where the un-naming happened and still lives.' },
     ],
 
@@ -136,6 +147,73 @@ export const CHAPTERS = [
             body: 'Y turns and looks past the edge of the Sampler, out beyond the wall, and goes very still. “Oh,” it says, quietly. Out there — every field, every face, every picture on every wall — the colours are all exactly where they belong, bright as ever, and not one of them answers to anything. The silence isn’t in the cloth any more. It’s in the world. “It didn’t stop when we beat it,” Y says. “It spread while we won.”' },
           { speaker: 'Ee', title: 'One cloth at a time',
             body: 'Ee draws itself up as tall as short will let it. “One cloth at a time is how a world gets painted,” it says. “And un-painted. And — maybe — painted back. You did the first one; the Sampler will hold.” A stitch of a smile, worn but real. “Rest the brush. Chapter One is yours.” A beat, and past the frame the whole world goes on being silent. “The world is Chapter Two. Come back sharper.”' },
+        ],
+      },
+    ],
+  },
+
+  // ------------------------------------------------------------- Chapter Two
+  // The saga's first leg out past the Sampler's frame, into the dusk-lit wild.
+  // Two acts; this drop is Act I (Act II — The Fade — and the chapter's close
+  // land next). The ultimate villain (the "patient hand" of Chapter One's
+  // epilogue) stays offscreen for a long time yet; what you meet here is the
+  // first of many lesser marks — the Hoarder — a different KIND of fight (its
+  // mode + tuning are the `hoarder` kit in boss.js).
+  //
+  // Act I wears the `bloom` look (a bioluminescent jungle, maximal jewel
+  // colour). Act II will strip that to carved black-and-white (`nightcut`) at
+  // the act break — the colour visibly draining as the un-naming deepens.
+  //
+  // Scene bodies below are PROVISIONAL stubs — the structure (triggers,
+  // speakers, order) is what is wired; the final prose is authored separately.
+  {
+    id: 2,
+    label: 'Two',
+    title: 'Into the Dusk',
+    place: 'the dusk road',
+    theme: 'bloom',
+    // The stone whose completion ends Act I. When Act II ships, `theme2` will
+    // take over here (see chapterTheme) so beating the Hoarder darkens the world.
+    actBreak: 'the-hoarder',
+    // Act I reuses The Swap for now; the dusk-flavoured "Last Light" round (and
+    // the storyRound dispatch that reads this field) land in the next drop.
+    storyRound: 'swap',
+    blurb: 'Out past the frame, where the light is going and the wild keeps its own names.',
+    spots: [[28, 88], [62, 76], [36, 60], [66, 46], [46, 26]],
+
+    nodes: [
+      { id: 'dusk-gate', title: 'The Dusk Gate', kind: 'stone', puzzle: 'dusk-gate',
+        note: 'The last archway of the Sampler; past it the wall ends and the wild begins, already going dark.' },
+      { id: 'glowvine-path', title: 'The Glowvine Path', kind: 'stone', puzzle: 'glowvine-path',
+        note: 'A path the jungle took back. The only light left is the light the leaves make for themselves.' },
+      { id: 'mandala-clearing', title: 'The Mandala Clearing', kind: 'stone', puzzle: 'mandala-clearing',
+        note: 'A clearing where the leaves grew in a perfect wheel — an order nobody imposed, and nobody can ask for now.' },
+      { id: 'moth-lantern', title: 'The Moth Lantern', kind: 'stone', puzzle: 'moth-lantern',
+        note: 'One lantern still lit, and the moths that keep its name for it, spelling it out in circles.' },
+      { id: 'the-hoarder', title: 'The Hoarder', kind: 'boss', puzzle: 'the-hoarder',
+        // A targeted colour-thief — always freezes the colour in your hand. Its
+        // mode + tuning are the `hoarder` kit in boss.js.
+        kit: 'hoarder',
+        note: 'Something out here has been collecting colours it can no longer name — and it does not share.' },
+    ],
+
+    scenes: [
+      {
+        id: 'opening', trigger: { onEnter: true },
+        beats: [
+          { speaker: 'Y', title: 'Past the frame',
+            body: '(placeholder — Fable) The Sampler is behind you now, and the wall with it. Ahead is the world the epilogue warned about: everything where it belongs, the light going amber then grey, and not one colour answering when you call it.' },
+          { speaker: 'Ee', title: 'Still short',
+            body: '(placeholder — Fable) Ee comes along, still squat and worn. One cloth at a time, it says. This is the next one — and the road out here is longer than any stone on the Sampler.' },
+        ],
+      },
+      {
+        id: 'mid-boss', trigger: { beforeStone: 'the-hoarder' },
+        beats: [
+          { speaker: 'Ee', title: 'It hoards',
+            body: '(placeholder — Fable) Ee stops you. Whatever this is, it does not un-name the way X did. It grabs. Whatever colour is in your hand, it will reach for that one — and keep reaching.' },
+          { speaker: 'Y', title: 'Keep moving',
+            body: '(placeholder — Fable) So do not settle, Y says. It takes the colour you are using; take up another and paint on. It can only hold one at a time. Brush up.' },
         ],
       },
     ],
@@ -258,4 +336,45 @@ export function nodeState(node, save, prevDone = true) {
   if (!node?.puzzle) return 'locked';
   if (save?.progress?.[node.puzzle]?.done) return 'done';
   return prevDone ? 'open' : 'locked';
+}
+
+/**
+ * The boss "kit" a boss puzzle fights under. A boss node names its kit; the
+ * mode and tuning that kit id selects live in boss.js. Unknown/missing → the
+ * original attrition fight, so a boss stone can never end up with no fight.
+ */
+export function bossKitFor(puzzleId) {
+  for (const c of CHAPTERS) {
+    const node = c.nodes.find((n) => n.kind === 'boss' && n.puzzle === puzzleId);
+    if (node) return node.kit ?? 'attrition';
+  }
+  return 'attrition';
+}
+
+/**
+ * Whether a chapter is reachable. The first always is; a later one opens only
+ * once the chapter before it is FINISHED — its last stone (the chapter boss)
+ * done in the save. This is the gate the board's "begin the next chapter"
+ * affordance and the chapter arrows read, so the saga advances one leg at a time.
+ */
+export function chapterUnlocked(id, save) {
+  if (id === DEFAULT_CHAPTER) return true;
+  const prev = BY_ID.get(id - 1);
+  if (!prev) return false;
+  const last = prev.nodes[prev.nodes.length - 1];
+  return !!(last?.puzzle && save?.progress?.[last.puzzle]?.done);
+}
+
+/**
+ * The ambient look a chapter wears right now. A chapter can change its skin at
+ * an act break: once `actBreak`'s stone is done, `theme2` takes over from
+ * `theme`, so the world visibly shifts when the first act is cleared. A chapter
+ * with no `theme2`/`actBreak` wears its single `theme` throughout.
+ */
+export function chapterTheme(chapter, save) {
+  if (chapter?.theme2 && chapter.actBreak) {
+    const brk = chapter.nodes?.find((n) => n.id === chapter.actBreak);
+    if (brk?.puzzle && save?.progress?.[brk.puzzle]?.done) return chapter.theme2;
+  }
+  return chapter?.theme;
 }

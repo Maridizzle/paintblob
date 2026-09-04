@@ -42,6 +42,18 @@ export const THEMES = [
     // themeUnlocked).
     unlockedBy: 'wrong-colour-day',
   },
+  {
+    id: 'bloom',
+    label: 'Wildlight',
+    blurb: 'A bioluminescent jungle: emerald and jade lit from within, gold at every light source.',
+    // Chapter two's FIRST-act look — the lush, over-grown, glowing world just
+    // past the Sampler's frame, maximal jewel colour (Act II strips it to
+    // black). It is also earned for keeping anywhere by beating the Hoarder, the
+    // mini-boss that caps Act I, so it carries `unlockedBy` like cobalt does.
+    // (`chapter` is documentary; the ambient hand-off is story.js chapterTheme.)
+    chapter: 2,
+    unlockedBy: 'the-hoarder',
+  },
 ];
 
 const BY_ID = new Map(THEMES.map((t) => [t.id, t]));

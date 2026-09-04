@@ -54,9 +54,9 @@ export function healthFraction(filled, total) {
  * more than are actually painted right now. Zero at zero health, so the fight
  * cannot outrun its own ending.
  */
-export function regenCount(total, filled, mult = 1) {
+export function regenCount(total, filled, mult = 1, frac = REGEN_FRAC) {
   const health = healthFraction(filled, total);
-  const n = Math.round(total * REGEN_FRAC * mult * health);
+  const n = Math.round(total * frac * mult * health);
   return Math.max(0, Math.min(filled, n));
 }
 
@@ -97,4 +97,63 @@ function sample(ids, n, rng) {
     out.push(pool.splice(j, 1)[0]);
   }
   return out;
+}
+
+// -------------------------------------------------------------- the kits
+//
+// A boss "kit" is the tuning + the MODE that make one fight feel unlike another.
+// The arithmetic above is shared by every boss; a kit only says how hard, how
+// often, and — through `mode` — which shape the fight takes. game.js reads the
+// kit in startBoss, sets the HUD name and the timer cadence from it, and
+// branches its tick loop on `mode`. Chapter One's fight is the `attrition` kit
+// (the original constants, unchanged), so nothing about it moves; later
+// mini-bosses add a kit here and their own `mode` branch in game.js, and the
+// shared math never has to know which boss it is serving.
+//
+// The three modes:
+//   attrition — the original. X drains painted cells back on a timer and throws
+//               one of two spells (freeze the held colour / freeze a share of
+//               the board). Health is unpainted/total; regen fades to nothing as
+//               you finish, so it can slow you but never strand you.
+//   hoarder   — no drain at all; the interruption IS the fight. Every attack
+//               freezes the colour you are CURRENTLY holding (and that colour's
+//               unfilled cells), so you are forever knocked off the paint you
+//               were laying and have to pick another. Faster beat, shorter hold.
+//   fade      — the picture starts dark but for a strip; painting reveals a
+//               swath around each cell, and the light you are not holding slowly
+//               goes back out, so you paint what you can see rather than by
+//               number. (Wired in a later drop; the kit is declared now so the
+//               registry and its tests are complete from the first stone.)
+export const DEFAULT_KIT = 'attrition';
+
+export const BOSS_KITS = {
+  attrition: {
+    id: 'attrition', mode: 'attrition', name: 'The Wrong-Colour Day',
+    regenIntervalMs: REGEN_INTERVAL_MS, attackIntervalMs: ATTACK_INTERVAL_MS,
+    firstAttackMs: FIRST_ATTACK_MS, colourDisableMs: COLOUR_DISABLE_MS,
+    cellLockMs: CELL_LOCK_MS, lockFraction: LOCK_FRACTION, regenFrac: REGEN_FRAC,
+  },
+  hoarder: {
+    id: 'hoarder', mode: 'hoarder', name: 'The Hoarder',
+    // No regen (regenFrac 0). A shorter freeze on a faster beat than attrition,
+    // aimed at whatever colour is in your hand — so it nags rather than drains.
+    regenIntervalMs: REGEN_INTERVAL_MS, attackIntervalMs: 16000,
+    firstAttackMs: 12000, colourDisableMs: 7000,
+    cellLockMs: 7000, lockFraction: 0, regenFrac: 0,
+  },
+  fade: {
+    id: 'fade', mode: 'fade', name: 'The Fade',
+    // A reveal fight, not an attrition one. No colour/cell freezes and no drain;
+    // the pressure is the re-fogging (see the reveal constants). Wired later.
+    regenIntervalMs: REGEN_INTERVAL_MS, attackIntervalMs: ATTACK_INTERVAL_MS,
+    firstAttackMs: FIRST_ATTACK_MS, colourDisableMs: 0,
+    cellLockMs: 0, lockFraction: 0, regenFrac: 0,
+    revealRadius: 0.15, refogFraction: 0.06, refogIntervalMs: 5000, startBand: 0.22,
+  },
+};
+
+/** The kit for a boss id, falling back to the original attrition fight so an
+ *  unknown or missing kit can never leave a boss stone with no fight at all. */
+export function bossKit(id) {
+  return BOSS_KITS[id] ?? BOSS_KITS[DEFAULT_KIT];
 }

@@ -1040,6 +1040,96 @@
     ]
   },
   {
+    "id": "dusk-gate",
+    "title": "The Dusk Gate",
+    "cells": 130,
+    "colours": 16,
+    "thumb": [
+      "#daa029",
+      "#ebad1f",
+      "#f8cb48",
+      "#ffe89a",
+      "#9bf047"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
+  {
+    "id": "glowvine-path",
+    "title": "The Glowvine Path",
+    "cells": 117,
+    "colours": 15,
+    "thumb": [
+      "#daa029",
+      "#ebad1f",
+      "#f8cb48",
+      "#ffe89a",
+      "#9bf047"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
+  {
+    "id": "the-hoarder",
+    "title": "The Hoarder",
+    "cells": 144,
+    "colours": 15,
+    "thumb": [
+      "#daa029",
+      "#ebad1f",
+      "#e5b83e",
+      "#f8cb48",
+      "#9bf047"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
+  {
+    "id": "mandala-clearing",
+    "title": "The Mandala Clearing",
+    "cells": 122,
+    "colours": 15,
+    "thumb": [
+      "#daa029",
+      "#ebad1f",
+      "#f8cb48",
+      "#ffe89a",
+      "#9bf047"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
+  {
+    "id": "moth-lantern",
+    "title": "The Moth Lantern",
+    "cells": 108,
+    "colours": 18,
+    "thumb": [
+      "#c0861d",
+      "#daa029",
+      "#ebad1f",
+      "#f8cb48",
+      "#ffe89a"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
+  {
     "id": "rhyme-that-stopped",
     "title": "The Rhyme That Stopped",
     "cells": 74,

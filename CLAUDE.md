@@ -93,15 +93,29 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
   on the next board open) / `beforeStone: <stone>`. Beating the boss plays the
   **`epilogue`** scene (`afterDone: 'wrong-colour-day'`) — the chapter lands local
   (this cloth is saved, Ee still short) and the cliffhanger goes world-scale (X was
-  one hand; the silence took the rest of the world). The finished board then shows a
-  `#chapterNext` "Chapter Two" teaser. Adding a scene is data-only — it just adds a
-  `story.seen` key, no save-shape change.
+  one hand; the silence took the rest of the world). Adding a scene is data-only —
+  it just adds a `story.seen` key, no save-shape change.
+  **Chapter Two** (*Into the Dusk*) begins the ongoing saga. `story.js` is fully
+  multi-chapter now: each chapter carries its own `label` / `place` / `spots`
+  (board layout) / `theme` / `storyRound`, and `chapterUnlocked` / `chapterTheme`
+  gate + skin it. The old `#chapterNext` dead-end is a real **advance door** — a
+  "Begin Chapter N" button plus ‹ › chapter arrows in the story bar, both via
+  `goToChapter` (which sets `story.chapter`). Act I ships four stones + the
+  Hoarder mid-boss (placeholder art from `tools/make-ch2-puzzles.mjs`, Fable-stub
+  scenes) under the `bloom` theme; Act II (The Fade + `nightcut`) and the *Last
+  Light* story round land next. `chapterTheme` can switch a chapter's look at an
+  act break (`theme2` + `actBreak`) — wired, inert until Act II adds `theme2`.
 - **Boss fight** — `boss.js` (pure math) + `game.js`. **The picture is the health
-  bar** (health = unpainted / total). X reclaims painted cells on a timer and
-  casts two spells (disable your held colour; freeze a share of the board).
-  **No-lose:** regen fades to 0 as you near done. All cadence/strength lives in
-  `boss.js` constants (`REGEN_*`, `ATTACK_*`, `CELL_LOCK_MS`, `LOCK_FRACTION`) —
-  it was tuned hard (the *freeze*, not the regen, was what made it feel brutal).
+  bar** (health = unpainted / total); **no-lose** (drain fades to 0 as you near
+  done). Now a **registry of kits** (`BOSS_KITS`): a boss node names a `kit`,
+  `startBoss` resolves it via `bossKitFor`, sets the HUD name from it, and the
+  tick loop dispatches on `kit.mode`. `attrition` is Chapter One's original fight,
+  unchanged (drain + two spells: freeze held colour / freeze a board share; the
+  *freeze* is what made it brutal). `hoarder` (Ch2 mid-boss) never drains — it
+  always grabs the colour in your HAND (freezes that tub + its cells), interrupting
+  rather than attriting, and never your last colour. `fade` (Ch2 chapter boss) is
+  declared, wired next. Per-kit cadence/strength lives on the kit, not module
+  constants.
 - **Abilities** — `abilities.js`. Six: Beacon, Focus, Prism, Explode, Floodgate,
   and (restored) Steady Hand. Pure charge economy, charges refill on level-up.
   `triggerAbility()` (game.js) spends a charge then switches per effect; both
