@@ -4801,6 +4801,27 @@ function renderStoryBoard() {
     wrap.append(b, label);
     path.append(wrap);
   });
+
+  // Chapter One's landing: once every stone is a genuine ✓ (real save progress,
+  // not just dev-opened), the board keeps the world-scale cliffhanger in view —
+  // the Sampler is safe, the world is not. Built once, then shown/hidden.
+  const next = $('chapterNext');
+  if (next) {
+    const allDone = ch.nodes.every((n) => nodeState(n, S.save, true) === 'done');
+    next.classList.toggle('hidden', !allDone);
+    if (allDone && !next.childElementCount) {
+      const mark = document.createElement('div');
+      mark.className = 'chapter-next-mark';
+      mark.textContent = '…';
+      const head = document.createElement('div');
+      head.className = 'chapter-next-title';
+      head.textContent = 'Chapter Two';
+      const sub = document.createElement('div');
+      sub.className = 'chapter-next-sub';
+      sub.textContent = 'The Sampler is safe. The world is not. — coming soon';
+      next.append(mark, head, sub);
+    }
+  }
 }
 
 async function openStone(node) {

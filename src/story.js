@@ -118,6 +118,26 @@ export const CHAPTERS = [
             body: 'X does not move aside. It doesn’t have to. “Go on,” it says, almost kind. “Give them their names. I’ll be right here the whole time, learning how many I can take back off the wet paint. Brush up.” Last one.' },
         ],
       },
+      {
+        // Chapter One's landing — the first time you return to the board after the
+        // boss is beaten (afterDone). The win is deliberately LOCAL: this one cloth
+        // is saved. Ee is still short (its length is a far-off payoff, not this
+        // chapter), and the cliffhanger is world-sized — X was one hand, and while
+        // you painted your seven stones the silence took the rest of the world.
+        id: 'epilogue', trigger: { afterDone: 'wrong-colour-day' },
+        beats: [
+          { speaker: 'Y', title: 'This cloth is done',
+            body: 'The last cell takes its colour and the Sampler lets out a breath. Ask the sky for blue now — go on. …It came. Every thread on this cloth answers to its own name again, and X won’t be lifting them off it. You did it. You gave the Sampler its voice back.' },
+          { speaker: 'Ee', title: 'Still short',
+            body: 'You look to Ee, waiting for it to come up long again. It doesn’t. It stays squat in the border, worn and short. “No,” it says, gently, before you can ask. “Not me. Not yet. I’m not this cloth’s letter — I’m everyone’s. I go long again when the last cloth does, not the first.” A tired warmth. “Don’t look so stricken. You just proved it can be done. That’s more than I had this morning.”' },
+          { speaker: 'X', title: 'One cloth',
+            body: 'Where the paint took hold X has worn to almost nothing — two grey strokes with the weave showing through. It does not rage. It nearly smiles. “One cloth,” it says. “You saved one cloth. Do you know how many there are? I only ever touched this one — I was shown the stroke, out past the edge, by a patient hand that has never once worked in mornings.” Almost gone: “And while you painted your seven little stones… it did the rest. Go on. Look past the frame.”' },
+          { speaker: 'Y', title: 'The whole world',
+            body: 'Y turns and looks past the edge of the Sampler, out beyond the wall, and goes very still. “Oh,” it says, quietly. Out there — every field, every face, every picture on every wall — the colours are all exactly where they belong, bright as ever, and not one of them answers to anything. The silence isn’t in the cloth any more. It’s in the world. “It didn’t stop when we beat it,” Y says. “It spread while we won.”' },
+          { speaker: 'Ee', title: 'One cloth at a time',
+            body: 'Ee draws itself up as tall as short will let it. “One cloth at a time is how a world gets painted,” it says. “And un-painted. And — maybe — painted back. You did the first one; the Sampler will hold.” A stitch of a smile, worn but real. “Rest the brush. Chapter One is yours.” A beat, and past the frame the whole world goes on being silent. “The world is Chapter Two. Come back sharper.”' },
+        ],
+      },
     ],
   },
 ];

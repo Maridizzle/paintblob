@@ -2199,6 +2199,40 @@ button {
 }
 .stone-open + .stone-label { color: inherit; font-weight: 600; }
 
+/* Chapter Two teaser — sits below the finished path in the scroll, keeping the
+   world-scale cliffhanger in view once every stone is a ✓. Muted, dashed,
+   non-interactive; theme-aware through the shared tokens. */
+.chapter-next {
+  margin: 10px auto 18px;
+  max-width: 320px;
+  padding: 15px 18px;
+  border: 1px dashed var(--edge);
+  border-radius: 14px;
+  background: rgba(var(--chip-rgb), 0.45);
+  text-align: center;
+  animation: fade 400ms ease both;
+}
+.chapter-next.hidden { display: none; }
+.chapter-next-mark {
+  font-size: 26px;
+  line-height: 1;
+  letter-spacing: 5px;
+  color: var(--muted);
+}
+.chapter-next-title {
+  margin-top: 6px;
+  font-family: var(--font);
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--text);
+}
+.chapter-next-sub {
+  margin-top: 4px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
 /* The way back to the path while a story stone is up. It shares the top-left
    corner's duty with the undo pill (while painting) and the compare pill (once
    finished) — but unlike those two, which are mutually exclusive, this one
