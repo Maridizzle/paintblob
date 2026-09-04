@@ -101,10 +101,17 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
   gate + skin it. The old `#chapterNext` dead-end is a real **advance door** — a
   "Begin Chapter N" button plus ‹ › chapter arrows in the story bar, both via
   `goToChapter` (which sets `story.chapter`). Act I ships four stones + the
-  Hoarder mid-boss (placeholder art from `tools/make-ch2-puzzles.mjs`, Fable-stub
-  scenes) under the `bloom` theme; Act II (The Fade + `nightcut`) and the *Last
-  Light* story round land next. `chapterTheme` can switch a chapter's look at an
-  act break (`theme2` + `actBreak`) — wired, inert until Act II adds `theme2`.
+  Hoarder mid-boss (placeholder art from `tools/make-ch2-puzzles.mjs`) under the
+  `bloom` theme, **with its cutscenes fully written**; beating the Hoarder flips
+  the world to `nightcut` (carved black-and-white) via `chapterTheme`'s act break
+  (`theme2` + `actBreak`), and the act-break scene plays over the dark board.
+  **The whole saga's shape is in `docs/story-bible.md`** — the marks are
+  punctuation (X the cross-out, the Hoarder's parentheses, The Fade's blank, the
+  Ellipsis as the patient hand, the Full Stop past it), the character arcs, and
+  Act II's prose already written and staged for The Fade. **Keep the bible and
+  `story.js` in step.** Speakers are `letters.js` glyphs: Y, Ee, X, and now the
+  Hoarder (`( )`); The Fade will need one. The Fade + the *Last Light* story
+  round land next.
 - **Boss fight** — `boss.js` (pure math) + `game.js`. **The picture is the health
   bar** (health = unpainted / total); **no-lose** (drain fades to 0 as you near
   done). Now a **registry of kits** (`BOSS_KITS`): a boss node names a `kit`,
@@ -138,7 +145,9 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
   undo step; different-colour takes carry their own colour in the step's `extra`
   so undo credits the right tub.
 - **Themes** — `themes.js`: `void` (default), `fae`, `cobalt` (unlocked by beating
-  the chapter-one boss). `settings.themePinned` (set when the player picks any
+  the chapter-one boss), `bloom` (Ch2 Act I's bioluminescent jungle; unlocked by
+  the Hoarder) and `nightcut` (Ch2 Act II's strict black-and-white; unlocked by
+  The Fade once it ships). `settings.themePinned` (set when the player picks any
   theme) makes their choice win in story too, instead of the chapter theme.
 - **Wardrobe / avatar** — 62 garments across 9 slots (shirt, bottoms, dress,
   socks, shoes + outerwear, headwear, eyewear, neckwear); six render styles;

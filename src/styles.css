@@ -416,6 +416,80 @@
   --stamp-hot: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='70' height='70' viewBox='0 0 70 70' fill='none' stroke='%23e0b53a' stroke-width='1.3'%3E%3Cpath d='M35 8c10 10 14 24 0 54-14-30-10-44 0-54z'/%3E%3Cpath d='M35 12v46' stroke-width='0.8' opacity='0.7'/%3E%3C/svg%3E");
 }
 
+:root[data-theme="nightcut"] {
+  /* Nightcut — chapter two's SECOND act: the moment the colour goes out of the
+     world. Tenebrism as carved darkness — strictly black and white, one solid
+     white light source, black as solid volume, midtones collapsed, the falloff
+     abrupt and geometric. Everything is a silhouette or a lit plane; nothing is
+     a colour. Worn automatically once the Hoarder is beaten (chapterTheme), so
+     the act-break scene plays over a world that has already gone out. */
+
+  /* Black ground: a sheen is pure white, a shade is pure black. */
+  --chip-rgb: 10, 10, 10;
+  --sheen-rgb: 255, 255, 255;
+  --shade-rgb: 0, 0, 0;
+
+  --void: #000000;
+  --ink: #050505;
+  --vinyl: #000000;
+  --card: rgba(8, 8, 8, 0.94);
+  --card-solid: #080808;
+  --band: rgba(255, 255, 255, 0.05);
+  --paper: #030303;
+  --paper-ink: #ffffff;
+  --edge: rgba(255, 255, 255, 0.22);
+  --edge-strong: rgba(255, 255, 255, 0.55);
+  --text: #ffffff;
+  --muted: #8c8c8c;
+
+  /* One light. White to act on, a cut grey beside it, white for the hot note —
+     even the warning is white, because there is no colour left to warn in. */
+  --accent-rgb: 255, 255, 255;
+  --accent2-rgb: 190, 190, 190;
+  --hot-rgb: 255, 255, 255;
+  --accent: #ffffff;
+  --accent2: #bebebe;
+  --hot: #ffffff;
+  --danger: #ffffff;
+  --on-accent: #000000;
+
+  /* A single white beam from the upper left and nothing else — no second
+     source, no ambient fill. The falloff is short so the black stays solid. */
+  --void-glow:
+    radial-gradient(90% 70% at 12% -6%, rgba(255, 255, 255, 0.22), transparent 42%);
+
+  /* Carved facets: hard white hairlines at the knotwork angles. */
+  --streaks:
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 14px),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.04) 0 1px, transparent 1px 18px);
+
+  /* Light-cut points where the beam catches an edge. Few, and all white. */
+  --sparks:
+    radial-gradient(circle at 11% 22%, rgba(255, 255, 255, 0.6) 0, transparent 3px),
+    radial-gradient(circle at 27% 41%, rgba(255, 255, 255, 0.45) 0, transparent 4px),
+    radial-gradient(circle at 44% 14%, rgba(255, 255, 255, 0.5) 0, transparent 3px),
+    radial-gradient(circle at 63% 33%, rgba(255, 255, 255, 0.4) 0, transparent 4px),
+    radial-gradient(circle at 79% 30%, rgba(255, 255, 255, 0.45) 0, transparent 3px),
+    radial-gradient(circle at 22% 6%, rgba(255, 255, 255, 0.5) 0, transparent 3px);
+
+  --thread-cyan: repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.6) 0 5px, transparent 5px 11px);
+  --thread-green: repeating-linear-gradient(to bottom, rgba(190, 190, 190, 0.6) 0 5px, transparent 5px 11px);
+
+  /* The beam's haloes — hard, white, short. */
+  --glow-cyan: 0 0 14px rgba(255, 255, 255, 0.5);
+  --glow-green: 0 0 14px rgba(190, 190, 190, 0.45);
+  --glow-hot: 0 0 14px rgba(255, 255, 255, 0.55);
+  --cut: 0 1px 0 rgba(255, 255, 255, 0.12), 0 9px 24px rgba(0, 0, 0, 0.8);
+  --radius: 16px;
+
+  /* A dry stone grain. */
+  --tx-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.5' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
+  --tx-stitch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='4'%3E%3Cpath d='M1 3L7 1' stroke='%23ffffff' stroke-width='1.1' stroke-linecap='round' opacity='0.5'/%3E%3Ccircle cx='10.5' cy='2' r='0.7' fill='%23ffffff' opacity='0.5'/%3E%3C/svg%3E");
+  /* A blank line and a single dot — the marks of this act, and of what is past it. */
+  --stamp-cyan: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='70' height='70' viewBox='0 0 70 70' fill='none' stroke='%23ffffff' stroke-width='1.4'%3E%3Cpath d='M10 48h50'/%3E%3Cpath d='M14 22h22M42 22h14' opacity='0.5'/%3E%3C/svg%3E");
+  --stamp-hot: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='70' height='70' viewBox='0 0 70 70' fill='%23ffffff'%3E%3Ccircle cx='35' cy='35' r='6'/%3E%3C/svg%3E");
+}
+
 
 
 
@@ -2092,6 +2166,7 @@ button {
 .lt-y { --lt-body: var(--accent2); }
 .lt-ee { --lt-body: var(--accent); }
 .lt-x { --lt-body: var(--muted); } /* the un-namer: drained grey, no colour of its own */
+.lt-hoarder { --lt-body: var(--hot); } /* the grabby one: the colour of whatever it is clutching */
 .lt-body { fill: var(--lt-body); }
 .lt-white { fill: rgba(var(--sheen-rgb), 0.92); }
 .lt-eye { fill: rgba(var(--shade-rgb), 0.9); }

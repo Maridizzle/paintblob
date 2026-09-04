@@ -164,17 +164,22 @@ export const CHAPTERS = [
   // colour). Act II will strip that to carved black-and-white (`nightcut`) at
   // the act break — the colour visibly draining as the un-naming deepens.
   //
-  // Scene bodies below are PROVISIONAL stubs — the structure (triggers,
-  // speakers, order) is what is wired; the final prose is authored separately.
+  // Act I's scenes are fully written below. Act II's — The Fade, and the
+  // chapter's close — are written too, and wait in docs/story-bible.md until the
+  // Fade's stones exist to hang them on. The shape of the WHOLE saga (where the
+  // hand is, what is past it) lives in that bible; keep the two in step.
   {
     id: 2,
     label: 'Two',
     title: 'Into the Dusk',
     place: 'the dusk road',
     theme: 'bloom',
-    // The stone whose completion ends Act I. When Act II ships, `theme2` will
-    // take over here (see chapterTheme) so beating the Hoarder darkens the world.
+    // The act break. Beating the Hoarder is the moment the colour goes out of the
+    // world, so the chapter's look flips from bloom to nightcut (carved black and
+    // white) the next time the board opens — see chapterTheme — and the act-break
+    // scene then plays over the already-dark board: first the shock, then Ee.
     actBreak: 'the-hoarder',
+    theme2: 'nightcut',
     // Act I reuses The Swap for now; the dusk-flavoured "Last Light" round (and
     // the storyRound dispatch that reads this field) land in the next drop.
     storyRound: 'swap',
@@ -199,21 +204,85 @@ export const CHAPTERS = [
 
     scenes: [
       {
+        // Stepping off the edge of the picture. The scale of it; the light going;
+        // and the first quiet seed of the thing behind everything — Y trails off.
         id: 'opening', trigger: { onEnter: true },
         beats: [
-          { speaker: 'Y', title: 'Past the frame',
-            body: '(placeholder — Fable) The Sampler is behind you now, and the wall with it. Ahead is the world the epilogue warned about: everything where it belongs, the light going amber then grey, and not one colour answering when you call it.' },
-          { speaker: 'Ee', title: 'Still short',
-            body: '(placeholder — Fable) Ee comes along, still squat and worn. One cloth at a time, it says. This is the next one — and the road out here is longer than any stone on the Sampler.' },
+          { speaker: 'Y', title: 'Past the edge',
+            body: '“Here’s the thing nobody tells you about walking off the edge of a picture: the picture was the SMALL part. The Sampler was one cloth on one wall. And this —” Y stops. Y does not, in fact, finish that sentence, because out past the frame there is a whole world, every inch of it coloured, the light going, and not one thing in it that will come when it’s called. “Wall,” Y says at last, and pats it. “That one I’m sure of. We’ll build from there.”' },
+          { speaker: 'Ee', title: 'The road',
+            body: 'Ee comes up out of the ground the way it used to come up out of a border — slowly, and shorter than you’d like. “That’s the road,” it says. “It went to everywhere, once, so it carried everywhere’s names, so it was the first thing out here to go quiet. The signposts still point. They just don’t say.”' },
+          { speaker: 'Y', title: 'Dressed for it',
+            body: 'And look at it all. The green out here isn’t green the way the Sampler’s green was green — it’s LOUD. Vines lit from the inside like somebody left them on. Leaves the colour of a lime that has just been told good news. Everything glowing as if it has been warned this is the last evening there will ever be, and it had better dress for it. “Which,” Y admits, “is roughly what I’m afraid of.”' },
+          { speaker: 'Ee', title: 'What the wild kept',
+            body: '“Don’t be fooled by the glow. Some of this never had a name we gave it — the vines named themselves, and a thing that names itself doesn’t need us. It’s the things WE named that are stood out here waiting. A gate. A road. A lantern somebody lit and meant to come back to.” Ee looks a long way down the road. “Those are ours to fetch.”' },
+          { speaker: 'Y', title: 'Five stones',
+            body: 'There’s a way through, same as before — stepping stones, five of them across this first stretch. A gate, a path, a clearing, a lantern. And the fifth has something sat on it. Ee says it doesn’t cross things out the way X did. Ee says it GRABS. “So we do the four,” Y says, “and we get good, and then we go and have a word with the grabby one. Brush up. Mind the vines — they’re not on strike, they’re just enthusiastic.”' },
+          { speaker: 'Ee', title: 'Slowly',
+            body: '“One cloth at a time,” Ee says, which it has said before, and means more now. Then, quieter: “Something taught X. Out here, past the end of this road, past all of them. It won’t come to us. It never comes to anyone — that’s its whole method. So we go to it. Slowly.” A stitch of a smile. “It has all the time in the world. We have a brush. Those are the sides.”' },
         ],
       },
       {
+        // First stone down: it works out here too. And the first sign of what is
+        // waiting at the end of the stretch — not un-naming. Taking.
+        id: 'past-the-frame', trigger: { afterDone: 'dusk-gate' },
+        beats: [
+          { speaker: 'Y', title: 'It came',
+            body: 'The gate knows its own colours. You asked it for gold and it went gold like it had been stood there a year with its hand out. It works out here too. It works EVERYWHERE, apparently, which is the best news anyone’s had since the colours went quiet — and let it be noted that I did not cry. I’m a letter. We haven’t the plumbing.' },
+          { speaker: 'Ee', title: 'Something’s been keeping',
+            body: '“Look at the path ahead before you get pleased with yourself.” Ee points with the whole of its short self. A vine with the green scooped off it. A flower with a hole where its middle should be. A bit of gold gone from the road like a bite from a biscuit. “Something’s been along here. Not un-naming — X un-named, and everything stayed put. This TAKES. It’s been collecting colours it can’t ask for and carrying them off, and I’d rather you learned that here than up close.”' },
+          { speaker: 'Y', title: 'Noted',
+            body: '“Grabby,” Y says. “Right. Going on the list — under ‘things I’m frightened of that are technically just shapes.’” It is a growing list. Onward.' },
+        ],
+      },
+      {
+        // The clearing. Y finds the one thing out here that was never on the
+        // payroll, and puts down a weight it did not know it was carrying.
+        id: 'the-wheel', trigger: { afterDone: 'mandala-clearing' },
+        beats: [
+          { speaker: 'Y', title: 'Nobody made this',
+            body: 'Look at the clearing. Properly. The leaves grew in a wheel — spoke, spoke, spoke, all the way round, out from the bloom in the middle where it glows. Nobody planted it like that. Nobody stood here with a ruler and a plan. It just grew right. “I stood in the middle of it for a while,” Y says, “and I’ll tell you what got me.”' },
+          { speaker: 'Y', title: 'Never on the payroll',
+            body: '“It doesn’t answer to anything. It never did. It never NEEDED to — it isn’t on strike, it was never on the payroll. It’s just being what it is, in a circle, in the dark, and it’s fine.” Y goes quiet for a moment. “I’ve been walking about carrying the whole world like it’s mine to name. It isn’t. Some of it was always going to be all right without me. I’m allowed to find that a relief. I’m a Y. I’m allowed two feelings at once.”' },
+          { speaker: 'Ee', title: 'The gifts',
+            body: '“The wild kept its names because it never handed them to anyone,” Ee says. “We did. Every gate and road and lantern out here has a name somebody GAVE it — and a gift can be taken back. That’s what’s sat at the end of this stretch, on a pile of them.” Ee nods on up the path. “Past the lantern. The moths are still spelling its name in circles, over and over, which is either devotion or the only trick they’ve got. Probably both. Go and see.”' },
+        ],
+      },
+      {
+        // The mid-boss intro. The Hoarder gets its own voice and the last word,
+        // the way X did — and Ee explains the fight in character.
         id: 'mid-boss', trigger: { beforeStone: 'the-hoarder' },
         beats: [
-          { speaker: 'Ee', title: 'It hoards',
-            body: '(placeholder — Fable) Ee stops you. Whatever this is, it does not un-name the way X did. It grabs. Whatever colour is in your hand, it will reach for that one — and keep reaching.' },
-          { speaker: 'Y', title: 'Keep moving',
-            body: '(placeholder — Fable) So do not settle, Y says. It takes the colour you are using; take up another and paint on. It can only hold one at a time. Brush up.' },
+          { speaker: 'Hoarder', title: 'Mine',
+            body: 'Something sits on the last stone, and it is all arms. Two long curved arms, bracketing a heap — a green it can’t call green, a red it has no word for, a whole clutched armful of gold. “Mine,” it says. It has a small, wet, hopeful voice. “Mine. And mine. And — that one. Whatever that one is. Mine.”' },
+          { speaker: 'Hoarder', title: 'Set aside',
+            body: '“You’re wondering what I am. I’m the bit of a sentence that gets put to one side. (Like this.) Things go in me, and they don’t come out. Not crossed out — X is so DRAMATIC — just kept. Set aside. For later.” It hugs the heap tighter. “I’ve got a great many laters.”' },
+          { speaker: 'Ee', title: 'It takes what you’re holding',
+            body: 'Ee sets itself beside you, low and square. “Listen. It can’t ask for anything, so it takes what you’ve already picked up. Whatever colour is in your hand — THAT’S the one it wants. It’ll grab it, and every cell that goes with it, and hold on. But it can only hold one at a time. So don’t settle. Keep changing hands. Paint on.”' },
+          { speaker: 'Y', title: 'You can’t keep a name',
+            body: '“And here’s the bit it hasn’t worked out,” Y says, not quite steady, going anyway. “You can’t hoard a colour that answers when it’s called. Name a thing and it isn’t yours to own any more — it’s a thing that comes when you ask and goes home when you’re done. Every one we name is one it can’t keep. So we don’t fight it for the pile. We paint until there’s no pile.” A breath. “Brush up. Switch hands. Don’t let it get comfortable.”' },
+          { speaker: 'Hoarder', title: 'Go on',
+            body: 'The Hoarder leans in over its heap, arms tight, eyes wide and wanting. “Go on, then,” it says. “Pick one up. I like it when you pick one up.” (It really does.)' },
+        ],
+      },
+      {
+        // Act I lands — and the light goes. Plays over a board that has already
+        // flipped to nightcut (see theme2), so the player sees it before Y says it.
+        // The hand gets its name here, and Ee's shortness gets its cause.
+        id: 'act-break', trigger: { afterDone: 'the-hoarder' },
+        beats: [
+          { speaker: 'Y', title: 'It let go',
+            body: 'It let go. Did you see? Every colour you named just walked out of its arms — it couldn’t hold them, there was nothing left to hold — until it was sat there with its arms round nothing, saying “mine” to a puddle of light. Then it sort of deflated. Folded up. Two brackets round an empty space, which is all it ever was. “I nearly felt sorry for it,” Y says. “Then I remembered it went for my gold.”' },
+          { speaker: 'Ee', title: 'Frightened',
+            body: '“Don’t be too hard on it. It wasn’t wicked. It was frightened. It couldn’t ask for anything, so it kept everything — and keeping everything is how you end up with nothing you can use.” Ee watches the empty brackets a moment longer. “Remember that when we meet the next one. They’re all frightened, the marks. That’s rather the point of them.”' },
+          { speaker: 'Y', title: 'Ee. The light.',
+            body: '“Ee.” Y has gone very still. “Ee — the light.” Out past the lantern, the evening gives up. It doesn’t go dark the way a night goes dark; that would be ordinary, that you could sleep through. The colour goes OUT of things. The green, the gold, the glow — out, like candles, one after another down the road, and everything left exactly where it was, in black and white. A picture somebody stopped colouring in. “That’s not un-named,” Y says. “That’s… gone.”' },
+          { speaker: 'Ee', title: 'Dot, dot, dot',
+            body: '“That’s its real work.” Ee doesn’t raise its voice. It never has. “X crossed names out. The grabby one kept them. This —” the road ahead, cut out of the black by one thin light “— this is what happens when nobody finishes looking. It fades. It trails off. It goes …” Ee lets the word die on purpose, and in the quiet you can hear the shape of the thing. “That’s its name, if you want it. Dot, dot, dot. The Ellipsis. It never works in mornings, because in the morning people LOOK. It waits for evening. It waits for you to stop mid-sentence and never come back.”' },
+          { speaker: 'Ee', title: 'Why I’m short',
+            body: '“It’s why I’m short, if you were wondering. Not X — X only did the tidying. Him.” Ee’s voice is very level. “People started saying me and not finishing. Ee-… eh. Trailing off in the middle of a letter. And a letter nobody finishes gets a little shorter every year, until one morning it’s this.” A pause the length of a short vowel. “I don’t tell you for pity. I tell you so you know what we’re painting against.”' },
+          { speaker: 'Y', title: 'Then we finish',
+            body: '“Then we finish.” Y says it before Y has decided to. “That’s the whole plan, isn’t it? It always was. We finish things. Every cell, every name, all the way to the end of the sentence — no dots.” Y looks down the black road at the one thin light on it. “We paint what we can see. And we keep looking.” Then, because it is still Y: “I’d also like it noted that I’m now frightened of punctuation. New low. Even for a letter. Come on.”' },
         ],
       },
     ],

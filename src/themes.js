@@ -54,6 +54,19 @@ export const THEMES = [
     chapter: 2,
     unlockedBy: 'the-hoarder',
   },
+  {
+    id: 'nightcut',
+    label: 'Nightcut',
+    blurb: 'Black and white only. One light, and everything it carves out of the dark.',
+    // Chapter two's SECOND-act look — the moment the colour goes out of the
+    // world. Tenebrism as carved darkness: black is solid, one white light,
+    // midtones collapse. Worn by Act II automatically (story.js chapterTheme
+    // flips to it the moment the Hoarder is beaten); earned for keeping anywhere
+    // by beating the chapter boss, The Fade — whose stone ships with Act II, so
+    // until then the picker draws this locked, which is exactly right.
+    chapter: 2,
+    unlockedBy: 'the-fade',
+  },
 ];
 
 const BY_ID = new Map(THEMES.map((t) => [t.id, t]));

@@ -1224,11 +1224,15 @@ test('chapters unlock one leg at a time, gated on the previous boss', () => {
 test('chapterTheme hands out the chapter look, ready to switch at an act break', () => {
   assert.equal(chapterTheme(getChapter(1), { progress: {} }), 'fae');
   assert.equal(chapterTheme(getChapter(2), { progress: {} }), 'bloom', 'chapter two wears bloom in Act I');
-  // With no theme2 yet, clearing the act break changes nothing — the switch is
-  // wired and inert until Act II ships its second look.
+  // Clearing the act break is the moment the light goes out of the world: the
+  // chapter flips from its first look to its second, and both must be real.
   const ch2 = getChapter(2);
   const brk = ch2.nodes.find((n) => n.id === ch2.actBreak);
-  assert.equal(chapterTheme(ch2, doneSaveOf(brk.puzzle)), 'bloom', 'no theme2 → stays on the first look');
+  assert.ok(brk, 'the act break names a real stone');
+  assert.ok(isTheme(ch2.theme2), `theme2 "${ch2.theme2}" is not a real theme`);
+  assert.equal(chapterTheme(ch2, doneSaveOf(brk.puzzle)), 'nightcut', 'beating the Hoarder darkens the world');
+  // A chapter with no second look keeps its one theme whatever is done.
+  assert.equal(chapterTheme(getChapter(1), doneSaveOf('wrong-colour-day')), 'fae');
 });
 
 test('every story puzzle id is a real manifest entry, and only story ids read as story', () => {
@@ -1277,7 +1281,7 @@ test('opening a free picture in story mode drops cleanly back to free mode', () 
 });
 
 test('the letters are drawable, wash-shaded, and never do colour maths', () => {
-  for (const id of ['Y', 'Ee', 'X']) {
+  for (const id of ['Y', 'Ee', 'X', 'Hoarder']) {
     assert.ok(isSpeaker(id), `${id} should be a known speaker`);
     const svg = letterSVG(id);
     assert.match(svg, /^<svg/, `${id} must render an svg`);
