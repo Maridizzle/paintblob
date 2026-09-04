@@ -36,7 +36,7 @@ import { Tour } from './tour.js';
 import {
   getChapter, chapterOr, defaultStory, nodeState, isStoryPuzzle, isBossPuzzle,
   onEnterScene, beforeStoneScene, pendingBoardScene, sceneKey, sceneSeen,
-  bossKitFor, chapterUnlocked, chapterTheme, isChapter,
+  bossKitFor, chapterUnlocked, chapterTheme, chapterReleased, isChapter, DEFAULT_CHAPTER,
 } from './story.js';
 import {
   regenCount, pickWipeTargets, pickLockTargets, chooseAttack, difficultyMult,
@@ -4762,11 +4762,24 @@ function playScene(scene, finishLabel, onDone) {
 // A stone's board position now lives on its chapter (story.js `spots`), so each
 // chapter lays out its own winding path and its own number of stones.
 
-// Move to another chapter — only ever one that exists and is unlocked. Re-enters
+// Whether the player can actually walk into chapter `id` right now: it must
+// EXIST, be EARNED (previous chapter beaten — chapterUnlocked), AND have its art
+// SHIPPED (chapterReleased). Dev mode bypasses the last two so a locked chapter
+// with placeholder art can still be built and walked. One predicate backs every
+// entry point — the arrows, the "begin the next chapter" button, and
+// goToChapter — so a chapter can never be reached by one door that another
+// door would refuse.
+function canEnterChapter(id) {
+  if (!isChapter(id)) return false;
+  if (S.dev) return true;
+  return chapterUnlocked(id, S.save) && chapterReleased(getChapter(id));
+}
+
+// Move to another chapter — only ever one canEnterChapter allows. Re-enters
 // through enterStory so the destination's opening scene plays the first time and
 // its ambient look is applied; a revisit just shows the board.
 async function goToChapter(id) {
-  if (!isChapter(id) || !chapterUnlocked(id, S.save)) return;
+  if (!canEnterChapter(id)) return;
   S.save.story.chapter = chapterOr(id);
   persist(true);
   closeStoryBoard();
@@ -4807,14 +4820,14 @@ function renderChapterTitle(ch) {
     a.addEventListener('click', () => goToChapter(targetId));
     return a;
   };
-  if (isChapter(ch.id - 1) && chapterUnlocked(ch.id - 1, S.save)) {
+  if (canEnterChapter(ch.id - 1)) {
     host.append(arrow('‹', ch.id - 1, 'Earlier chapter'));
   }
   const name = document.createElement('span');
   name.className = 'chapter-name';
   name.textContent = `Chapter ${ch.label ?? 'One'} · ${ch.title}`;
   host.append(name);
-  if (isChapter(ch.id + 1) && chapterUnlocked(ch.id + 1, S.save)) {
+  if (canEnterChapter(ch.id + 1)) {
     host.append(arrow('›', ch.id + 1, 'Next chapter'));
   }
 }
@@ -4899,7 +4912,8 @@ function renderStoryBoard() {
     next.classList.toggle('hidden', !allDone);
     if (allDone) {
       const nextId = ch.id + 1;
-      const onward = isChapter(nextId) && chapterUnlocked(nextId, S.save);
+      const onward = canEnterChapter(nextId);      // earned, shipped (or dev): a real door
+      const teased = !onward && isChapter(nextId); // the chapter exists, but its art hasn't shipped
       const mark = document.createElement('div');
       mark.className = 'chapter-next-mark';
       mark.textContent = onward ? '→' : '…';
@@ -4907,7 +4921,9 @@ function renderStoryBoard() {
       head.className = 'chapter-next-title';
       head.textContent = onward
         ? `Chapter ${getChapter(nextId).label} · ${getChapter(nextId).title}`
-        : 'The road goes on';
+        : teased
+          ? `Chapter ${getChapter(nextId).label}`
+          : 'The road goes on';
       next.append(mark, head);
       if (onward) {
         const go = document.createElement('button');
@@ -4919,7 +4935,9 @@ function renderStoryBoard() {
       } else {
         const sub = document.createElement('div');
         sub.className = 'chapter-next-sub';
-        sub.textContent = 'More of this chapter is still to come.';
+        sub.textContent = teased
+          ? 'Still being painted. Come back soon.'
+          : 'More of this chapter is still to come.';
         next.append(sub);
       }
     }
@@ -5194,6 +5212,13 @@ async function boot() {
   S.save.story ??= defaultStory();
   S.save.story.chapter = chapterOr(S.save.story.chapter);
   S.save.story.seen ??= {};
+  // No shipped build ever opened a chapter whose art wasn't ready, but a dev/test
+  // session can persist one — so a plain player never boots stranded on an
+  // un-released chapter of placeholder art. Fall back to the first chapter; dev
+  // keeps its place (it is how the un-released chapter gets built).
+  if (!S.dev && !chapterReleased(getChapter(S.save.story.chapter))) {
+    S.save.story.chapter = DEFAULT_CHAPTER;
+  }
 
   // A save from before this feature existed has no `avatar` key at all — the
   // DEFAULT_SAVE merge in platform.js/main.cjs already covers that case with

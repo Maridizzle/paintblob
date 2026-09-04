@@ -170,6 +170,12 @@ export const CHAPTERS = [
   // hand is, what is past it) lives in that bible; keep the two in step.
   {
     id: 2,
+    // NOT YET REACHABLE. Act I ships with placeholder art (make-ch2-puzzles.mjs),
+    // and Chapter Two must not open to players until real art is baked. The
+    // board teases it; the advance door stays shut (dev mode excepted). The PR
+    // that bakes the real art flips this to `true` (or deletes the line) and
+    // updates the "stays locked" test in the same diff. See docs/story-art-prompts.md.
+    released: false,
     label: 'Two',
     title: 'Into the Dusk',
     place: 'the dusk road',
@@ -432,6 +438,18 @@ export function chapterUnlocked(id, save) {
   if (!prev) return false;
   const last = prev.nodes[prev.nodes.length - 1];
   return !!(last?.puzzle && save?.progress?.[last.puzzle]?.done);
+}
+
+/**
+ * Whether a chapter's CONTENT is shipped — its stones wear their real art, not
+ * placeholders. Separate from `chapterUnlocked` (which is about earning it):
+ * a chapter can be earned but held back until its pictures are painted. A
+ * chapter with no `released` flag is released; one carrying `released: false`
+ * stays teased-but-shut until that flag is flipped (in the PR that bakes its
+ * art). Dev mode ignores this — see game.js `canEnterChapter`.
+ */
+export function chapterReleased(chapter) {
+  return chapter?.released !== false;
 }
 
 /**

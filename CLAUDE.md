@@ -112,6 +112,14 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
   `story.js` in step.** Speakers are `letters.js` glyphs: Y, Ee, X, and now the
   Hoarder (`( )`); The Fade will need one. The Fade + the *Last Light* story
   round land next.
+  **Chapter Two is gated shut until its real art is baked** — the chapter
+  carries `released: false`, `game.js` `canEnterChapter` refuses a non-dev player
+  (arrows, the Begin-Chapter button, and `goToChapter` all route through it), and
+  boot clamps a stray save off it. The board *teases* Chapter Two; the door stays
+  closed. **Baking the real art is the release trigger:** that PR flips
+  `released` and updates the "chapter two stays locked until its art ships"
+  tripwire test in the same diff. Dev mode (`?dev`) ignores the gate so the art
+  and Act II stay buildable.
 - **Boss fight** — `boss.js` (pure math) + `game.js`. **The picture is the health
   bar** (health = unpainted / total); **no-lose** (drain fades to 0 as you near
   done). Now a **registry of kits** (`BOSS_KITS`): a boss node names a `kit`,

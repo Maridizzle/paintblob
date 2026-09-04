@@ -48,7 +48,7 @@ import {
   CHAPTERS, DEFAULT_CHAPTER, getChapter, chapterOr, defaultStory, nodeState,
   isStoryPuzzle, isBossPuzzle, openingSeen, sceneSeen, sceneKey,
   onEnterScene, beforeStoneScene, pendingBoardScene,
-  bossKitFor, chapterUnlocked, chapterTheme, isChapter,
+  bossKitFor, chapterUnlocked, chapterTheme, chapterReleased, isChapter,
 } from '../src/story.js';
 import {
   healthFraction, regenCount, pickWipeTargets, pickLockTargets, chooseAttack, difficultyMult,
@@ -1128,10 +1128,39 @@ test('a completed chapter opens a real door onward, not a dead-end teaser', () =
   const body = game.slice(game.indexOf('function renderStoryBoard'), game.indexOf('async function openStone'));
   assert.match(body, /ch\.nodes\.every\(\(n\) => nodeState\(n, S\.save, true\) === 'done'\)/,
     'the card shows only when every stone is a real ✓ (not merely dev-opened)');
-  assert.match(body, /isChapter\(nextId\) && chapterUnlocked\(nextId, S\.save\)/,
-    'onward is gated on the next chapter both existing AND being unlocked');
+  assert.match(body, /const onward = canEnterChapter\(nextId\)/,
+    'onward is the one reachability predicate — exists AND earned AND art shipped (or dev)');
+  assert.match(body, /const teased = !onward && isChapter\(nextId\)/,
+    'a chapter that exists but is not enterable yet gets a coming-soon teaser, not the button');
   assert.match(body, /goToChapter\(nextId\)/, 'the advance control moves to the next chapter');
-  assert.match(body, /Begin Chapter/, 'a real "Begin Chapter …" button, not a static teaser');
+  assert.match(body, /Begin Chapter/, 'a real "Begin Chapter …" button when it is a real door');
+});
+
+test('the advance door is one predicate — earned AND released, dev bypasses both', () => {
+  const game = readSource('src/game.js');
+  const fn = game.slice(game.indexOf('function canEnterChapter'), game.indexOf('async function goToChapter'));
+  assert.match(fn, /if \(S\.dev\) return true/, 'dev mode reaches any chapter, so locked art stays buildable');
+  assert.match(fn, /chapterUnlocked\(id, S\.save\) && chapterReleased\(getChapter\(id\)\)/,
+    'a non-dev player needs the chapter earned AND its art shipped');
+  // Every entry point routes through it — no back door.
+  const gate = game.slice(game.indexOf('async function goToChapter'), game.indexOf('async function openStoryBoard'));
+  assert.match(gate, /if \(!canEnterChapter\(id\)\) return;/, 'goToChapter refuses anything canEnterChapter refuses');
+  const title = game.slice(game.indexOf('function renderChapterTitle'), game.indexOf('function renderStoryBoard'));
+  assert.match(title, /canEnterChapter\(ch\.id - 1\)/, 'the ‹ arrow is gated');
+  assert.match(title, /canEnterChapter\(ch\.id \+ 1\)/, 'the › arrow is gated');
+  // And boot never strands a plain player on an un-released chapter.
+  assert.match(game, /!S\.dev && !chapterReleased\(getChapter\(S\.save\.story\.chapter\)\)/,
+    'boot clamps a non-dev save off an un-released chapter');
+});
+
+test('chapter two stays locked until its art ships', () => {
+  // A tripwire: Chapter Two ships with placeholder art, so it must NOT be
+  // released. The PR that bakes real art flips this and updates this test in the
+  // same diff — so the gate can never melt away by accident.
+  assert.equal(getChapter(2).released, false, 'chapter two is held back until its pictures are painted');
+  assert.equal(chapterReleased(getChapter(2)), false, 'chapterReleased agrees it is not shipped');
+  assert.equal(chapterReleased(getChapter(1)), true, 'chapter one (no flag) is released');
+  assert.equal(chapterReleased({}), true, 'a chapter with no released flag counts as released');
 });
 
 // ---- Chapter Two + the saga backbone (M1) ------------------------------------
