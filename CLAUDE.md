@@ -168,6 +168,16 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
     Patina turns the unpainted space black with a copper wireframe while painted
     cells keep their true photo colour. Every other theme inherits the light
     defaults, so only Patina changes the picture.
+- **Fill styles** — `fill-fx.js` + `settings.fill` (a picker in Settings, shown
+  even in low-stim since it is a fill *control*). The tap→fill animation is the
+  player's choice: `blob` (the classic full-picture explosion, `paint-fx.js`'s
+  `Burst`), `burst`/`scribble`/`rise` (quick **in-cell** effects — a `CellFill`
+  that duck-types the Burst so it rides the same `S.bursts` frame loop and
+  `commitFill` with no special-casing), and `none` (instant, no animation).
+  `launch()` (game.js) branches on the style; only the blob fires the suck/fill
+  audio cues. Save-shape: `fill` in both `DEFAULT_SAVE` literals + a boot
+  backfill. The "Blob speed/density/opacity" sliders tune the blob (speed also
+  scales the in-cell fills).
 - **Wardrobe / avatar** — 62 garments across 9 slots (shirt, bottoms, dress,
   socks, shoes + outerwear, headwear, eyewear, neckwear); six render styles;
   fixed-accent multicolor. The Outfits shop groups by slot.

@@ -1,5 +1,6 @@
 import { Board } from './render.js';
 import { Burst, audioCue } from './paint-fx.js';
+import { CellFill, FILL_STYLES, DEFAULT_FILL } from './fill-fx.js';
 import { Sfx } from './audio.js';
 import { ACHIEVEMENTS, Achievements, StreakTracker } from './achievements.js';
 import { accruePassiveHint, grantHints, spendHint, pickHintTarget } from './hints.js';
@@ -644,22 +645,6 @@ function tryPaint(clientX, clientY, pointerType) {
 }
 
 function launch(cell, point) {
-  const burst = new Burst({
-    origin: point,
-    sink: cell.anchor,
-    colour: board.hexOf(cell.colour),
-    width: S.puzzle.width,
-    height: S.puzzle.height,
-    reach: cell.reach,
-    cellPath: cell.path,
-    seed: S.seed++,
-    speed: S.save.settings.speed ?? 1,
-    density: S.save.settings.density ?? 1,
-    opacity: S.save.settings.opacity ?? 0.7,
-  });
-  burst.cell = cell;
-  burst.applied = false;
-  S.bursts.push(burst);
   // Claimed the instant it launches, not when it lands — otherwise a second
   // rapid click on the same cell launches a duplicate burst, and the cell
   // gets double-counted (and the tub's remaining count with it) once both commit.
@@ -672,6 +657,47 @@ function launch(cell, point) {
 
   board.setHover(-1);
   sfx.play('splat');
+
+  // The fill animation is the player's choice (settings.fill). 'blob' is the
+  // classic full-picture explosion; 'burst'/'scribble'/'rise' are quick in-cell
+  // effects (fill-fx.js); 'none' skips the animation and commits at once. Every
+  // animated style shares the Burst's interface, so it rides the same frame loop
+  // and commits through commitFill the same way — only the blob fires the
+  // suck/fill audio cues (see the frame loop).
+  const style = S.save.settings.fill ?? DEFAULT_FILL;
+  if (style === 'none') {
+    commitFill({ cell });
+    ensureFrame();
+    return;
+  }
+
+  const anim = style === 'blob'
+    ? new Burst({
+        origin: point,
+        sink: cell.anchor,
+        colour: board.hexOf(cell.colour),
+        width: S.puzzle.width,
+        height: S.puzzle.height,
+        reach: cell.reach,
+        cellPath: cell.path,
+        seed: S.seed++,
+        speed: S.save.settings.speed ?? 1,
+        density: S.save.settings.density ?? 1,
+        opacity: S.save.settings.opacity ?? 0.7,
+      })
+    : new CellFill(style, {
+        origin: point,
+        sink: cell.anchor,
+        colour: board.hexOf(cell.colour),
+        reach: cell.reach,
+        cellPath: cell.path,
+        bounds: cell.bounds,
+        seed: S.seed++,
+        speed: S.save.settings.speed ?? 1,
+      });
+  anim.cell = cell;
+  anim.applied = false;
+  S.bursts.push(anim);
   ensureFrame();
 }
 
@@ -1076,7 +1102,9 @@ function frame(now) {
   for (const burst of S.bursts) {
     const before = burst.elapsed;
     burst.update(dt);
-    const cue = audioCue(before, burst.elapsed);
+    // Only the blob has the suck/fill phases those cues mark; the in-cell fills
+    // (CellFill) get just the launch 'splat', so keep them off the cue clock.
+    const cue = burst instanceof Burst ? audioCue(before, burst.elapsed) : null;
     if (cue) sfx.play(cue);
     if (burst.filled && !burst.applied) {
       burst.applied = true;
@@ -3018,7 +3046,7 @@ function renderSettings(body) {
   const themeSub = document.createElement('div');
   themeSub.className = 'sub';
   const themeSeg = document.createElement('div');
-  themeSeg.className = 'segmented wrap';
+  themeSeg.className = 'segmented wrap theme-seg';
   const syncThemeSub = () => {
     themeSub.textContent = THEMES.find((t) => t.id === themeOr(settings.theme))?.blurb ?? '';
   };
@@ -3059,8 +3087,41 @@ function renderSettings(body) {
   slider('Volume', 'volume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`, (v) => sfx.setVolume(v));
   }
 
-  // The blob is the one animation low-stim keeps, so its controls always show —
-  // and they can make it calmer still: slower, sparser, fainter.
+  // Fill style: how a tapped cell fills in. Always shown — even in low-stim,
+  // because a calmer fill (None / Rise) is exactly what a motion-sensitive
+  // player wants. Mirrors the theme picker's chip row.
+  const fillRow = row();
+  const fillText = document.createElement('div');
+  fillText.className = 'grow';
+  const fillLabelEl = document.createElement('div');
+  fillLabelEl.className = 'label';
+  fillLabelEl.textContent = 'Fill style';
+  const fillSub = document.createElement('div');
+  fillSub.className = 'sub';
+  const fillSeg = document.createElement('div');
+  fillSeg.className = 'segmented wrap';
+  const curFill = () => FILL_STYLES.find((f) => f.id === (settings.fill ?? DEFAULT_FILL)) ?? FILL_STYLES[0];
+  const syncFillSub = () => { fillSub.textContent = curFill().blurb; };
+  for (const f of FILL_STYLES) {
+    const chip = document.createElement('button');
+    chip.textContent = f.label;
+    chip.classList.toggle('on', (settings.fill ?? DEFAULT_FILL) === f.id);
+    chip.addEventListener('click', () => {
+      settings.fill = f.id;
+      syncFillSub();
+      [...fillSeg.children].forEach((c) => c.classList.toggle('on', c === chip));
+      persist();
+    });
+    fillSeg.append(chip);
+  }
+  syncFillSub();
+  fillText.append(fillLabelEl, fillSub);
+  fillRow.append(fillText, fillSeg);
+  body.append(fillRow);
+
+  // The blob's own tuning follows — it applies only when Blob is the chosen
+  // style. Shown always (like the fill picker) so even low-stim can calm it
+  // further: slower, sparser, fainter.
   slider('Blob speed', 'speed', 0.6, 1.8, 0.1, (v) => `${v.toFixed(1)}×`);
   slider('Blob density', 'density', 0.4, 1.6, 0.1, (v) => `${v.toFixed(1)}×`);
   slider('Blob opacity', 'opacity', 0.25, 1, 0.05, (v) => `${Math.round(v * 100)}%`);
@@ -5228,6 +5289,7 @@ async function boot() {
   // Ships translucent: the splat covers most of the picture at its peak, and
   // seeing the artwork through it is the point. The slider goes back to 100%.
   S.save.settings.opacity ??= 0.7;
+  S.save.settings.fill ??= DEFAULT_FILL;   // fill animation style (fill-fx.js)
   S.save.stats.mutedCells ??= 0;
   S.save.stats.patientLandings ??= 0;
   S.save.stats.hints ??= 0;

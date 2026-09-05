@@ -21,6 +21,7 @@ import {
   activate, isActive, consumeActive,
 } from '../src/abilities.js';
 import { WARDROBE_ITEMS } from '../src/wardrobe.js';
+import { FILL_STYLES, DEFAULT_FILL, CellFill } from '../src/fill-fx.js';
 import {
   CHUNKS, MIN_STEP, labL, rampFrom, randomStops, lerpHue, scramble, swap, isSolved, placedCount, partnerFor,
 } from '../src/overtime.js';
@@ -1490,6 +1491,58 @@ test('developer mode opens the whole chapter for checking', () => {
   // Never written to disk — it is session-only by design.
   const persist = game.slice(game.indexOf('function persist'), game.indexOf('function persist') + 1500);
   assert.ok(!/\bdev\b/.test(persist), 'dev mode must not be persisted');
+});
+
+/* ---------------------------------------------------------- fill styles */
+
+// A variety of fill-in animations, chosen in Settings. The three in-cell ones
+// (starburst / scribble / rise) live in fill-fx.js and duck-type the Burst so
+// they ride the same frame loop; 'blob' is the classic Burst and 'none' is an
+// instant commit with no animation.
+test('fill styles: catalogue, default, and the CellFill interface', () => {
+  const ids = FILL_STYLES.map((f) => f.id);
+  for (const want of ['blob', 'burst', 'scribble', 'rise', 'none']) {
+    assert.ok(ids.includes(want), `FILL_STYLES is missing '${want}'`);
+  }
+  assert.equal(DEFAULT_FILL, 'blob', 'the classic blob stays the default');
+  for (const f of FILL_STYLES) {
+    assert.ok(f.label && f.blurb, `${f.id} needs a label and a blurb for the picker`);
+  }
+
+  // The in-cell fills must match the Burst's duck-typed interface, or the frame
+  // loop and board could not drive them: filled/done advanced by update(dt), a
+  // numeric shake, and drawFill/drawBlobs methods.
+  const o = {
+    origin: { x: 5, y: 5 }, sink: { x: 10, y: 10 }, colour: '#c0ffee',
+    cellPath: null, reach: 8, bounds: { x0: 4, y0: 4, x1: 16, y1: 18 }, speed: 1,
+  };
+  for (const kind of ['burst', 'scribble', 'rise']) {
+    const f = new CellFill(kind, o);
+    assert.equal(f.filled, false, `${kind} starts unfilled`);
+    assert.equal(f.done, false, `${kind} starts not done`);
+    assert.equal(typeof f.shake, 'number', `${kind} exposes a numeric shake`);
+    assert.equal(typeof f.drawFill, 'function', `${kind} draws its fill`);
+    assert.equal(typeof f.drawBlobs, 'function', `${kind} has a (no-op) drawBlobs`);
+    let guard = 0;
+    while (!f.done && guard++ < 1000) f.update(16);
+    assert.ok(f.filled, `${kind} eventually flips filled, so commitFill runs`);
+    assert.ok(f.done, `${kind} eventually finishes and is removed`);
+  }
+});
+
+test('fill styles are wired into the paint path, Settings, and the save', () => {
+  const game = readSource('src/game.js');
+  assert.match(game, /import \{ CellFill, FILL_STYLES, DEFAULT_FILL \} from '\.\/fill-fx\.js'/, 'game.js must import fill-fx');
+  assert.match(game, /const style = S\.save\.settings\.fill \?\? DEFAULT_FILL/, 'launch must read the chosen fill style');
+  assert.match(game, /if \(style === 'none'\) \{\s*commitFill\(\{ cell \}\)/, "'none' must commit instantly, no animation");
+  assert.match(game, /style === 'blob'\s*\?\s*new Burst\(/, "'blob' must still build the classic Burst");
+  assert.match(game, /new CellFill\(style,/, 'the in-cell styles must build a CellFill');
+  assert.match(game, /burst instanceof Burst \? audioCue/, 'only the blob fires the suck/fill audio cues');
+  assert.match(game, /fillLabelEl\.textContent = 'Fill style'/, 'Settings must offer a Fill style picker');
+  assert.match(game, /S\.save\.settings\.fill \?\?= DEFAULT_FILL/, 'boot must backfill the fill setting');
+  // The save-shape default lives in both DEFAULT_SAVE literals (the ~4-places rule).
+  assert.match(readSource('src/platform.js'), /fill: 'blob'/, 'platform.js DEFAULT_SAVE needs fill');
+  assert.match(readSource('electron/main.cjs'), /fill: 'blob'/, 'electron DEFAULT_SAVE needs fill');
 });
 
 /* ------------------------------------------------------------- the swap */
