@@ -6,10 +6,18 @@
 // highlight plus any in-flight bursts. Bursts run at 60fps over a picture that
 // might be 60 filled Path2Ds; redrawing those every frame would be wasteful.
 
+// The canvas chrome — the paper behind the picture, the fill of an unpainted
+// cell, the cell outline, and the number on it. These are the LIGHT-mode
+// values and also the fallback if the stylesheet can't be read yet; the live
+// values are re-read from CSS custom properties by Board.syncTheme(), so a dark
+// theme (Patina) can turn the whole unpainted picture black with copper edges
+// and numbers. Painted cells always use the puzzle's own palette (hexOf) and
+// are never themed — only the not-yet-coloured space is.
 const PAPER = '#faf7f2';
 const BLANK = '#edeae4';
 const BLANK_EDGE = 'rgba(38, 34, 48, 0.34)';
 const NUMBER = 'rgba(56, 50, 68, 0.66)';
+const NUMBER_ACTIVE = 'rgba(30, 26, 40, 0.9)'; // the number on the in-hand colour's cells
 
 // Below this on-screen radius a number would be unreadable. Such a cell gets
 // a diagonal stripe of its own colour instead — still identifiable, never
@@ -124,6 +132,35 @@ export class Board {
     this.panY = 0;
     this.cssW = 0;
     this.cssH = 0;
+
+    // Live canvas chrome, read from the theme's CSS custom properties (see the
+    // constants above and syncTheme()). Seeded to the light fallbacks, then
+    // refreshed from the stylesheet now and on every theme change.
+    this.cPaper = PAPER;
+    this.cBlank = BLANK;
+    this.cBlankEdge = BLANK_EDGE;
+    this.cNumber = NUMBER;
+    this.cNumberActive = NUMBER_ACTIVE;
+    this.syncTheme();
+  }
+
+  /**
+   * Re-read the canvas chrome (paper / blank cell / outline / number) from the
+   * active theme's CSS custom properties. The canvas 2D context can't resolve a
+   * `var(--…)` itself, so game.js's applyTheme() calls this whenever the theme
+   * changes and the base layer is redrawn with the new palette — which is how
+   * Patina turns the unpainted picture black. Any property the stylesheet
+   * doesn't define falls back to the light constant, so themes that don't touch
+   * the canvas (all but Patina today) are unaffected.
+   */
+  syncTheme() {
+    const cs = getComputedStyle(document.documentElement);
+    const read = (name, fallback) => cs.getPropertyValue(name).trim() || fallback;
+    this.cPaper = read('--canvas-paper', PAPER);
+    this.cBlank = read('--canvas-blank', BLANK);
+    this.cBlankEdge = read('--canvas-blank-edge', BLANK_EDGE);
+    this.cNumber = read('--canvas-number', NUMBER);
+    this.cNumberActive = read('--canvas-number-active', NUMBER_ACTIVE);
   }
 
   /** fitScale * zoom. Everything below reads this, never fitScale directly,
@@ -439,7 +476,7 @@ export class Board {
     tile.height = n;
     const tctx = tile.getContext('2d');
     if (opaque) {
-      tctx.fillStyle = BLANK;
+      tctx.fillStyle = this.cBlank;
       tctx.fillRect(0, 0, n, n);
     }
     tctx.strokeStyle = hex;
@@ -483,7 +520,7 @@ export class Board {
     this.applyTransform(ctx);
 
     const { width, height } = this.puzzle;
-    ctx.fillStyle = PAPER;
+    ctx.fillStyle = this.cPaper;
     ctx.fillRect(0, 0, width, height);
 
     if (this.showSource && this.sourceBitmap) {
@@ -511,7 +548,7 @@ export class Board {
       } else if (cell.inradius * this.scale < NUMBER_MIN_PX) {
         // Too small for a number — a stripe of the cell's own colour stands
         // in for it, brighter when it is the colour currently in hand.
-        ctx.fillStyle = BLANK;
+        ctx.fillStyle = this.cBlank;
         ctx.fill(cell.path);
         ctx.fillStyle = stripeFor(cell.colour, cell.colour === this.selected);
         ctx.fill(cell.path);
@@ -523,13 +560,13 @@ export class Board {
         // a flat tint of the colour just looks like a faded version of the
         // finished cell, where the hatch plainly says "not painted yet, and
         // this is what goes here". The number draws over it in the pass below.
-        ctx.fillStyle = BLANK;
+        ctx.fillStyle = this.cBlank;
         ctx.fill(cell.path);
         ctx.fillStyle = stripeFor(cell.colour, true);
         ctx.fill(cell.path);
         continue;
       } else {
-        ctx.fillStyle = BLANK;
+        ctx.fillStyle = this.cBlank;
       }
       ctx.fill(cell.path);
     }
@@ -538,7 +575,7 @@ export class Board {
     if (edge > 0.01) {
       ctx.save();
       ctx.globalAlpha = edge;
-      ctx.strokeStyle = BLANK_EDGE;
+      ctx.strokeStyle = this.cBlankEdge;
       ctx.lineWidth = 1.15 / this.scale;
       ctx.lineJoin = 'round';
       for (const cell of this.cells) ctx.stroke(cell.path);
@@ -563,7 +600,7 @@ export class Board {
           ctx.strokeText(String(cell.colour + 1), cell.anchor.x, cell.anchor.y);
           ctx.fillStyle = this.numberOverride.colour;
         } else {
-          ctx.fillStyle = active ? 'rgba(30, 26, 40, 0.9)' : NUMBER;
+          ctx.fillStyle = active ? this.cNumberActive : this.cNumber;
         }
         ctx.fillText(String(cell.colour + 1), cell.anchor.x, cell.anchor.y);
       }

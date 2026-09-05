@@ -154,9 +154,20 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
   so undo credits the right tub.
 - **Themes** — `themes.js`: `void` (default), `fae`, `cobalt` (unlocked by beating
   the chapter-one boss), `bloom` (Ch2 Act I's bioluminescent jungle; unlocked by
-  the Hoarder) and `nightcut` (Ch2 Act II's strict black-and-white; unlocked by
-  The Fade once it ships). `settings.themePinned` (set when the player picks any
-  theme) makes their choice win in story too, instead of the chapter theme.
+  the Hoarder), `nightcut` (Ch2 Act II's strict black-and-white; unlocked by
+  The Fade once it ships) and `patina` (a freely-chosen **dark mode**, no unlock —
+  black velvet under hammered copper, rivet-and-seam surfaces, verdigris-green
+  edge). `settings.themePinned` (set when the player picks any theme) makes their
+  choice win in story too, instead of the chapter theme.
+  - **Patina blacks the canvas.** The unpainted picture (paper, blank cells,
+    outlines, numbers) is the ONE place CSS reaches the `<canvas>`: render.js
+    holds light-mode fallback constants, exposes `--canvas-paper` /
+    `--canvas-blank` / `--canvas-blank-edge` / `--canvas-number` /
+    `--canvas-number-active` on `:root`, and `Board.syncTheme()` reads them (a 2D
+    context can't resolve `var(--…)`). `applyTheme()` calls it and repaints, so
+    Patina turns the unpainted space black with a copper wireframe while painted
+    cells keep their true photo colour. Every other theme inherits the light
+    defaults, so only Patina changes the picture.
 - **Wardrobe / avatar** — 62 garments across 9 slots (shirt, bottoms, dress,
   socks, shoes + outerwear, headwear, eyewear, neckwear); six render styles;
   fixed-accent multicolor. The Outfits shop groups by slot.

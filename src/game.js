@@ -3076,6 +3076,12 @@ function applyTheme() {
       ? chapterTheme(getChapter(S.save.story.chapter), S.save)
       : S.save.settings.theme;
   document.documentElement.dataset.theme = themeOr(id);
+  // The canvas can't read CSS custom properties, so hand the board the theme's
+  // paper/blank/edge/number colours and repaint the base layer — this is what
+  // turns the unpainted picture black under Patina and back to paper elsewhere.
+  board.syncTheme();
+  board.dirty = true;
+  ensureFrame();
 }
 
 /** Low-stim mode: one switch that hides STORY MODE (the Story door, boss and
