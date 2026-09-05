@@ -133,6 +133,46 @@ export function pickImage() {
   });
 }
 
+/** Trigger a browser download of a Blob. Web only — the desktop build routes
+ *  saves through the main process instead (its file dialogs are disabled). */
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+/** data:...;base64,xxx → Blob, decoded in-page. A fetch of a data: URL is
+ *  blocked by the CSP, and a very large data: href download is flaky, so the
+ *  bytes are pulled apart by hand. */
+function dataUrlToBlob(dataUrl) {
+  const comma = dataUrl.indexOf(',');
+  const mime = dataUrl.slice(5, dataUrl.indexOf(';'));
+  const bin = atob(dataUrl.slice(comma + 1));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
+/** Open a chooser for a single JSON backup; resolves the File, or null if the
+ *  chooser is dismissed. Mirrors pickImage's cancel handling. */
+function pickJsonFile() {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json,.json';
+    let settled = false;
+    const finish = (v) => { if (settled) return; settled = true; input.remove(); resolve(v); };
+    input.addEventListener('change', () => finish(input.files?.[0] ?? null));
+    input.addEventListener('cancel', () => finish(null));
+    input.click();
+  });
+}
+
 async function webPlatform() {
   const db = await openDB();
   const base = new URL('.', document.baseURI);
@@ -219,6 +259,31 @@ async function webPlatform() {
       return true;
     },
 
+    // Save a finished picture (a PNG data URL) and a whole-save backup (JSON
+    // text) as browser downloads. Both return {} — the browser owns where the
+    // file lands; the desktop build returns { savedTo } instead.
+    async saveImage(dataUrl, name) {
+      downloadBlob(dataUrlToBlob(dataUrl), name);
+      return {};
+    },
+    async saveBackup(text, name) {
+      downloadBlob(new Blob([text], { type: 'application/json' }), name);
+      return {};
+    },
+
+    // Web restores from a file the player picks; the desktop build has no picker
+    // (dialogs are disabled) and restores by dropping the file on the window.
+    async loadBackup() {
+      return pickJsonFile();
+    },
+
+    // A true overwrite of the whole save, bypassing writeSave's per-section
+    // merge — a restore must REPLACE what is there, not union with it.
+    async replaceSave(save) {
+      await idbSet(db, 'kv', 'save', save);
+      return true;
+    },
+
     // Window management has no meaning in a browser tab. The chrome that would
     // drive these is hidden, but the methods stay so nothing has to null-check.
     minimise() {},
@@ -236,7 +301,18 @@ function electronPlatform(bridge) {
   // <input type=file> triggers that same dialog owned by this window. The
   // dialog is opened in the main process instead, parented to nothing, so it
   // is never associated with the transparent window. See win:pick-image.
-  return { isDesktop: true, ...bridge };
+  //
+  // For the same reason there is NO save/open dialog for images or backups:
+  // saves go straight to the Downloads folder via the main process (returning
+  // where they landed), and a restore is done by dropping the backup file onto
+  // the window (handled in game.js) — never a picker. See file:save-download.
+  return {
+    isDesktop: true,
+    ...bridge,
+    saveImage: (dataUrl, name) => bridge.saveDownload({ name, dataUrl }),
+    saveBackup: (text, name) => bridge.saveDownload({ name, text }),
+    loadBackup: async () => null,
+  };
 }
 
 /**

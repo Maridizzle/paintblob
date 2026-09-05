@@ -450,6 +450,48 @@ ipcMain.handle('save:write', (_e, patch) => {
   return true;
 });
 
+// Overwrite the WHOLE save file (restore from a dropped backup). Unlike
+// save:write, this replaces rather than merges — a restore must not union the
+// backup with whatever is already there. The renderer validates the shape first.
+ipcMain.handle('save:replace', (_e, full) => {
+  try {
+    if (!full || typeof full !== 'object') return false;
+    writeSave(full); // atomic tmp-then-rename, same as every other save write
+    return true;
+  } catch (err) {
+    logCrash('save-replace', err?.stack ?? String(err));
+    return false;
+  }
+});
+
+// Save a file straight to the Downloads folder — no dialog (the desktop build
+// owns none; see win:pick-image). Payload is { name, dataUrl } for an image or
+// { name, text } for a backup. Never overwrites an existing file, and strips any
+// path from the name so it can only ever write inside Downloads. Returns
+// { savedTo } on success or { error } so the renderer can tell the player.
+ipcMain.handle('file:save-download', (_e, { name, dataUrl, text } = {}) => {
+  try {
+    const safe = path.basename(String(name || 'paintblob')) || 'paintblob';
+    let target = path.join(app.getPath('downloads'), safe);
+    if (fs.existsSync(target)) {
+      const ext = path.extname(safe);
+      const stem = path.basename(safe, ext);
+      const dir = path.dirname(target);
+      let n = 2;
+      do { target = path.join(dir, `${stem} (${n++})${ext}`); } while (fs.existsSync(target) && n < 1000);
+    }
+    if (dataUrl) {
+      fs.writeFileSync(target, Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64'));
+    } else {
+      fs.writeFileSync(target, String(text ?? ''), 'utf8');
+    }
+    return { savedTo: target };
+  } catch (err) {
+    logCrash('file-save-download', err?.stack ?? String(err));
+    return { error: String(err?.message ?? err) };
+  }
+});
+
 /* ------------------------------------------------------------------ puzzles */
 
 // Two libraries. The bundled one ships with the app and, once packaged, lives

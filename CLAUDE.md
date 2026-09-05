@@ -186,6 +186,20 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
   menu** (`renderDevPanel` via `openPanel('dev')`): launch any minigame on demand
   for testing — built straight off the `BONUS_ROUNDS` registry (+ The Swap), so a
   new round appears there for free — plus the instant-complete.
+- **Save & backup** — every finished picture has a **Save image** button (on the
+  finish card, and a bottom-right save pill so re-opened finished pictures get it
+  too) that exports the flat painted mosaic as a PNG via `Board.snapshot()`.
+  Settings has **Download backup** (the whole `S.save` as JSON) and **Restore
+  from backup**; restore REPLACES the save wholesale (`api.replaceSave`, a true
+  overwrite that bypasses `writeSave`'s per-section merge) then reloads.
+  Cross-platform through the `api`: web downloads in-page (blob) and picks a file
+  with an `<input>`; the **desktop build owns no file dialogs** (they crash a
+  transparent window on Windows — see `DIALOG_FREE`), so saves go to the
+  Downloads folder via the `file:save-download` IPC and **restore is by dropping
+  the `.json` on the window** (the drop handler routes a backup to
+  `restoreFromFile` before the image-import path). The destructive restore
+  confirms with an in-page modal (`#confirm` / `confirmModal`), never a native
+  dialog.
 
 ## Release & branch workflow — READ THIS
 

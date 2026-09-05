@@ -1545,6 +1545,55 @@ test('fill styles are wired into the paint path, Settings, and the save', () => 
   assert.match(readSource('electron/main.cjs'), /fill: 'blob'/, 'electron DEFAULT_SAVE needs fill');
 });
 
+/* -------------------------------------------------- save image & backup */
+
+// Save a finished picture as a PNG, download the whole save as a backup, and
+// restore one. Web downloads in-page; the desktop build routes through the main
+// process (no file dialogs) and restores by dropping the file on the window.
+test('save image / backup / restore are wired end to end', () => {
+  const game = readSource('src/game.js');
+  const render = readSource('src/render.js');
+  const platform = readSource('src/platform.js');
+  const preload = readSource('electron/preload.cjs');
+  const main = readSource('electron/main.cjs');
+  const html = readSource('src/index.html');
+
+  // Save image.
+  assert.match(render, /snapshot\(\)\s*\{/, 'render.js needs Board.snapshot() for the PNG');
+  assert.match(game, /function saveImage\(/, 'game.js needs saveImage()');
+  assert.match(game, /board\.snapshot\(\)\.toDataURL\('image\/png'\)/, 'saveImage must snapshot to a PNG data URL');
+  assert.match(game, /case 'save-image': saveImage\(\)/, 'save-image must be wired in the click switch');
+  assert.match(html, /data-act="save-image"/, 'a save-image button must be in the DOM');
+  assert.match(html, /id="savePill"/, 'a finished-picture save pill must exist');
+  assert.match(game, /\$\('savePill'\)\?\.classList\.toggle\('hidden', !S\.finished\)/, 'the save pill shows for any finished picture');
+
+  // Backup + restore.
+  assert.match(game, /function downloadBackup\(/, 'game.js needs downloadBackup()');
+  assert.match(game, /function restoreFromFile\(/, 'game.js needs restoreFromFile()');
+  assert.match(game, /function isBackup\(/, 'game.js must validate a backup before restoring');
+  assert.match(game, /await api\.replaceSave\(data\)/, 'restore must replace the whole save');
+  assert.match(game, /location\.reload\(\)/, 'restore must reboot from the restored save');
+  assert.match(game, /\.json\$\/i\.test\(f\.name\)/, 'a dropped .json must be recognised as a backup');
+  assert.match(game, /if \(backup\) \{ await restoreFromFile\(backup\); return; \}/, 'a dropped backup restores, never imports as a picture');
+  assert.match(game, /function confirmModal\(/, 'restore needs an in-page confirm (no native dialog)');
+  assert.match(html, /id="confirm"/, 'the confirm modal must be in the DOM');
+  assert.match(game, /case 'confirm-ok': closeConfirm\(true\)/, 'the confirm OK must be wired');
+
+  // Platform: web downloads / picker / a TRUE overwrite; electron routes through
+  // the main process (no dialogs) and restores by drop (loadBackup → null).
+  assert.match(platform, /async saveImage\(dataUrl, name\)/, 'web api needs saveImage');
+  assert.match(platform, /async saveBackup\(text, name\)/, 'web api needs saveBackup');
+  assert.match(platform, /async replaceSave\(save\)/, 'web api needs replaceSave');
+  assert.match(platform, /await idbSet\(db, 'kv', 'save', save\)/, 'web replaceSave must overwrite, not merge');
+  assert.match(platform, /saveImage: \(dataUrl, name\) => bridge\.saveDownload/, 'electron saveImage routes through the main process');
+  assert.match(platform, /loadBackup: async \(\) => null/, 'electron has no picker — restore is drop-only');
+  assert.match(preload, /saveDownload:.*file:save-download/, 'preload must expose saveDownload');
+  assert.match(preload, /replaceSave:.*save:replace/, 'preload must expose replaceSave');
+  assert.match(main, /ipcMain\.handle\('file:save-download'/, 'main needs the Downloads-save handler');
+  assert.match(main, /ipcMain\.handle\('save:replace'/, 'main needs the whole-save replace handler');
+  assert.match(main, /path\.basename\(String\(name/, 'the save handler must strip any path from the name');
+});
+
 /* ------------------------------------------------------------- the swap */
 
 // The Swap — story mode's minigame. Six colours each wearing another's name;

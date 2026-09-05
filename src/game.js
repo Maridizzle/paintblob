@@ -284,9 +284,102 @@ function syncZoom() {
  *  older save from before this feature existed will not. */
 function syncCompare() {
   const pill = $('comparePill');
-  if (!pill) return;
-  pill.classList.toggle('hidden', !(S.finished && S.puzzle?.sourceImage));
-  pill.textContent = board.showSource ? '🎨 Painting' : '🖼 Photo';
+  if (pill) {
+    pill.classList.toggle('hidden', !(S.finished && S.puzzle?.sourceImage));
+    pill.textContent = board.showSource ? '🎨 Painting' : '🖼 Photo';
+  }
+  // The save-image pill rides the same finished state but needs no source photo
+  // — any finished picture can be saved as art. It stays reachable when you
+  // re-open a completed picture, so "every finished picture" truly gets it.
+  $('savePill')?.classList.toggle('hidden', !S.finished);
+}
+
+/* --------------------------------------------------- save image / backup */
+
+const fileSafe = (s) =>
+  String(s || 'paintblob').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'paintblob';
+
+/** Save the finished painting as a PNG — the flat painted mosaic at the
+ *  picture's native resolution (the art you made, not the reference photo). On
+ *  web it is a browser download; on desktop it lands in Downloads and we say
+ *  where. */
+async function saveImage() {
+  if (!S.puzzle || !board.puzzle || !S.finished) return;
+  const dataUrl = board.snapshot().toDataURL('image/png');
+  const res = await api.saveImage(dataUrl, `${fileSafe(S.puzzle.title)}.png`);
+  if (res?.error) { toast({ icon: '⚠️', name: 'Could not save', desc: res.error }); return; }
+  toast(res?.savedTo
+    ? { icon: '🖼', name: 'Image saved', desc: res.savedTo }
+    : { icon: '🖼', name: 'Image saved', desc: 'Look in your downloads.' }, '', { sticky: !!res?.savedTo });
+}
+
+/** Download the whole save (progress, avatar, settings, unlocks, stats, story)
+ *  as one JSON file. persist(true) first, so the file reflects the very latest
+ *  state, not a debounced-but-unwritten one. */
+async function downloadBackup() {
+  persist(true);
+  const stamp = new Date().toISOString().slice(0, 10);
+  const res = await api.saveBackup(JSON.stringify(S.save, null, 2), `paintblob-backup-${stamp}.json`);
+  if (res?.error) { toast({ icon: '⚠️', name: 'Could not save', desc: res.error }); return; }
+  toast(res?.savedTo
+    ? { icon: '💾', name: 'Backup saved', desc: res.savedTo }
+    : { icon: '💾', name: 'Backup saved', desc: 'Look in your downloads — keep it safe.' }, '', { sticky: !!res?.savedTo });
+}
+
+/** A plausible backup: an object carrying the save's own top-level sections.
+ *  Strict, so a stray JSON can never wipe a real save. */
+function isBackup(d) {
+  return !!d && typeof d === 'object'
+    && d.settings && typeof d.settings === 'object'
+    && d.progress && typeof d.progress === 'object'
+    && d.avatar && typeof d.avatar === 'object';
+}
+
+/** Replace the whole save with a backup File, then reboot from it. Destructive
+ *  — it wipes the current progress — so it confirms first, with an in-page modal
+ *  (never a native dialog, which the desktop build must avoid). Shared by the
+ *  web picker and the drop-a-file path. */
+async function restoreFromFile(file) {
+  let data;
+  try { data = JSON.parse(await file.text()); }
+  catch { toast({ icon: '⚠️', name: 'Not a backup', desc: 'That file could not be read.' }); return; }
+  if (!isBackup(data)) { toast({ icon: '⚠️', name: 'Not a backup', desc: 'That is not a paintblob backup file.' }); return; }
+  const ok = await confirmModal({
+    title: 'Restore from backup?',
+    body: 'This replaces ALL your current progress, avatar and settings with the backup. It cannot be undone.',
+    ok: 'Replace everything',
+  });
+  if (!ok) return;
+  await api.replaceSave(data);
+  location.reload();
+}
+
+/** The Settings "Restore" button. Web opens a picker; the desktop build has none
+ *  (dialogs are disabled), so it points the player at the drag-and-drop path. */
+async function restoreBackup() {
+  if (api.isDesktop) {
+    toast({ icon: '📂', name: 'Drag it in', desc: 'Drop your paintblob backup .json onto the window to restore it.' }, '', { sticky: true });
+    return;
+  }
+  const file = await api.loadBackup();
+  if (file) await restoreFromFile(file);
+}
+
+// A tiny in-page confirm — no native dialog, so it is safe on the desktop build
+// too. Resolves true on OK, false on cancel/✕.
+let confirmResolver = null;
+function confirmModal({ title, body, ok = 'OK' }) {
+  $('confirmTitle').textContent = title;
+  $('confirmBody').textContent = body;
+  $('confirmOk').textContent = ok;
+  $('confirm').classList.remove('hidden');
+  return new Promise((resolve) => { confirmResolver = resolve; });
+}
+function closeConfirm(result) {
+  $('confirm').classList.add('hidden');
+  const r = confirmResolver;
+  confirmResolver = null;
+  if (r) r(result);
 }
 
 function selectTub(i, fromUser = false) {
@@ -3148,6 +3241,23 @@ function renderSettings(body) {
   body.append(avatarGuide);
   }
 
+  // Data safety: keep your whole save as a file, and put one back. Always shown
+  // (a backup matters most on the day storage clears). On desktop, restore is by
+  // dropping the file on the window — no picker (dialogs are disabled there).
+  const backup = row('clickable');
+  backup.innerHTML = '<div class="grow"><div class="label">Download backup</div>' +
+    '<div class="sub">Save all your progress to a file</div></div>' +
+    '<div class="dev-go">Download</div>';
+  backup.addEventListener('click', downloadBackup);
+  body.append(backup);
+
+  const restore = row('clickable');
+  restore.innerHTML = '<div class="grow"><div class="label">Restore from backup</div>' +
+    `<div class="sub">${api.isDesktop ? 'Drag a backup .json onto the window' : 'Replace everything with a backup file'}</div></div>` +
+    `<div class="dev-go">${api.isDesktop ? 'How?' : 'Upload'}</div>`;
+  restore.addEventListener('click', restoreBackup);
+  body.append(restore);
+
   const reset = row('clickable');
   reset.innerHTML = '<div class="grow"><div class="label">Repaint this picture</div>' +
     '<div class="sub">Clears progress on the current picture only</div></div>';
@@ -5136,6 +5246,9 @@ document.addEventListener('click', async (e) => {
       else await nextPuzzle();
       break;
     case 'finish-dismiss': $('finish').classList.add('hidden'); break;
+    case 'save-image': saveImage(); break;             // save the finished picture as a PNG
+    case 'confirm-ok': closeConfirm(true); break;      // the in-page confirm modal
+    case 'confirm-cancel': closeConfirm(false); break;
     case 'dev-complete': devComplete(); break;         // dev mode: clear the picture instantly
     case 'dev-menu':                                   // dev mode: the minigame test menu
       if (S.panel === 'dev') closePanel();
@@ -5258,6 +5371,12 @@ window.addEventListener('paste', async (e) => {
   window.addEventListener('drop', async (e) => {
     e.preventDefault();
     clear();
+    // A dropped backup (.json) restores the whole save — the desktop way in (its
+    // file dialogs are disabled) and a handy shortcut on web too. Checked before
+    // the image path so a backup is never mistaken for a picture to import.
+    const backup = [...(e.dataTransfer?.files ?? [])]
+      .find((f) => f.type === 'application/json' || /\.json$/i.test(f.name));
+    if (backup) { await restoreFromFile(backup); return; }
     const files = await imagesFromDrop(e);
     if (files.length) await runImport(files, $('panelBody'));
   });
