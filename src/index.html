@@ -27,6 +27,17 @@
       <!-- A stamped catalogue mark filling the wide title bar on desktop; hidden
            on web/touch where the bar is tight and there is no dead space. -->
       <span class="bar-seal desktop-only" aria-hidden="true">№&nbsp;07</span>
+      <!-- Undo, and (in story) the way back to the path, live in the TOOLBAR —
+           not floating over the picture. A pill parked on the canvas can sit on
+           the very cell you still need to tap and lock you out of finishing.
+           Same ids + data-acts as the old pills, so syncUndo() / the story
+           toggle drive them unchanged and the delegated click switch still
+           routes them; only their home moved. Both are contextual (hidden
+           until there is something to undo / a stone is being painted). -->
+      <button id="undoPill" class="icon hidden" data-act="undo"
+        title="Undo the last cell (Ctrl/Cmd+Z)">↶</button>
+      <button id="storyPill" class="icon story-nav hidden" data-act="story-board"
+        title="Back to the path">↩</button>
       <button class="icon" data-act="pictures" title="Pictures — add your own">▦</button>
       <button class="icon hint-btn empty" data-act="hint" title="Use a hint — flashes and enlarges a cell for a minute">✦<span class="badge">0</span></button>
       <button class="icon" data-act="trophies" title="Achievements">★</button>
@@ -43,8 +54,6 @@
       <canvas id="board"></canvas>
 
       <button id="zoomPill" class="zoom-pill hidden" data-act="zoom-reset" title="Reset zoom">100%</button>
-      <button id="undoPill" class="undo-pill hidden" data-act="undo"
-        title="Undo the last cell (Ctrl/Cmd+Z)">↶ Undo</button>
       <button id="comparePill" class="compare-pill hidden" data-act="toggle-source"
         title="Compare against the original picture"></button>
 
@@ -106,11 +115,6 @@
       <div id="mixer" class="overtime mixer-overlay hidden"></div>
       <div id="drips" class="overtime drips-overlay hidden"></div>
       <div id="recall" class="overtime recall-overlay hidden"></div>
-
-      <!-- Shown only while a story stone is being painted: the way back to the
-           path without leaving story mode. Mirrors the undo pill. -->
-      <button id="storyPill" class="story-pill hidden" data-act="story-board"
-        title="Back to the path">↩ The path</button>
 
       <!-- Developer mode only: fills the whole picture at once, so a stone can be
            cleared and the next one (or a boss's reward) checked without painting
