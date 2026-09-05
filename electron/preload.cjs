@@ -17,6 +17,13 @@ contextBridge.exposeInMainWorld('blob', {
   savePuzzle: (payload) => ipcRenderer.invoke('puzzles:save', payload),
   deletePuzzle: (id) => ipcRenderer.invoke('puzzles:delete', id),
 
+  // Save a file to the Downloads folder (no dialog — see win:pick-image for why
+  // the desktop build owns no OS file dialogs). Payload is { name, dataUrl } for
+  // an image or { name, text } for a backup; returns { savedTo } or { error }.
+  saveDownload: (payload) => ipcRenderer.invoke('file:save-download', payload),
+  // Overwrite the whole save file (restore from a backup dropped on the window).
+  replaceSave: (full) => ipcRenderer.invoke('save:replace', full),
+
   minimise: () => ipcRenderer.send('win:minimise'),
   close: () => ipcRenderer.send('win:close'),
   toggleAlwaysOnTop: () => ipcRenderer.invoke('win:toggle-top'),

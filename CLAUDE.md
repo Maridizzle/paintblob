@@ -168,10 +168,38 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
     Patina turns the unpainted space black with a copper wireframe while painted
     cells keep their true photo colour. Every other theme inherits the light
     defaults, so only Patina changes the picture.
+- **Fill styles** — `fill-fx.js` + `settings.fill` (a picker in Settings, shown
+  even in low-stim since it is a fill *control*). The tap→fill animation is the
+  player's choice: `blob` (the classic full-picture explosion, `paint-fx.js`'s
+  `Burst`), `burst`/`scribble`/`rise` (quick **in-cell** effects — a `CellFill`
+  that duck-types the Burst so it rides the same `S.bursts` frame loop and
+  `commitFill` with no special-casing), and `none` (instant, no animation).
+  `launch()` (game.js) branches on the style; only the blob fires the suck/fill
+  audio cues. Save-shape: `fill` in both `DEFAULT_SAVE` literals + a boot
+  backfill. The "Blob speed/density/opacity" sliders tune the blob (speed also
+  scales the in-cell fills).
 - **Wardrobe / avatar** — 62 garments across 9 slots (shirt, bottoms, dress,
   socks, shoes + outerwear, headwear, eyewear, neckwear); six render styles;
   fixed-accent multicolor. The Outfits shop groups by slot.
-- **Dev mode** — `?dev` or type `devmode`; session-only (`S.dev`).
+- **Dev mode** — `?dev` or type `devmode`; session-only (`S.dev`). A dev-only 🛠
+  toolbar button (`#devMenuBtn`, gated in `syncDevPill`) opens the **Developer
+  menu** (`renderDevPanel` via `openPanel('dev')`): launch any minigame on demand
+  for testing — built straight off the `BONUS_ROUNDS` registry (+ The Swap), so a
+  new round appears there for free — plus the instant-complete.
+- **Save & backup** — every finished picture has a **Save image** button (on the
+  finish card, and a bottom-right save pill so re-opened finished pictures get it
+  too) that exports the flat painted mosaic as a PNG via `Board.snapshot()`.
+  Settings has **Download backup** (the whole `S.save` as JSON) and **Restore
+  from backup**; restore REPLACES the save wholesale (`api.replaceSave`, a true
+  overwrite that bypasses `writeSave`'s per-section merge) then reloads.
+  Cross-platform through the `api`: web downloads in-page (blob) and picks a file
+  with an `<input>`; the **desktop build owns no file dialogs** (they crash a
+  transparent window on Windows — see `DIALOG_FREE`), so saves go to the
+  Downloads folder via the `file:save-download` IPC and **restore is by dropping
+  the `.json` on the window** (the drop handler routes a backup to
+  `restoreFromFile` before the image-import path). The destructive restore
+  confirms with an in-page modal (`#confirm` / `confirmModal`), never a native
+  dialog.
 
 ## Release & branch workflow — READ THIS
 

@@ -1163,7 +1163,9 @@ await page.evaluate(() => {
 });
 await page.waitForSelector('#panel:not(.hidden)', { timeout: 5000 });
 await page.waitForTimeout(200);
-const lsPickerBefore = await page.evaluate(() => !!document.querySelector('#panelBody .segmented.wrap'));
+// The THEME picker specifically (there is now also a Fill-style picker, which is
+// a fill CONTROL and stays visible in low-stim like the blob sliders do).
+const lsPickerBefore = await page.evaluate(() => !!document.querySelector('#panelBody .segmented.wrap.theme-seg'));
 await page.evaluate(() => {
   const row = [...document.querySelectorAll('#panelBody .row.clickable')].find((r) => /Low-stim/i.test(r.textContent));
   row?.click();
@@ -1175,7 +1177,7 @@ const ls = await page.evaluate(() => {
     on: document.documentElement.classList.contains('low-stim'),
     saved: window.__paintblobTest.state.save.settings.lowStim === true,
     theme: document.documentElement.dataset.theme,
-    picker: !!document.querySelector('#panelBody .segmented.wrap'),
+    picker: !!document.querySelector('#panelBody .segmented.wrap.theme-seg'),
     avatar: disp('#avatarWidget'),
     swap: disp('[data-act="mode-swap"]'),
     bg: getComputedStyle(document.getElementById('app')).backgroundImage,

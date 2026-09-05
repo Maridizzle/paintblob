@@ -21,6 +21,7 @@ import {
   activate, isActive, consumeActive,
 } from '../src/abilities.js';
 import { WARDROBE_ITEMS } from '../src/wardrobe.js';
+import { FILL_STYLES, DEFAULT_FILL, CellFill } from '../src/fill-fx.js';
 import {
   CHUNKS, MIN_STEP, labL, rampFrom, randomStops, lerpHue, scramble, swap, isSolved, placedCount, partnerFor,
 } from '../src/overtime.js';
@@ -1476,9 +1477,121 @@ test('developer mode opens the whole chapter for checking', () => {
   assert.match(game, /function devComplete\(\)/, 'dev mode needs an instant-complete');
   assert.match(game, /case 'dev-complete': devComplete\(\)/, 'the dev pill must be wired to devComplete');
   assert.match(readSource('src/index.html'), /id="devPill"[\s\S]*?data-act="dev-complete"/, 'the dev pill must be in the DOM');
+  // The Developer MENU: a dev-only launcher for every minigame, so they can be
+  // tested without waiting on the random scheduler. Registry-driven, so a newly
+  // added bonus round appears in it for free.
+  assert.match(game, /function renderDevPanel\(/, 'dev mode needs the minigame test menu');
+  assert.match(game, /for \(const r of BONUS_ROUNDS\) launch\(/, 'the dev menu must launch every registered bonus round');
+  assert.match(game, /launch\('✦', 'The Swap',[^)]*startSwap\)/, "the dev menu must launch story's Swap too");
+  assert.match(game, /kind === 'dev' \? 'Developer'/, 'openPanel must title the dev panel');
+  assert.match(game, /kind === 'dev'\) \{\s*renderDevPanel/, 'openPanel must render the dev menu');
+  assert.match(game, /case 'dev-menu':/, 'the dev-menu button must be wired to openPanel');
+  assert.match(game, /\$\('devMenuBtn'\)\?\.classList\.toggle\('hidden', !live\)/, 'the dev-menu button must be dev-gated in syncDevPill');
+  assert.match(readSource('src/index.html'), /id="devMenuBtn"[\s\S]*?data-act="dev-menu"/, 'the dev-menu button must be in the DOM');
   // Never written to disk — it is session-only by design.
   const persist = game.slice(game.indexOf('function persist'), game.indexOf('function persist') + 1500);
   assert.ok(!/\bdev\b/.test(persist), 'dev mode must not be persisted');
+});
+
+/* ---------------------------------------------------------- fill styles */
+
+// A variety of fill-in animations, chosen in Settings. The three in-cell ones
+// (starburst / scribble / rise) live in fill-fx.js and duck-type the Burst so
+// they ride the same frame loop; 'blob' is the classic Burst and 'none' is an
+// instant commit with no animation.
+test('fill styles: catalogue, default, and the CellFill interface', () => {
+  const ids = FILL_STYLES.map((f) => f.id);
+  for (const want of ['blob', 'burst', 'scribble', 'rise', 'none']) {
+    assert.ok(ids.includes(want), `FILL_STYLES is missing '${want}'`);
+  }
+  assert.equal(DEFAULT_FILL, 'blob', 'the classic blob stays the default');
+  for (const f of FILL_STYLES) {
+    assert.ok(f.label && f.blurb, `${f.id} needs a label and a blurb for the picker`);
+  }
+
+  // The in-cell fills must match the Burst's duck-typed interface, or the frame
+  // loop and board could not drive them: filled/done advanced by update(dt), a
+  // numeric shake, and drawFill/drawBlobs methods.
+  const o = {
+    origin: { x: 5, y: 5 }, sink: { x: 10, y: 10 }, colour: '#c0ffee',
+    cellPath: null, reach: 8, bounds: { x0: 4, y0: 4, x1: 16, y1: 18 }, speed: 1,
+  };
+  for (const kind of ['burst', 'scribble', 'rise']) {
+    const f = new CellFill(kind, o);
+    assert.equal(f.filled, false, `${kind} starts unfilled`);
+    assert.equal(f.done, false, `${kind} starts not done`);
+    assert.equal(typeof f.shake, 'number', `${kind} exposes a numeric shake`);
+    assert.equal(typeof f.drawFill, 'function', `${kind} draws its fill`);
+    assert.equal(typeof f.drawBlobs, 'function', `${kind} has a (no-op) drawBlobs`);
+    let guard = 0;
+    while (!f.done && guard++ < 1000) f.update(16);
+    assert.ok(f.filled, `${kind} eventually flips filled, so commitFill runs`);
+    assert.ok(f.done, `${kind} eventually finishes and is removed`);
+  }
+});
+
+test('fill styles are wired into the paint path, Settings, and the save', () => {
+  const game = readSource('src/game.js');
+  assert.match(game, /import \{ CellFill, FILL_STYLES, DEFAULT_FILL \} from '\.\/fill-fx\.js'/, 'game.js must import fill-fx');
+  assert.match(game, /const style = S\.save\.settings\.fill \?\? DEFAULT_FILL/, 'launch must read the chosen fill style');
+  assert.match(game, /if \(style === 'none'\) \{\s*commitFill\(\{ cell \}\)/, "'none' must commit instantly, no animation");
+  assert.match(game, /style === 'blob'\s*\?\s*new Burst\(/, "'blob' must still build the classic Burst");
+  assert.match(game, /new CellFill\(style,/, 'the in-cell styles must build a CellFill');
+  assert.match(game, /burst instanceof Burst \? audioCue/, 'only the blob fires the suck/fill audio cues');
+  assert.match(game, /fillLabelEl\.textContent = 'Fill style'/, 'Settings must offer a Fill style picker');
+  assert.match(game, /S\.save\.settings\.fill \?\?= DEFAULT_FILL/, 'boot must backfill the fill setting');
+  // The save-shape default lives in both DEFAULT_SAVE literals (the ~4-places rule).
+  assert.match(readSource('src/platform.js'), /fill: 'blob'/, 'platform.js DEFAULT_SAVE needs fill');
+  assert.match(readSource('electron/main.cjs'), /fill: 'blob'/, 'electron DEFAULT_SAVE needs fill');
+});
+
+/* -------------------------------------------------- save image & backup */
+
+// Save a finished picture as a PNG, download the whole save as a backup, and
+// restore one. Web downloads in-page; the desktop build routes through the main
+// process (no file dialogs) and restores by dropping the file on the window.
+test('save image / backup / restore are wired end to end', () => {
+  const game = readSource('src/game.js');
+  const render = readSource('src/render.js');
+  const platform = readSource('src/platform.js');
+  const preload = readSource('electron/preload.cjs');
+  const main = readSource('electron/main.cjs');
+  const html = readSource('src/index.html');
+
+  // Save image.
+  assert.match(render, /snapshot\(\)\s*\{/, 'render.js needs Board.snapshot() for the PNG');
+  assert.match(game, /function saveImage\(/, 'game.js needs saveImage()');
+  assert.match(game, /board\.snapshot\(\)\.toDataURL\('image\/png'\)/, 'saveImage must snapshot to a PNG data URL');
+  assert.match(game, /case 'save-image': saveImage\(\)/, 'save-image must be wired in the click switch');
+  assert.match(html, /data-act="save-image"/, 'a save-image button must be in the DOM');
+  assert.match(html, /id="savePill"/, 'a finished-picture save pill must exist');
+  assert.match(game, /\$\('savePill'\)\?\.classList\.toggle\('hidden', !S\.finished\)/, 'the save pill shows for any finished picture');
+
+  // Backup + restore.
+  assert.match(game, /function downloadBackup\(/, 'game.js needs downloadBackup()');
+  assert.match(game, /function restoreFromFile\(/, 'game.js needs restoreFromFile()');
+  assert.match(game, /function isBackup\(/, 'game.js must validate a backup before restoring');
+  assert.match(game, /await api\.replaceSave\(data\)/, 'restore must replace the whole save');
+  assert.match(game, /location\.reload\(\)/, 'restore must reboot from the restored save');
+  assert.match(game, /\.json\$\/i\.test\(f\.name\)/, 'a dropped .json must be recognised as a backup');
+  assert.match(game, /if \(backup\) \{ await restoreFromFile\(backup\); return; \}/, 'a dropped backup restores, never imports as a picture');
+  assert.match(game, /function confirmModal\(/, 'restore needs an in-page confirm (no native dialog)');
+  assert.match(html, /id="confirm"/, 'the confirm modal must be in the DOM');
+  assert.match(game, /case 'confirm-ok': closeConfirm\(true\)/, 'the confirm OK must be wired');
+
+  // Platform: web downloads / picker / a TRUE overwrite; electron routes through
+  // the main process (no dialogs) and restores by drop (loadBackup → null).
+  assert.match(platform, /async saveImage\(dataUrl, name\)/, 'web api needs saveImage');
+  assert.match(platform, /async saveBackup\(text, name\)/, 'web api needs saveBackup');
+  assert.match(platform, /async replaceSave\(save\)/, 'web api needs replaceSave');
+  assert.match(platform, /await idbSet\(db, 'kv', 'save', save\)/, 'web replaceSave must overwrite, not merge');
+  assert.match(platform, /saveImage: \(dataUrl, name\) => bridge\.saveDownload/, 'electron saveImage routes through the main process');
+  assert.match(platform, /loadBackup: async \(\) => null/, 'electron has no picker — restore is drop-only');
+  assert.match(preload, /saveDownload:.*file:save-download/, 'preload must expose saveDownload');
+  assert.match(preload, /replaceSave:.*save:replace/, 'preload must expose replaceSave');
+  assert.match(main, /ipcMain\.handle\('file:save-download'/, 'main needs the Downloads-save handler');
+  assert.match(main, /ipcMain\.handle\('save:replace'/, 'main needs the whole-save replace handler');
+  assert.match(main, /path\.basename\(String\(name/, 'the save handler must strip any path from the name');
 });
 
 /* ------------------------------------------------------------- the swap */

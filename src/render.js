@@ -610,6 +610,28 @@ export class Board {
     this.dirty = false;
   }
 
+  /**
+   * A flat, PNG-ready canvas of the picture as painted — every cell filled with
+   * its own colour, at the picture's native resolution, no outlines or numbers.
+   * This is the "Save image" export: the art you made, not the reference photo.
+   * Meant for a finished picture (all cells filled); any still-blank cell is
+   * drawn on the same off-white ground so the result is never see-through.
+   */
+  snapshot() {
+    const { width, height } = this.puzzle;
+    const out = document.createElement('canvas');
+    out.width = width;
+    out.height = height;
+    const ctx = out.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    for (const cell of this.cells) {
+      ctx.fillStyle = this.filled.has(cell.id) ? this.hexOf(cell.colour) : '#ffffff';
+      ctx.fill(cell.path);
+    }
+    return out;
+  }
+
   /* ------------------------------------------------------------- live layer */
 
   draw(bursts, timeMs) {
