@@ -45,6 +45,11 @@
            confirm). Free mode had no in-app door back into the story before. -->
       <button class="icon" data-act="mode-swap" title="Switch between Story and Free mode">⇄</button>
       <button class="icon" data-act="settings" title="Settings">⚙</button>
+      <!-- Dev-only: opens the Developer menu (launch any minigame to test it,
+           instant-complete the picture). Hidden unless dev mode is on with a
+           picture loaded; toggled by syncDevPill() alongside the complete pill. -->
+      <button id="devMenuBtn" class="icon hidden" data-act="dev-menu"
+        title="Developer menu">🛠</button>
       <button class="icon desktop-only" data-act="pin" title="Always on top">◉</button>
       <button class="icon desktop-only" data-act="minimise" title="Minimise">–</button>
       <button class="icon danger desktop-only" data-act="close" title="Close">✕</button>

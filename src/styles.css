@@ -2568,6 +2568,21 @@ button {
 .dev-pill:hover { background: rgba(224, 169, 42, 0.2); }
 .dev-pill.hidden { display: none; }
 
+/* The Developer menu (dev-only, in the shared panel). It reuses the panel .row
+   layout; only the intro note and the per-row "Launch" affordance are new. */
+.dev-note { padding: 10px 4px 6px; font-size: 11.5px; line-height: 1.5; color: var(--muted); }
+.dev-go {
+  flex: 0 0 auto;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--accent-rgb), 0.4);
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.row.clickable:hover .dev-go { background: rgba(var(--accent-rgb), 0.14); }
+
 /* ================================================================ the swap */
 
 /* The Swap reuses Overtime's overlay, card, head, timer, hint and .won/.lost

@@ -1476,6 +1476,17 @@ test('developer mode opens the whole chapter for checking', () => {
   assert.match(game, /function devComplete\(\)/, 'dev mode needs an instant-complete');
   assert.match(game, /case 'dev-complete': devComplete\(\)/, 'the dev pill must be wired to devComplete');
   assert.match(readSource('src/index.html'), /id="devPill"[\s\S]*?data-act="dev-complete"/, 'the dev pill must be in the DOM');
+  // The Developer MENU: a dev-only launcher for every minigame, so they can be
+  // tested without waiting on the random scheduler. Registry-driven, so a newly
+  // added bonus round appears in it for free.
+  assert.match(game, /function renderDevPanel\(/, 'dev mode needs the minigame test menu');
+  assert.match(game, /for \(const r of BONUS_ROUNDS\) launch\(/, 'the dev menu must launch every registered bonus round');
+  assert.match(game, /launch\('✦', 'The Swap',[^)]*startSwap\)/, "the dev menu must launch story's Swap too");
+  assert.match(game, /kind === 'dev' \? 'Developer'/, 'openPanel must title the dev panel');
+  assert.match(game, /kind === 'dev'\) \{\s*renderDevPanel/, 'openPanel must render the dev menu');
+  assert.match(game, /case 'dev-menu':/, 'the dev-menu button must be wired to openPanel');
+  assert.match(game, /\$\('devMenuBtn'\)\?\.classList\.toggle\('hidden', !live\)/, 'the dev-menu button must be dev-gated in syncDevPill');
+  assert.match(readSource('src/index.html'), /id="devMenuBtn"[\s\S]*?data-act="dev-menu"/, 'the dev-menu button must be in the DOM');
   // Never written to disk — it is session-only by design.
   const persist = game.slice(game.indexOf('function persist'), game.indexOf('function persist') + 1500);
   assert.ok(!/\bdev\b/.test(persist), 'dev mode must not be persisted');

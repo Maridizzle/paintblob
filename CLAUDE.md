@@ -171,7 +171,11 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
 - **Wardrobe / avatar** — 62 garments across 9 slots (shirt, bottoms, dress,
   socks, shoes + outerwear, headwear, eyewear, neckwear); six render styles;
   fixed-accent multicolor. The Outfits shop groups by slot.
-- **Dev mode** — `?dev` or type `devmode`; session-only (`S.dev`).
+- **Dev mode** — `?dev` or type `devmode`; session-only (`S.dev`). A dev-only 🛠
+  toolbar button (`#devMenuBtn`, gated in `syncDevPill`) opens the **Developer
+  menu** (`renderDevPanel` via `openPanel('dev')`): launch any minigame on demand
+  for testing — built straight off the `BONUS_ROUNDS` registry (+ The Swap), so a
+  new round appears there for free — plus the instant-complete.
 
 ## Release & branch workflow — READ THIS
 

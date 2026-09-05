@@ -1142,6 +1142,7 @@ async function openPanel(kind) {
   $('panelTitle').textContent = kind === 'pictures' ? 'Pictures'
     : kind === 'trophies' ? 'Achievements'
     : kind === 'avatar' ? 'Avatar'
+    : kind === 'dev' ? 'Developer'
     : 'Settings';
   $('panel').classList.remove('hidden');
   // The panel sits at a lower z-index than #stage's floating pills so a
@@ -1163,6 +1164,8 @@ async function openPanel(kind) {
   } else if (kind === 'avatar') {
     renderAvatarPanel(body);
     maybeAvatarTour();
+  } else if (kind === 'dev') {
+    renderDevPanel(body);
   } else {
     renderSettings(body);
   }
@@ -2890,6 +2893,44 @@ function maybeAvatarTour() {
   if (tour?.running) return;
   clearTimeout(avatarTourTimer);
   avatarTourTimer = setTimeout(() => { avatarTourTimer = 0; startAvatarTour(); }, 450);
+}
+
+/**
+ * The Developer menu (dev mode only — opened from the toolbar's 🛠). It exists to
+ * TEST the minigames: every free-mode bonus round, plus story's Swap, launched
+ * on demand regardless of the random scheduler or which mode you're in, and the
+ * same instant-complete the dev pill offers. Players never see it — the button
+ * that opens it is dev-gated in syncDevPill(). Built off the BONUS_ROUNDS
+ * registry, so a newly-added round appears here for free.
+ */
+function renderDevPanel(body) {
+  const note = document.createElement('div');
+  note.className = 'dev-note';
+  note.textContent = 'Developer tools — never shown to players. Launch a minigame to test it against the picture you have open.';
+  body.append(note);
+
+  // One clickable row that closes the menu and fires `fn` against the live board.
+  const launch = (mark, label, tag, fn) => {
+    const el = row('clickable');
+    const text = document.createElement('div');
+    text.className = 'grow';
+    text.innerHTML = `<div class="label">${mark} ${label}</div><div class="sub">${tag}</div>`;
+    const go = document.createElement('div');
+    go.className = 'dev-go';
+    go.textContent = 'Launch ▸';
+    el.append(text, go);
+    el.addEventListener('click', () => { closePanel(); fn(); });
+    body.append(el);
+  };
+
+  // The five free-mode bonus rounds, straight off the registry.
+  for (const r of BONUS_ROUNDS) launch(r.mark, r.label, r.tag, r.start);
+  // Story mode's own round — startSwap only needs a loaded picture, not story mode.
+  launch('✦', 'The Swap', 'give the colours their names back', startSwap);
+  // The instant-complete, mirrored from the on-canvas dev pill for convenience.
+  launch('🛠', 'Complete picture', 'fill every cell and finish, to see what unlocks next', devComplete);
+
+  band(body);
 }
 
 function renderSettings(body) {
@@ -4632,11 +4673,15 @@ function toggleDev(on = !S.dev) {
   if (S.panel === 'settings') openPanel('settings');
 }
 
-/** The instant-complete pill: shown only in dev mode while an unfinished
- *  picture is loaded, so you can clear a stone and see the next one open (and a
- *  boss's reward land) without painting it. */
+/** The dev-mode chrome — both hidden entirely outside dev mode. The
+ *  instant-complete pill shows only while an UNfinished picture is loaded (clear
+ *  a stone, see the next one open and a boss's reward land, without painting it).
+ *  The Developer-menu button (the minigame launcher) shows whenever ANY picture
+ *  is loaded — several rounds are worth testing on a finished board too. */
 function syncDevPill() {
-  $('devPill')?.classList.toggle('hidden', !(S.dev && S.puzzle && !S.finished));
+  const live = S.dev && !!S.puzzle;
+  $('devPill')?.classList.toggle('hidden', !(live && !S.finished));
+  $('devMenuBtn')?.classList.toggle('hidden', !live);
 }
 
 // Fills the whole picture at once and finishes it — the dev skip. Tears the boss
@@ -5031,6 +5076,10 @@ document.addEventListener('click', async (e) => {
       break;
     case 'finish-dismiss': $('finish').classList.add('hidden'); break;
     case 'dev-complete': devComplete(); break;         // dev mode: clear the picture instantly
+    case 'dev-menu':                                   // dev mode: the minigame test menu
+      if (S.panel === 'dev') closePanel();
+      else await openPanel('dev');
+      break;
     case 'story-board': openStoryBoard(); break;      // the pill, back to the path
     case 'story-back': closeStoryBoard(); showTitle(); break;
     case 'story-free': enterFree(); break;
