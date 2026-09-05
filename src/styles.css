@@ -727,7 +727,9 @@ html, body {
   /* Embossed wordmark: a hair of light above, ink below. */
   text-shadow: 0 1px 0 rgba(var(--sheen-rgb), 0.06), 0 -1px 0 rgba(var(--shade-rgb), 0.4);
 }
-#bar .subtitle { font-size: 11.5px; color: var(--muted); }
+/* min-width:0 + ellipsis so the subtitle yields space rather than shoving the
+   toolbar icons off a narrow phone bar (Undo + The Path now live among them). */
+#bar .subtitle { font-size: 11.5px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #bar .spacer { flex: 1; }
 
 /* Rubber-stamped catalogue number pressed into the bar's dead space — a faint
@@ -832,7 +834,7 @@ button {
 #board.done { cursor: default; }
 
 /* Shown only once zoomed past fit-to-window; doubles as the reset button. */
-.zoom-pill, .compare-pill, .undo-pill {
+.zoom-pill, .compare-pill {
   position: absolute;
   z-index: 15;
   -webkit-app-region: no-drag;
@@ -846,7 +848,7 @@ button {
   box-shadow: 0 4px 14px rgba(var(--shade-rgb), 0.4);
   transition: background 120ms, transform 120ms, border-color 120ms;
 }
-.zoom-pill:hover, .compare-pill:hover, .undo-pill:hover {
+.zoom-pill:hover, .compare-pill:hover {
   background: rgba(var(--accent-rgb), 0.14);
   border-color: rgba(var(--accent-rgb), 0.34);
   transform: translateY(-1px);
@@ -856,12 +858,6 @@ button {
 /* Shown once a picture is finished, to flip the canvas over to the real
    photo — top-left so it never collides with the zoom pill. */
 .compare-pill { top: 10px; left: 10px; }
-
-/* Shares that corner, and can: undo stops being offered at the exact moment
-   the compare pill starts, so the two are never on screen together. Kept as
-   see-through as the points HUD, for the same reason — unlike the zoom and
-   compare pills, this one is up while you are painting rather than after. */
-.undo-pill { top: 10px; left: 10px; background: rgba(var(--chip-rgb), 0.68); }
 
 /* Top-center is the one corner of #stage nothing else claims. Deliberately
    more transparent than the zoom/compare pills (0.68 vs their 0.9) — this
@@ -1945,7 +1941,7 @@ button {
   .segmented button { padding: 10px 13px; font-size: 12px; }
   .row { padding: 12px 13px; }
   .primary.add { padding: 14px; font-size: 14px; }
-  .zoom-pill, .compare-pill, .undo-pill { padding: 7px 14px; font-size: 12.5px; }
+  .zoom-pill, .compare-pill { padding: 7px 14px; font-size: 12.5px; }
 }
 
 /* Short and narrow — a phone in portrait. Give the picture the room. */
@@ -2544,24 +2540,13 @@ button {
    finished) — but unlike those two, which are mutually exclusive, this one
    stays up the whole time. So park it a row BELOW them, clear of both, instead
    of landing on top of whichever is showing. */
-.story-pill {
-  position: absolute;
-  top: 52px;
-  left: 12px;
-  z-index: 15;
-  padding: 7px 13px;
-  border-radius: 999px;
-  border: 1px solid var(--accent);
-  background: rgba(var(--chip-rgb), 0.86);
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  box-shadow: var(--glow-cyan);
-  -webkit-app-region: no-drag;
-}
-.story-pill:hover { background: rgba(var(--accent-rgb), 0.16); }
-.story-pill.hidden { display: none; }
+/* "The path" (id #storyPill) now lives in the toolbar as an .icon — see
+   index.html for why it left the canvas. It keeps its old accent identity so it
+   reads as the way-back-to-the-path nav, set apart from the muted undo arrow
+   beside it (both are back-curved glyphs). Global `.hidden` handles its
+   show/hide; the low-stim block still hides it by id. */
+.icon.story-nav { color: var(--accent); }
+.icon.story-nav:hover { color: var(--accent); border-color: rgba(var(--accent-rgb), 0.34); }
 
 /* Developer mode's instant-complete pill — sits opposite the path pill, in a
    plain warning amber so it never reads as part of normal play. */
