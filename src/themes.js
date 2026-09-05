@@ -67,6 +67,16 @@ export const THEMES = [
     chapter: 2,
     unlockedBy: 'the-fade',
   },
+  {
+    id: 'patina',
+    label: 'Patina',
+    blurb: 'Dark mode: black velvet under hammered copper and rose-gold, rimmed in verdigris-green fire.',
+    // A freely-chosen dark mode — no unlock, always in the picker. True black
+    // ground, warm-white type, every surface pressed from thin hammered copper
+    // with a green glow held inside it and an emerald/teal edge-light: the warm
+    // metal core and the cool green rim kept in balance. ("Patina" is the green
+    // that grows on copper — the whole aesthetic in one word.)
+  },
 ];
 
 const BY_ID = new Map(THEMES.map((t) => [t.id, t]));
