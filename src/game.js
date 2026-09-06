@@ -35,6 +35,10 @@ import {
   PAINTS, isPaint, paintDef, paintCount, ownedPaints, grantPaint, spendPaint,
 } from './paints.js';
 import { NEWS, hasUnseenNews, markNewsSeen } from './news.js';
+import {
+  STICKER_PACKS, isPack, packDef, packOf, stickerCount, ownedPacks,
+  grantStickers, spendSticker, STYLES as STICKER_STYLES, MOTIONS as STICKER_MOTIONS,
+} from './stickers.js';
 import { outlineSVG, outlineWeight } from './thumbnail.js';
 import { computePlayStats } from './playstats.js';
 import { Tour } from './tour.js';
@@ -76,6 +80,14 @@ const S = {
   // not saved, but the paints you have LAID on a picture persist on its
   // progress.fx (mirrored live in board.fx), the way `filled` does.
   paint: null,
+  // Stickers (stickers.js). `stickerMode` is the decorate mode (taps place/select
+  // stickers rather than painting); `sticker` is the glyph in hand ({glyph, pack})
+  // or null; `stickerSel` is the placed sticker being edited, or null. All
+  // session-only — the placed stickers themselves persist on progress.stickers,
+  // mirrored live in board.stickers.
+  stickerMode: false,
+  sticker: null,
+  stickerSel: null,
   bursts: [],
   seed: 1,
   elapsedMs: 0,
@@ -169,6 +181,9 @@ function persist(immediate = false) {
         // so it serialises; {} when none, which is the common case. Loaded back
         // into board.fx on the next open (see loadPuzzle).
         fx: Object.fromEntries(board.fx),
+        // Placed stickers (stickers.js). Copied plainly so the array serialises;
+        // [] when none. Loaded back into board.stickers on the next open.
+        stickers: board.stickers.map((s) => ({ ...s })),
       };
     }
     S.save.unlocked = [...achievements.unlocked];
@@ -179,6 +194,12 @@ function persist(immediate = false) {
       unlocked: S.save.unlocked,
       avatar: S.save.avatar,
       story: S.save.story,
+      // Shop inventories — id → count. Flat objects, written whole (writeSave
+      // shallow-merges top-level keys). These MUST be in the write-set or a
+      // purchase never reaches disk: writeSave only persists the sections it is
+      // handed, so anything omitted here is silently dropped on the next reload.
+      paints: S.save.paints,
+      stickers: S.save.stickers,
     });
   };
   if (immediate) flush();
@@ -479,6 +500,307 @@ function syncPaintTray() {
   tray.append(shop);
 }
 
+/* ----------------------------------------------------------------- stickers */
+
+// New placed stickers get a runtime key just above whatever the picture's save
+// already carried, so selection/hit-testing never confuses two of them. Reseeded
+// per picture in loadPuzzle.
+let stickerKeySeq = 1;
+const nextStickerKey = () => stickerKeySeq++;
+
+/** A sensible starting size for a stamped sticker — a fraction of the picture's
+ *  shorter side, so it reads the same on a tiny puzzle and a huge one. */
+function stickerDefaultSize() {
+  const min = Math.min(S.puzzle.width, S.puzzle.height);
+  return Math.max(20, min * 0.12);
+}
+
+/** Enter/leave decorate mode. Entering arms the first owned sticker so a tap
+ *  stamps straight away; leaving drops the glyph in hand and any selection. */
+function toggleStickerMode() {
+  if (!S.puzzle) return;
+  S.stickerMode = !S.stickerMode;
+  if (S.stickerMode) {
+    if (!S.sticker) {
+      const first = ownedPacks(S.save)[0];
+      if (first) S.sticker = { glyph: first.glyphs[0], pack: first.id };
+    }
+  } else {
+    S.sticker = null;
+    deselectSticker();
+  }
+  syncStickerUI();
+  ensureFrame();
+}
+
+/** A settled tap in sticker mode: hit a placed sticker → select it; else a glyph
+ *  in hand → stamp one here; else clear the selection. */
+function handleStickerTap(point) {
+  const hit = board.stickerAt(point.x, point.y);
+  if (hit) { selectSticker(hit); return; }
+  if (S.sticker) { placeSticker(point); return; }
+  deselectSticker();
+}
+
+/** Stamp the glyph in hand at `point`, spending one from its pack. */
+function placeSticker(point) {
+  const inhand = S.sticker;
+  if (!inhand) return;
+  if (!spendSticker(S.save, inhand.pack)) { sfx.play('nope'); syncStickerBar(); return; }
+  const s = {
+    k: nextStickerKey(),
+    g: inhand.glyph,
+    pack: inhand.pack,
+    x: point.x,
+    y: point.y,
+    size: stickerDefaultSize(),
+    rot: 0,
+    style: 'flat',
+    motion: 'none',
+  };
+  board.stickers.push(s);
+  selectSticker(s);
+  sfx.play('splat');
+  persist();
+  syncStickerBar(); // the pack's remaining count dropped
+  ensureFrame();
+}
+
+function selectSticker(s) {
+  S.stickerSel = s;
+  board.stickerSel = s ? s.k : null;
+  syncStickerEditor();
+  ensureFrame();
+}
+
+function deselectSticker() {
+  if (!S.stickerSel && board.stickerSel == null) return;
+  S.stickerSel = null;
+  board.stickerSel = null;
+  syncStickerEditor();
+  ensureFrame();
+}
+
+/** Put a sticker glyph in hand (or tap the held one to put it down). */
+function selectStickerGlyph(glyph, pack) {
+  if (!isPack(pack) || stickerCount(S.save, pack) <= 0) { sfx.play('nope'); return; }
+  S.sticker = (S.sticker && S.sticker.glyph === glyph && S.sticker.pack === pack)
+    ? null
+    : { glyph, pack };
+  syncStickerBar();
+  sfx.play('pick', 0);
+}
+
+/** Apply an editor change to the selected sticker. The object is shared with
+ *  board.stickers, so the board redraws it at once; persist is debounced. */
+function updateSticker(patch) {
+  if (!S.stickerSel) return;
+  Object.assign(S.stickerSel, patch);
+  persist();
+  ensureFrame();
+}
+
+/** Remove the selected sticker and hand its placement back to the pack. */
+function deleteSticker() {
+  const s = S.stickerSel;
+  if (!s) return;
+  const i = board.stickers.indexOf(s);
+  if (i >= 0) board.stickers.splice(i, 1);
+  grantStickers(S.save, s.pack, 1); // a removed sticker is a refunded placement
+  deselectSticker();
+  persist();
+  syncStickerBar();
+  ensureFrame();
+}
+
+/** Toolbar gate + footer bar, kept in step with ownership and mode. */
+function syncStickerUI() {
+  syncStickerBtn();
+  syncStickerBar();
+}
+
+/** The 🏷 toolbar toggle: shown only with a picture open and at least one pack
+ *  owned; lit while decorate mode is on. */
+function syncStickerBtn() {
+  const btn = $('stickerBtn');
+  if (!btn) return;
+  const canUse = !!S.puzzle && ownedPacks(S.save).length > 0;
+  btn.classList.toggle('hidden', !canUse);
+  btn.classList.toggle('on', S.stickerMode);
+}
+
+/** The footer sticker bar: shown only in decorate mode (so a normal picture keeps
+ *  its footer for the tubs, and the integration gate's board/tray ratio holds). */
+function syncStickerBar() {
+  const bar = $('stickerBar');
+  if (!bar) return;
+  bar.classList.toggle('hidden', !S.stickerMode);
+  if (!S.stickerMode) return;
+  renderStickerPalette($('stickerPalette'));
+  syncStickerEditor();
+}
+
+/** The palette: a Done button, a shop chip, then the owned packs' glyphs as
+ *  selectable chips (the held one lit), each pack headed by its remaining count. */
+function renderStickerPalette(el) {
+  if (!el) return;
+  el.textContent = '';
+
+  const done = document.createElement('button');
+  done.className = 'sticker-done';
+  done.dataset.act = 'sticker-done';
+  done.textContent = '✓ Done';
+  el.append(done);
+
+  const owned = ownedPacks(S.save);
+  for (const pack of owned) {
+    const group = document.createElement('div');
+    group.className = 'sticker-group';
+    const head = document.createElement('div');
+    head.className = 'sticker-group-head';
+    head.textContent = `${pack.label} · ${stickerCount(S.save, pack.id)}`;
+    group.append(head);
+    const row = document.createElement('div');
+    row.className = 'sticker-glyphs';
+    for (const glyph of pack.glyphs) {
+      const chip = document.createElement('button');
+      chip.className = 'sticker-glyph';
+      chip.dataset.act = 'sticker-pick';
+      chip.dataset.glyph = glyph;
+      chip.dataset.pack = pack.id;
+      chip.textContent = glyph;
+      chip.classList.toggle('selected', !!S.sticker && S.sticker.glyph === glyph && S.sticker.pack === pack.id);
+      row.append(chip);
+    }
+    group.append(row);
+    el.append(group);
+  }
+
+  const shop = document.createElement('button');
+  shop.className = 'sticker-shop';
+  shop.dataset.act = 'stickers-shop';
+  shop.textContent = '🏷 Shop';
+  el.append(shop);
+}
+
+/** The editor for the selected sticker: size, rotation, 3D style, motion, delete.
+ *  Empty (with a hint) when nothing is selected. */
+function syncStickerEditor() {
+  const el = $('stickerEditor');
+  if (!el) return;
+  el.textContent = '';
+  const s = S.stickerSel;
+  if (!s) {
+    el.innerHTML = '<div class="sticker-hint">Tap the picture to place · tap a sticker to edit or drag it</div>';
+    return;
+  }
+
+  const min = Math.min(S.puzzle.width, S.puzzle.height);
+
+  const slider = (label, value, lo, hi, step, onInput) => {
+    const wrap = document.createElement('label');
+    wrap.className = 'sticker-slider';
+    const name = document.createElement('span');
+    name.textContent = label;
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = String(lo); input.max = String(hi); input.step = String(step);
+    input.value = String(value);
+    input.addEventListener('input', () => onInput(Number(input.value)));
+    wrap.append(name, input);
+    return wrap;
+  };
+
+  el.append(slider('Size', s.size, Math.max(10, min * 0.03), min * 0.6, 1, (v) => updateSticker({ size: v })));
+  el.append(slider('Turn', Math.round((s.rot || 0) * 180 / Math.PI), 0, 360, 1, (v) => updateSticker({ rot: v * Math.PI / 180 })));
+
+  const segRow = (labelText, items, current, onPick) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'sticker-seg-row';
+    const name = document.createElement('span');
+    name.className = 'sticker-seg-label';
+    name.textContent = labelText;
+    wrap.append(name);
+    const seg = document.createElement('div');
+    seg.className = 'sticker-seg';
+    for (const it of items) {
+      const b = document.createElement('button');
+      b.textContent = it.label;
+      b.classList.toggle('on', it.id === current);
+      b.addEventListener('click', () => onPick(it.id));
+      seg.append(b);
+    }
+    wrap.append(seg);
+    return wrap;
+  };
+
+  el.append(segRow('Style', STICKER_STYLES, s.style || 'flat', (id) => { updateSticker({ style: id }); syncStickerEditor(); }));
+  el.append(segRow('Move', STICKER_MOTIONS, s.motion || 'none', (id) => { updateSticker({ motion: id }); syncStickerEditor(); }));
+
+  const del = document.createElement('button');
+  del.className = 'sticker-delete';
+  del.dataset.act = 'sticker-delete';
+  del.textContent = '🗑 Remove';
+  el.append(del);
+}
+
+/**
+ * The sticker store. Packs are a limited supply bought with coins (like the
+ * special paints); buying grants `pack.grant` placements. Re-renders in place so
+ * the balance and counts stay live, and refreshes the toolbar gate so the 🏷
+ * button appears the moment the first pack is owned.
+ */
+function renderStickerShop(body) {
+  const note = document.createElement('div');
+  note.className = 'dev-note';
+  note.textContent = 'Stickers stamp onto a picture — hearts, stars, shapes, letters, numbers, animals, aliens. Buy a pack, tap 🏷 in the toolbar, then tap the picture to place one (works on a finished picture too). Give it a size, a spin, or a 3D pop; the saved image keeps it.';
+  body.append(note);
+
+  const bal = document.createElement('div');
+  bal.className = 'empty';
+  bal.style.padding = '2px 4px 8px';
+  bal.textContent = `${S.save.stats.points ?? 0}🪙 to spend`;
+  body.append(bal);
+
+  const redraw = () => {
+    persist();
+    syncAvatarWidget();
+    syncStickerUI();
+    body.textContent = '';
+    renderStickerShop(body);
+  };
+
+  for (const pack of STICKER_PACKS) {
+    const owned = stickerCount(S.save, pack.id);
+    const el = row();
+    const text = document.createElement('div');
+    text.className = 'grow';
+    text.innerHTML = '<div class="label"></div><div class="sub"></div><div class="sticker-preview"></div>';
+    text.querySelector('.label').textContent = `${pack.mark} ${pack.label}`;
+    text.querySelector('.sub').textContent = owned > 0 ? `${pack.blurb} · ${owned} left` : pack.blurb;
+    // A few sample glyphs so the pack is recognisable before buying.
+    text.querySelector('.sticker-preview').textContent = pack.glyphs.slice(0, 8).join(' ');
+    el.append(text);
+
+    const affordable = (S.save.stats.points ?? 0) >= pack.price;
+    const buy = document.createElement('button');
+    buy.className = 'primary buy';
+    buy.disabled = !affordable;
+    buy.textContent = affordable ? `Buy ${pack.grant} · ${pack.price}🪙` : `${pack.price}🪙`;
+    buy.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!spendPoints(S.save.stats, pack.price)) { sfx.play('nope'); return; }
+      grantStickers(S.save, pack.id, pack.grant);
+      toast({ icon: pack.mark, name: `${pack.grant} ${pack.label} stickers`, desc: 'Tap 🏷 in the toolbar to place them.' });
+      redraw();
+    });
+    el.append(buy);
+    body.append(el);
+  }
+
+  band(body);
+}
+
 /* -------------------------------------------------------------------- puzzle */
 
 /** Turns a #rrggbb string into { h, s, l } (hue 0..360, sat/lightness 0..1). */
@@ -589,6 +911,18 @@ async function loadPuzzle(id) {
       .map(([k, v]) => [Number(k), v])
       .filter(([id, paintId]) => isPaint(paintId) && S.filled.has(id)),
   );
+  // Stickers placed on this picture, back from its save. Only well-formed entries
+  // for still-owned packs survive; a stray one from a since-changed catalogue is
+  // dropped rather than drawn as a blank.
+  S.sticker = null;
+  S.stickerSel = null;
+  S.stickerMode = false;
+  board.stickerSel = null;
+  board.stickers = (Array.isArray(saved.stickers) ? saved.stickers : [])
+    .filter((s) => s && typeof s.g === 'string' && isPack(s.pack) && Number.isFinite(s.x) && Number.isFinite(s.y))
+    .map((s) => ({ ...s }));
+  // New keys must clear whatever the save already used, so selection never aliases.
+  stickerKeySeq = board.stickers.reduce((m, s) => Math.max(m, s.k || 0), 0) + 1;
   board.reveal = S.finished ? 1 : 0;
   $('board').classList.toggle('done', S.finished);
   $('finish').classList.add('hidden');
@@ -599,6 +933,7 @@ async function loadPuzzle(id) {
   syncCompare(); // ditto showSource
   syncUndo(); // history was just cleared, so this always hides it
   syncPaintTray(); // owned special paints, for this newly-opened picture
+  syncStickerUI(); // sticker mode is off on a fresh open; refresh the toolbar gate
   if (!S.finished) nextTub();
 
   // Opening a free-gallery picture is leaving the story. Story mode is walked
@@ -637,6 +972,7 @@ const DRAG_PX = 6;   // movement past this abandons a tap for a pan
 let tap = null;      // { id, x0, y0 } — sole pointer, decision pending
 let panning = null;  // { id, x, y } — single-pointer pan in progress
 let pinch = null;    // { ids, dist, zoom, midX, midY } — two-finger gesture
+let stickerDrag = null; // { id, sticker, ox, oy } — moving a placed sticker (sticker mode)
 
 // Nothing is looking at the picture any more, so the raised element settles
 // back square rather than staying frozen at whatever angle you left it.
@@ -659,6 +995,17 @@ $('board').addEventListener('pointermove', (e) => {
     return;
   }
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (stickerDrag && stickerDrag.id === e.pointerId) {
+    // Moving a placed sticker: keep the same grab offset so it doesn't jump to
+    // the fingertip. Force the next frame so it tracks rather than lagging.
+    const p = board.toPuzzle(e.clientX, e.clientY);
+    stickerDrag.sticker.x = p.x - stickerDrag.ox;
+    stickerDrag.sticker.y = p.y - stickerDrag.oy;
+    lastDraw = 0;
+    ensureFrame();
+    return;
+  }
 
   if (pinch) {
     const [a, b] = pinch.ids.map((id) => pointers.get(id));
@@ -722,6 +1069,21 @@ $('board').addEventListener('pointerdown', (e) => {
   }
   if (pointers.size > 2) return; // a third finger is not a gesture this handles
 
+  // In sticker mode, a press that lands ON a placed sticker begins a MOVE — it
+  // takes precedence over the tap so dragging repositions the sticker instead of
+  // stamping or panning. A press on empty space falls through to the tap path
+  // below (tap = stamp/deselect; drag = pan), so you can still move around.
+  if (S.stickerMode) {
+    const p = board.toPuzzle(e.clientX, e.clientY);
+    const hit = board.stickerAt(p.x, p.y);
+    if (hit) {
+      selectSticker(hit);
+      stickerDrag = { id: e.pointerId, sticker: hit, ox: p.x - hit.x, oy: p.y - hit.y };
+      tap = null;
+      return;
+    }
+  }
+
   tap = { id: e.pointerId, x0: e.clientX, y0: e.clientY };
 });
 
@@ -729,6 +1091,12 @@ function endPointer(e) {
   pointers.delete(e.pointerId);
   if (board.canvas.hasPointerCapture(e.pointerId)) board.canvas.releasePointerCapture(e.pointerId);
 
+  if (stickerDrag && stickerDrag.id === e.pointerId) {
+    stickerDrag = null;
+    persist();      // the new position sticks
+    ensureFrame();
+    return;         // a move is not a tap, so don't stamp/deselect
+  }
   if (pinch) {
     if (pinch.ids.includes(e.pointerId)) pinch = null;
     return;
@@ -758,6 +1126,11 @@ $('board').addEventListener('wheel', (e) => {
 /** Resolves a settled tap: paint the cell underneath it, if there is one. */
 function tryPaint(clientX, clientY, pointerType) {
   const { point, cell } = pointerToCell(clientX, clientY);
+
+  // Sticker mode owns the tap: place, select or deselect a sticker instead of
+  // painting — and it works on a finished picture too. A drag that MOVES a sticker
+  // is caught earlier, in the pointer handlers, so this only fires on a real tap.
+  if (S.stickerMode) { handleStickerTap(point); return; }
 
   // A special paint in hand takes over the tap: it overrides the cell's true
   // colour with a shimmer/rainbow/oil-slick, needs no tub, and works even after
@@ -1420,7 +1793,8 @@ function frame(now) {
   // rather than being pinned at full rate forever.
   const busy = S.bursts.length > 0 || S.revealFrom > 0 || board.hintTarget
     || board.colourFlash || board.focus || board.shock || board.living || board.liftMoving()
-    || board.fx.size > 0; // special paints animate every frame while any is on screen
+    || board.fx.size > 0 // special paints animate every frame while any is on screen
+    || board.stickersAnimate; // animated stickers (bob/spin/pulse/flip) keep the loop alive
   if (busy || now - lastDraw > 33) {
     lastDraw = now;
     board.draw(S.bursts, now);
@@ -1450,6 +1824,7 @@ async function openPanel(kind) {
     : kind === 'avatar' ? 'Avatar'
     : kind === 'dev' ? 'Developer'
     : kind === 'paints' ? 'Special paints'
+    : kind === 'stickers' ? 'Stickers'
     : 'Settings';
   $('panel').classList.remove('hidden');
   // The panel sits at a lower z-index than #stage's floating pills so a
@@ -1475,6 +1850,8 @@ async function openPanel(kind) {
     renderDevPanel(body);
   } else if (kind === 'paints') {
     renderPaintsShop(body);
+  } else if (kind === 'stickers') {
+    renderStickerShop(body);
   } else {
     renderSettings(body);
   }
@@ -3503,6 +3880,15 @@ function renderSettings(body) {
     '<div class="dev-go">Shop</div>';
   paints.addEventListener('click', () => { closePanel(); openPanel('paints'); });
   body.append(paints);
+
+  // Sticker store — its cousin. Once you own a pack, the 🏷 toolbar button lets
+  // you place them; this is the way in and the way to buy more.
+  const stickers = row('clickable');
+  stickers.innerHTML = '<div class="grow"><div class="label">🏷️ Stickers</div>' +
+    '<div class="sub">Stamp hearts, stars, letters, animals &amp; more onto a picture</div></div>' +
+    '<div class="dev-go">Shop</div>';
+  stickers.addEventListener('click', () => { closePanel(); openPanel('stickers'); });
+  body.append(stickers);
 
   // Data safety: keep your whole save as a file, and put one back. Always shown
   // (a backup matters most on the day storage clears). On desktop, restore is by
@@ -5537,6 +5923,18 @@ document.addEventListener('click', async (e) => {
       if (S.panel === 'paints') closePanel();
       else await openPanel('paints');
       break;
+    case 'sticker-mode': toggleStickerMode(); break;   // enter/leave decorate mode
+    case 'sticker-pick': {                              // arm a sticker glyph
+      const chip = e.target.closest('[data-glyph]');
+      if (chip) selectStickerGlyph(chip.dataset.glyph, chip.dataset.pack);
+      break;
+    }
+    case 'sticker-done': toggleStickerMode(); break;    // the bar's Done button
+    case 'sticker-delete': deleteSticker(); break;
+    case 'stickers-shop':                               // the sticker store
+      if (S.panel === 'stickers') closePanel();
+      else await openPanel('stickers');
+      break;
     case 'zoom-reset': board.resetZoom(); syncZoom(); ensureFrame(); break;
     case 'toggle-source': {
       // Every trip into photo view plays the picture's living element again,
@@ -5751,6 +6149,7 @@ async function boot() {
   S.save.settings.fill ??= DEFAULT_FILL;   // fill animation style (fill-fx.js)
   S.save.settings.newsSeen ??= 0;          // highest What's-New rev read (news.js)
   S.save.paints ??= {};                    // special-paint inventory (paints.js)
+  S.save.stickers ??= {};                  // sticker-pack inventory (stickers.js)
   S.save.stats.mutedCells ??= 0;
   S.save.stats.patientLandings ??= 0;
   S.save.stats.hints ??= 0;

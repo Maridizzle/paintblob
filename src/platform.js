@@ -24,6 +24,9 @@ const DEFAULT_SAVE = {
   // Special-paint inventory: id → uses remaining (shimmer / rainbow / multi).
   // A picture's per-cell paint assignments live on its progress entry (`fx`).
   paints: {},
+  // Sticker-pack inventory: packId → placements remaining. A picture's placed
+  // stickers live on its progress entry (`stickers`), like `fx` for paints.
+  stickers: {},
   bounds: null,
   avatar: {
     customize: {

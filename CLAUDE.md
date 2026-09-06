@@ -197,7 +197,32 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
   `renderPaintsShop` (buy a pack via `spendPoints` → `grantPaint`). `render.js`
   draws `board.fx` each frame (`fxFillStyle`, a per-cell golden-ratio phase) and
   `snapshot()` bakes the same stops; the RAF `busy` flag includes `board.fx.size >
-  0` so it animates for free. **Stickers are the planned Drop 2** (see Pending).
+  0` so it animates for free.
+- **Stickers** — `stickers.js` (pure catalogue + pack economy + `stickerTransform`
+  motion maths) + `game.js` + `render.js`. Placeable **emoji** decorations you
+  stamp onto a picture — hearts, stars, shapes, numbers, letters, animals, aliens
+  — bought in **packs** (a limited supply, like the paints): `save.stickers` is the
+  inventory (packId → placements left; a save-shape key in both `DEFAULT_SAVE`
+  literals + a `??=` boot backfill + **the persist write-set** — see the persistence
+  note below), and each placement spends one, removing a placed sticker refunds it.
+  A picture's placed stickers persist on `progress[id].stickers` (array of
+  `{k,g,x,y,size,rot,style,motion}`), mirrored live in `board.stickers`. **Decorate
+  mode** (`S.stickerMode`, the `🏷` toolbar toggle `#stickerBtn`, gated on owning a
+  pack) turns taps into place / select / drag-move (a `stickerDrag` pointer state)
+  instead of painting, and a footer **#stickerBar** (`#stickerPalette` +
+  `#stickerEditor`, never over the canvas) holds the glyph palette and the selected
+  sticker's editor: **size, turn, style (flat / 3D pop), motion (still / bob / spin
+  / pulse / 3D flip), remove**. Works on a finished picture (the `handleStickerTap`
+  branch in `tryPaint` runs before the finished guard). `render.js` draws
+  `board.stickers` each frame (`drawSticker`, emoji via canvas `fillText` — the
+  "no `<text>`" rule is SVG-only; letters render as outlined text) and `snapshot()`
+  bakes the current frame; `board.stickerAt` hit-tests, `board.stickersAnimate`
+  keeps the loop alive. Shop is `openPanel('stickers')` → `renderStickerShop`.
+  - **Persistence gotcha (fixed here):** `writeSave` only stores the sections the
+    `persist()` write-set hands it, so a shop inventory (`paints`, `stickers`) MUST
+    be listed there or a purchase never reaches disk. `save.paints` had been
+    omitted (bought paints vanished on reload in v0.7.58); both are in the write-set
+    now, with a regression test.
 - **Wardrobe / avatar** — 62 garments across 9 slots (shirt, bottoms, dress,
   socks, shoes + outerwear, headwear, eyewear, neckwear); six render styles;
   fixed-accent multicolor. The Outfits shop groups by slot.
@@ -260,15 +285,14 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
 
 ## Pending / good-to-know
 
-- **Stickers (special-paints Drop 2)** — the planned follow-up to the special
-  paints above: placeable hearts / stars / letters / numbers / shapes / little
-  animals / aliens, static + 3D + animated, positioned on a picture, saved per
-  picture, and baked into `Board.snapshot()` the same way `board.fx` is. The
-  paints laid the groundwork (per-picture overlay data on `progress`, a shop, a
-  tray); stickers add a place-and-position editor on top.
 - **Animated export (later drop)** — Save image currently bakes a **static** PNG
-  of the current animation frame (shimmer/rainbow + eventually animated stickers).
-  A GIF / short-video export that captures the motion is a deliberate later drop.
+  of the current animation frame (special paints + animated stickers). A GIF /
+  short-video export that captures the motion is a deliberate later drop.
+- **Sticker follow-ups (good-to-know)** — v1 ships emoji stickers with move /
+  resize / rotate / style / motion + delete. Undo (Ctrl+Z) does not remove the
+  last-placed sticker yet — removal is the editor's Remove button (which refunds
+  the placement). Rotation is ignored by the hit-test (an axis-aligned box), and
+  true independently-coloured/custom-art stickers are not built. All easy adds.
 - **True two-tone dyeable garments** (independently recolourable panels) is the
   planned fast-follow to fixed accents: port the Room's per-part colour model
   (`house.colours` + a sub-part selection) onto the avatar — save shape, `part()`,

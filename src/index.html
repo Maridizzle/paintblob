@@ -41,6 +41,10 @@
       <button class="icon" data-act="pictures" title="Pictures — add your own">▦</button>
       <button class="icon hint-btn empty" data-act="hint" title="Use a hint — flashes and enlarges a cell for a minute">✦<span class="badge">0</span></button>
       <button class="icon" data-act="trophies" title="Achievements">★</button>
+      <!-- Decorate mode: place stickers on the picture. Hidden until the player
+           owns a pack (gated in syncStickerBtn); lit while decorate mode is on. -->
+      <button id="stickerBtn" class="icon hidden" data-act="sticker-mode"
+        title="Stickers — decorate this picture">🏷️</button>
       <!-- Always-visible way to swap between Story and Free mode (with a
            confirm). Free mode had no in-app door back into the story before. -->
       <button class="icon" data-act="mode-swap" title="Switch between Story and Free mode">⇄</button>
@@ -189,6 +193,15 @@
            syncPaintTray(). In the footer, never over the canvas, so — unlike the
            old floating pills — it can never sit on a cell you still need. -->
       <div id="paintTray" class="paint-tray hidden"></div>
+      <!-- Decorate mode's controls: a scrollable glyph palette and, when a placed
+           sticker is selected, its editor (size/turn/style/motion/remove). Built
+           by renderStickerPalette / syncStickerEditor. Shown only in sticker mode,
+           so a normal picture keeps its footer for the tubs. In the footer, never
+           over the canvas. -->
+      <div id="stickerBar" class="sticker-bar hidden">
+        <div id="stickerPalette" class="sticker-palette"></div>
+        <div id="stickerEditor" class="sticker-editor"></div>
+      </div>
     </footer>
 
     <div id="grip" class="desktop-only" title="Resize"></div>

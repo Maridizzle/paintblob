@@ -53,6 +53,7 @@ const DEFAULT_SAVE = {
   settings: { sound: true, volume: 0.7, alwaysOnTop: true, scale: 1, opacity: 0.7, fill: 'blob', theme: 'void', themePinned: false, lowStim: false, overtime: true, newsSeen: 0 },
   story: { chapter: 1, seen: {} },   // story mode: current chapter, openings seen
   paints: {},                        // special-paint inventory: id -> uses left
+  stickers: {},                      // sticker-pack inventory: packId -> placements left
   bounds: null,
   avatar: {
     customize: {
