@@ -68,6 +68,12 @@ export const NEWS = [
     title: 'Special paints',
     blurb: 'Shimmer, rainbow and oil-slick paints that never stop moving. Buy a pack and paint any cell — even on a finished picture. Find them in Settings → Special paints.',
   },
+  {
+    rev: 11,
+    icon: '🏷️',
+    title: 'Stickers',
+    blurb: 'Stamp hearts, stars, shapes, letters, numbers, animals and aliens onto a picture — bought in packs, then sized, spun or given a 3D pop. Tap 🏷 in the toolbar to decorate.',
+  },
 ];
 
 /** The highest rev in the catalogue — what "caught up" means. */
