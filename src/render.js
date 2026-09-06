@@ -1,4 +1,5 @@
 import { fxStops } from './paints.js';
+import { stickerTransform, packDef } from './stickers.js';
 
 // Two-layer canvas renderer.
 //
@@ -101,6 +102,11 @@ export class Board {
     // always in `filled`; the live layer animates a gradient over them every
     // frame. Loaded from the picture's progress by game.js after setPuzzle.
     this.fx = new Map();
+    // Placed stickers for this picture: an array of { k, g, x, y, size, rot,
+    // style, motion } (picture-space centre + size). Drawn on the live layer so
+    // animated ones move; game.js repopulates from progress after setPuzzle.
+    this.stickers = [];
+    this.stickerSel = null; // key of the sticker with a selection outline, or null
     this.selected = -1;
     this.hover = -1;
     this.reveal = 0;      // 1 = finished picture, outlines faded away
@@ -195,6 +201,8 @@ export class Board {
     this.cells = cells;
     this.filled = filled;
     this.fx = new Map(); // game.js repopulates from the picture's saved fx
+    this.stickers = [];  // ditto — repopulated from the picture's saved stickers
+    this.stickerSel = null;
     this.reveal = filled.size === cells.length ? 1 : 0;
     this.resetZoom();
 
@@ -645,6 +653,9 @@ export class Board {
       ctx.fillStyle = this.fxFillStyle(ctx, cell, paintId, t);
       ctx.fill(cell.path);
     }
+    // And the stickers, on whatever frame they are on — so the saved PNG carries
+    // the decoration exactly as it looked, animation frozen (no selection ring).
+    for (const s of this.stickers) this.drawSticker(ctx, s, t, false);
     return out;
   }
 
@@ -660,6 +671,78 @@ export class Board {
     const phase = (cell.id * 0.6180339887) % 1; // golden-ratio scatter, stable per cell
     for (const [off, colour] of fxStops(paintId, t, phase).stops) g.addColorStop(off, colour);
     return g;
+  }
+
+  /**
+   * Draws one sticker in picture space at time `t` (ms). The motion wobble comes
+   * from stickers.js (stickerTransform) so the live board and the saved PNG agree;
+   * a 3D-pop sticker gets a drop shadow that lifts it off the page. Letters render
+   * as outlined text (there is no clean coloured-emoji alphabet); everything else
+   * is an emoji the font colours itself. `selected` draws the editing outline
+   * (live layer only — never baked into a snapshot).
+   */
+  drawSticker(ctx, s, t, selected) {
+    const phase = ((s.k ?? 0) * 0.6180339887) % 1; // stable per-sticker scatter
+    const m = stickerTransform(s.motion || 'none', t, phase);
+    const size = s.size * (m.scale || 1);
+    ctx.save();
+    ctx.translate(s.x + (m.dx || 0) * s.size, s.y + (m.dy || 0) * s.size);
+    if (m.rot || s.rot) ctx.rotate((s.rot || 0) + (m.rot || 0));
+    if ((m.scaleX ?? 1) !== 1) ctx.scale(m.scaleX, 1); // the 3D-flip squash
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `${size}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,sans-serif`;
+
+    if ((s.style || 'flat') === '3d') {
+      ctx.shadowColor = 'rgba(0,0,0,0.38)';
+      ctx.shadowBlur = size * 0.14;
+      ctx.shadowOffsetX = size * 0.06;
+      ctx.shadowOffsetY = size * 0.11;
+    }
+    if (packDef(s.pack)?.text) {
+      // Outlined text glyph: a dark stroke under a white fill so a letter reads on
+      // any painted colour beneath it.
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = size * 0.14;
+      ctx.strokeStyle = 'rgba(20,18,28,0.85)';
+      ctx.strokeText(s.g, 0, size * 0.02);
+      ctx.shadowColor = 'transparent'; // don't double the shadow under the fill
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(s.g, 0, size * 0.02);
+    } else {
+      ctx.fillText(s.g, 0, 0);
+    }
+    ctx.restore();
+
+    if (selected) {
+      const half = s.size * 0.62;
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      if (s.rot) ctx.rotate(s.rot);
+      ctx.strokeStyle = this.themeAccent || '#35e9ff';
+      ctx.lineWidth = Math.max(1.5, s.size * 0.03);
+      ctx.setLineDash([s.size * 0.12, s.size * 0.09]);
+      ctx.strokeRect(-half, -half, half * 2, half * 2);
+      ctx.restore();
+    }
+  }
+
+  /** Topmost placed sticker whose (rotation-ignoring) box contains the point, or
+   *  null. Used by game.js to select and drag. Latest-placed wins, so a sticker
+   *  stamped on top of another is the one you grab. */
+  stickerAt(px, py) {
+    for (let i = this.stickers.length - 1; i >= 0; i--) {
+      const s = this.stickers[i];
+      const half = s.size * 0.62;
+      if (px >= s.x - half && px <= s.x + half && py >= s.y - half && py <= s.y + half) return s;
+    }
+    return null;
+  }
+
+  /** Any sticker currently in motion — so the frame loop knows to keep animating. */
+  get stickersAnimate() {
+    return this.stickers.some((s) => s.motion && s.motion !== 'none');
   }
 
   /* ------------------------------------------------------------- live layer */
@@ -742,6 +825,13 @@ export class Board {
         ctx.fill(cell.path);
       }
       ctx.restore();
+    }
+
+    // Stickers: the placed decorations, over the painted cells, redrawn every
+    // frame so animated ones move. Same picture-space transform as the cells; the
+    // selected one wears an editing outline (live only — snapshot never bakes it).
+    if (this.stickers.length) {
+      for (const s of this.stickers) this.drawSticker(ctx, s, timeMs, s.k === this.stickerSel);
     }
 
     // The colour in hand breathes: a soft hatch of that paint lifts and settles

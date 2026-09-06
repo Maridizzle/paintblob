@@ -29,6 +29,11 @@ import {
   NEWS, NEWS_MAX_REV, hasUnseenNews, unseenNews, markNewsSeen,
 } from '../src/news.js';
 import {
+  STICKER_PACKS, isPack, packDef, packOf, stickerCount, ownedPacks,
+  grantStickers, spendSticker, STYLES as STICKER_STYLES, MOTIONS as STICKER_MOTIONS,
+  isStyle, isMotion, stickerTransform,
+} from '../src/stickers.js';
+import {
   CHUNKS, MIN_STEP, labL, rampFrom, randomStops, lerpHue, scramble, swap, isSolved, placedCount, partnerFor,
 } from '../src/overtime.js';
 import {
@@ -3334,4 +3339,141 @@ test('the What’s New splash is wired into the app, save and boot gate', () => 
   assert.match(html, /id="news"/, 'the What’s New overlay must exist');
   assert.match(html, /id="newsList"/, 'the splash needs a list container');
   assert.match(html, /data-act="news-close"/, 'the splash needs a close control');
+});
+
+/* ---------------------------------------------------------------- stickers */
+
+// Stickers: placeable emoji decorations bought in packs (a limited supply, like
+// the special paints). The catalogue, the pack economy, and stickerTransform (the
+// per-frame wobble an animated sticker rides) are pure; game.js renders them onto
+// the canvas and bakes the current frame into the saved PNG.
+
+test('STICKER_PACKS: unique ids + glyphs, and the fields the shop/palette need', () => {
+  const ids = STICKER_PACKS.map((p) => p.id);
+  assert.equal(new Set(ids).size, ids.length, 'pack ids must be unique');
+  const seen = new Set();
+  for (const p of STICKER_PACKS) {
+    assert.ok(p.label && p.mark && p.blurb, `${p.id} needs a label, mark and blurb`);
+    assert.ok(Number.isFinite(p.price) && p.price > 0, `${p.id} needs a positive price`);
+    assert.ok(Number.isInteger(p.grant) && p.grant > 0, `${p.id} needs a positive grant`);
+    assert.ok(Array.isArray(p.glyphs) && p.glyphs.length > 0, `${p.id} needs glyphs`);
+    for (const g of p.glyphs) {
+      assert.ok(!seen.has(g), `glyph ${g} appears in more than one pack`);
+      seen.add(g);
+    }
+  }
+  // The categories the user named are all represented.
+  for (const want of ['love', 'shapes', 'numbers', 'letters', 'critters', 'space']) {
+    assert.ok(ids.includes(want), `missing the ${want} pack`);
+  }
+  assert.equal(packDef('letters').text, true, 'the Letters pack renders as text glyphs');
+});
+
+test('packOf maps a glyph to its pack; isPack rejects junk', () => {
+  const heart = STICKER_PACKS[0].glyphs[0];
+  assert.equal(packOf(heart), 'love');
+  assert.equal(packOf('🦄'), 'critters');
+  assert.equal(packOf('not-a-glyph'), null);
+  assert.ok(isPack('space'));
+  assert.ok(!isPack('nope'));
+});
+
+test('sticker inventory: grant, spend, count and owned-list', () => {
+  const save = {};
+  assert.equal(stickerCount(save, 'love'), 0);
+  assert.deepEqual(ownedPacks(save), []);
+
+  grantStickers(save, 'love', 30);
+  grantStickers(save, 'space'); // defaults to one
+  assert.equal(stickerCount(save, 'love'), 30);
+  assert.equal(stickerCount(save, 'space'), 1);
+  assert.deepEqual(ownedPacks(save).map((p) => p.id), ['love', 'space']);
+
+  assert.equal(spendSticker(save, 'space'), true);
+  assert.equal(stickerCount(save, 'space'), 0);
+  assert.equal(spendSticker(save, 'space'), false, 'an empty pack cannot be spent');
+  assert.equal(stickerCount(save, 'space'), 0, 'and never goes negative');
+  assert.deepEqual(ownedPacks(save).map((p) => p.id), ['love'], 'the emptied pack drops off');
+
+  grantStickers(save, 'not-a-pack', 5);
+  assert.equal(stickerCount(save, 'not-a-pack'), 0, 'an unknown pack grants nothing');
+  assert.doesNotThrow(() => grantStickers(null, 'love'), 'a missing save is tolerated');
+});
+
+test('sticker styles/motions are declared, and stickerTransform behaves', () => {
+  assert.ok(STICKER_STYLES.some((s) => s.id === 'flat') && STICKER_STYLES.some((s) => s.id === '3d'),
+    'flat and 3D styles exist');
+  for (const want of ['none', 'bob', 'spin', 'pulse', 'flip']) {
+    assert.ok(STICKER_MOTIONS.some((m) => m.id === want), `motion ${want} exists`);
+  }
+  assert.ok(isStyle('3d') && !isStyle('nope'));
+  assert.ok(isMotion('flip') && !isMotion('nope'));
+
+  // `none` is the identity, so a still sticker costs nothing.
+  const still = stickerTransform('none', 1234, 0.3);
+  assert.deepEqual(still, { dx: 0, dy: 0, scale: 1, scaleX: 1, rot: 0 });
+
+  // Every motion returns finite numbers and animates over time.
+  for (const m of ['bob', 'spin', 'pulse', 'flip']) {
+    const a = stickerTransform(m, 0, 0);
+    const b = stickerTransform(m, 900, 0);
+    for (const v of Object.values({ ...a, ...b })) assert.ok(Number.isFinite(v), `${m} stays finite`);
+    assert.notDeepEqual(a, b, `${m} moves over time`);
+  }
+  // The 3D flip never collapses scaleX exactly to 0 (there is always a sliver).
+  for (let t = 0; t < 4000; t += 37) {
+    assert.notEqual(stickerTransform('flip', t, 0).scaleX, 0, 'flip keeps a drawable sliver');
+  }
+});
+
+test('stickers are wired through the app, save and picture persistence', () => {
+  const game = readSource('src/game.js');
+  const render = readSource('src/render.js');
+  const html = readSource('src/index.html');
+
+  // game.js: state, mode toggle, place/select/move, editor, shop.
+  assert.match(game, /from '\.\/stickers\.js'/, 'game.js must import stickers.js');
+  assert.match(game, /\bstickerMode: false,/, 'S needs the decorate-mode flag');
+  assert.match(game, /function toggleStickerMode\(\)/, 'game.js needs the mode toggle');
+  assert.match(game, /function placeSticker\(/, 'game.js needs sticker placement');
+  assert.match(game, /function handleStickerTap\(/, 'a tap in sticker mode is routed');
+  assert.match(game, /if \(S\.stickerMode\) \{ handleStickerTap\(point\); return; \}/, 'tryPaint hands taps to sticker mode first');
+  assert.match(game, /function deleteSticker\(/, 'a placed sticker can be removed');
+  assert.match(game, /grantStickers\(S\.save, s\.pack, 1\)/, 'removing a sticker refunds its placement');
+  assert.match(game, /function renderStickerShop\(/, 'game.js needs the sticker shop');
+  assert.match(game, /grantStickers\(S\.save, pack\.id, pack\.grant\)/, 'buying grants a whole pack');
+  assert.match(game, /stickerDrag/, 'a placed sticker can be dragged to move it');
+  assert.match(game, /case 'sticker-mode': toggleStickerMode\(\)/, 'the toolbar toggles sticker mode');
+  assert.match(game, /case 'sticker-pick':/, 'a palette chip arms a glyph');
+  assert.match(game, /case 'stickers-shop':/, 'the shop chip opens the store');
+
+  // Save shape: inventory in both DEFAULT_SAVE literals + boot backfill, and the
+  // per-picture placed stickers persist on the progress entry.
+  assert.match(readSource('src/platform.js'), /stickers: \{\},/, 'platform.js DEFAULT_SAVE needs stickers');
+  assert.match(readSource('electron/main.cjs'), /stickers: \{\},/, 'electron DEFAULT_SAVE needs stickers');
+  assert.match(game, /S\.save\.stickers \?\?= \{\};/, 'boot must backfill the sticker inventory');
+  assert.match(game, /stickers: board\.stickers\.map\(/, 'persist must save the picture’s placed stickers');
+  assert.match(game, /board\.stickers = \(Array\.isArray\(saved\.stickers\)/, 'loadPuzzle restores placed stickers');
+
+  // render.js bakes them into the snapshot and hit-tests them.
+  assert.match(render, /import \{ stickerTransform, packDef \} from '\.\/stickers\.js'/, 'render imports stickers');
+  assert.match(render, /drawSticker\(/, 'the board draws stickers');
+  assert.match(render, /stickerAt\(px, py\)/, 'the board hit-tests stickers for select/drag');
+  const snap = render.slice(render.indexOf('snapshot()'), render.indexOf('return out;'));
+  assert.match(snap, /for \(const s of this\.stickers\) this\.drawSticker/, 'snapshot bakes the stickers');
+
+  // The toolbar button and footer bar are in the DOM (bar in the footer, not over the canvas).
+  assert.match(html, /id="stickerBtn"[\s\S]*?data-act="sticker-mode"/, 'the sticker toolbar button exists');
+  assert.match(html, /id="stickerBar"/, 'the sticker bar exists');
+  assert.ok(html.indexOf('id="stickerBar"') > html.indexOf('<footer'), 'the sticker bar lives in the footer');
+});
+
+test('the shop inventories are actually persisted (regression: paints + stickers)', () => {
+  // writeSave only stores the sections the persist() write-set hands it, so a
+  // shop inventory omitted there never reaches disk — bought goods vanish on
+  // reload. Both paints and stickers must be in the write-set.
+  const game = readSource('src/game.js');
+  const writeSet = game.slice(game.indexOf('api?.writeSave({'), game.indexOf('api?.writeSave({') + 800);
+  assert.match(writeSet, /\bpaints: S\.save\.paints\b/, 'persist must write the paints inventory');
+  assert.match(writeSet, /\bstickers: S\.save\.stickers\b/, 'persist must write the sticker inventory');
 });

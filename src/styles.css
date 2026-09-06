@@ -1439,6 +1439,95 @@ button {
 .paint-chip.shop { border-style: dashed; color: var(--muted); }
 .paint-chip.shop .paint-plus { font-size: 13px; font-weight: 800; }
 
+/* ---------------------------------------------------------------- stickers */
+
+/* Decorate mode's footer bar — palette on top, the selected sticker's editor
+   below. In the footer, never over the canvas; only shown in sticker mode. */
+.sticker-bar {
+  margin-top: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sticker-palette {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 3px;
+  -webkit-overflow-scrolling: touch;
+}
+.sticker-group { flex: 0 0 auto; }
+.sticker-group-head { font-size: 9.5px; color: var(--muted); padding: 0 2px 3px; white-space: nowrap; }
+.sticker-glyphs { display: flex; gap: 5px; }
+.sticker-glyph {
+  flex: 0 0 auto;
+  width: 34px; height: 34px;
+  border-radius: 9px;
+  border: 1.5px solid rgba(var(--sheen-rgb), 0.14);
+  background: var(--card-solid);
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 120ms, border-color 120ms, box-shadow 120ms;
+}
+.sticker-glyph:hover { transform: translateY(-2px); }
+.sticker-glyph.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.9), var(--glow-cyan);
+  transform: translateY(-2px);
+}
+/* Done ends decorate mode; Shop opens the store. Both stand apart from the glyphs. */
+.sticker-done, .sticker-shop {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: 1.5px solid var(--edge-strong);
+  background: rgba(var(--chip-rgb), 0.5);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.sticker-done { border-color: var(--accent); color: var(--accent); }
+.sticker-shop { border-style: dashed; color: var(--muted); }
+
+/* The selected sticker's editor: sliders and segmented pickers, then Remove. */
+.sticker-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.sticker-hint { font-size: 11px; color: var(--muted); padding: 2px; }
+.sticker-slider { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+.sticker-slider input[type="range"] { width: 92px; accent-color: var(--accent); }
+.sticker-seg-row { display: flex; align-items: center; gap: 6px; }
+.sticker-seg-label { font-size: 11px; color: var(--muted); }
+.sticker-seg { display: inline-flex; border: 1px solid var(--edge); border-radius: 8px; overflow: hidden; }
+.sticker-seg button {
+  padding: 5px 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border-right: 1px solid var(--edge);
+}
+.sticker-seg button:last-child { border-right: none; }
+.sticker-seg button.on { background: rgba(var(--accent-rgb), 0.16); color: var(--text); }
+.sticker-delete {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 93, 93, 0.5);
+  background: transparent;
+  color: var(--danger);
+  font-size: 11.5px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+/* The shop's per-pack sample glyphs. */
+.sticker-preview { font-size: 16px; letter-spacing: 2px; margin-top: 3px; }
+
 /* ------------------------------------------------------------------ finish */
 
 .finish {
