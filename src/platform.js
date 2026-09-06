@@ -21,6 +21,9 @@ const DEFAULT_SAVE = {
   // already has it but predates a later sub-key gets that key from a ??= in
   // boot(). `seen` records which chapters' opening scenes have played.
   story: { chapter: 1, seen: {} },
+  // Special-paint inventory: id → uses remaining (shimmer / rainbow / multi).
+  // A picture's per-cell paint assignments live on its progress entry (`fx`).
+  paints: {},
   bounds: null,
   avatar: {
     customize: {

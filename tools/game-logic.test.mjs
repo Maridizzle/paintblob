@@ -23,6 +23,9 @@ import {
 import { WARDROBE_ITEMS } from '../src/wardrobe.js';
 import { FILL_STYLES, DEFAULT_FILL, CellFill } from '../src/fill-fx.js';
 import {
+  PAINTS, isPaint, paintDef, paintCount, ownedPaints, grantPaint, spendPaint, fxStops,
+} from '../src/paints.js';
+import {
   CHUNKS, MIN_STEP, labL, rampFrom, randomStops, lerpHue, scramble, swap, isSolved, placedCount, partnerFor,
 } from '../src/overtime.js';
 import {
@@ -2283,6 +2286,10 @@ test('undo only takes back the cells that were counted', () => {
   const entries = [...game.matchAll(/S\.history\.push\(\{([\s\S]*?)\}\);/g)].map((m) => m[1]);
   assert.ok(entries.length >= 2, 'expected both commitFill and half-fill to push history');
   for (const body of entries) {
+    // A special-paint step is a different kind of entry — it carries no cell
+    // tally and undoes on its own path (undoPaintStep), so the free/paid rule
+    // does not apply to it.
+    if (/\bpaint:/.test(body)) continue;
     assert.ok(/\bfree:/.test(body), `a history entry does not declare free: ${body.slice(0, 70)}`);
   }
 });
@@ -2570,8 +2577,13 @@ test('undo reverses commitFill, and is structurally unavailable once finished', 
   const body = game.slice(game.indexOf('function undoLast()'));
   const fn = body.slice(0, body.indexOf('\n}\n') + 2);
 
-  assert.match(fn, /if \(!S\.puzzle \|\| S\.finished \|\| !S\.history\.length\) return;/,
-    'undo must refuse on a finished picture and on an empty history');
+  assert.match(fn, /if \(!S\.puzzle \|\| !S\.history\.length\) return;/,
+    'undo must refuse on an empty history');
+  // A finished picture still refuses undo — with one exception: a special-paint
+  // re-skin (which changed no fill state) stays undoable, so decorating finished
+  // art keeps its take-back without ever un-finishing the picture.
+  assert.match(fn, /if \(S\.finished && !reskin\) return;/,
+    'undo must refuse on a finished picture except for a special-paint re-skin');
   // Each of these is something commitFill granted. Missing one leaves the save
   // claiming work that is no longer on the board.
   for (const [what, re] of [
@@ -3113,4 +3125,139 @@ test('the filter controls are not rows, so the harness never counts them', () =>
     'the filter bar must not use the .row class');
   assert.match(game, /list\.className = 'pic-list'/,
     'picture rows live in their own .pic-list container');
+});
+
+/* ------------------------------------------------------------ special paints */
+
+// Shimmer / rainbow / multicolour: a purchased, limited-supply wildcard laid over
+// a cell, overriding its natural colour with an animation that never settles. The
+// catalogue and supply economy are pure (paints.js), and fxStops — the per-frame
+// gradient — is plain maths shared by the live board and the saved-PNG bake.
+
+test('PAINTS catalogue: unique ids and the fields the shop and tray need', () => {
+  const ids = PAINTS.map((p) => p.id);
+  assert.equal(new Set(ids).size, ids.length, 'paint ids must be unique');
+  for (const p of PAINTS) {
+    assert.ok(p.label && p.mark && p.blurb, `${p.id} needs a label, mark and blurb`);
+    assert.ok(Number.isFinite(p.price) && p.price > 0, `${p.id} needs a positive price`);
+    assert.ok(Number.isInteger(p.pack) && p.pack > 0, `${p.id} needs a positive pack size`);
+  }
+  assert.ok(ids.includes('shimmer') && ids.includes('rainbow') && ids.includes('multi'),
+    'the three paints the user asked for must all exist');
+});
+
+test('isPaint / paintDef recognise real ids and reject junk', () => {
+  assert.ok(isPaint('rainbow'));
+  assert.ok(!isPaint('teal'));
+  assert.ok(!isPaint(undefined));
+  assert.equal(paintDef('shimmer').label, 'Shimmer');
+  assert.equal(paintDef('nope'), null);
+});
+
+test('paint inventory: grant, spend, count and owned-list', () => {
+  const save = {};
+  assert.equal(paintCount(save, 'rainbow'), 0, 'an empty save owns none');
+  assert.deepEqual(ownedPaints(save), [], 'nothing owned yet');
+
+  grantPaint(save, 'rainbow', 25);
+  grantPaint(save, 'shimmer');            // defaults to one
+  assert.equal(paintCount(save, 'rainbow'), 25);
+  assert.equal(paintCount(save, 'shimmer'), 1);
+
+  // ownedPaints is catalogue order, only the ones actually held.
+  assert.deepEqual(ownedPaints(save).map((p) => p.id), ['rainbow', 'shimmer']);
+
+  assert.equal(spendPaint(save, 'shimmer'), true, 'spending an owned paint succeeds');
+  assert.equal(paintCount(save, 'shimmer'), 0);
+  assert.equal(spendPaint(save, 'shimmer'), false, 'spending an empty supply fails');
+  assert.equal(paintCount(save, 'shimmer'), 0, 'and never goes negative');
+  assert.deepEqual(ownedPaints(save).map((p) => p.id), ['rainbow'], 'the emptied paint drops off the tray');
+});
+
+test('grant/spend are no-ops on junk ids or a missing save', () => {
+  const save = {};
+  grantPaint(save, 'not-a-paint', 5);
+  assert.equal(paintCount(save, 'not-a-paint'), 0, 'an unknown id grants nothing');
+  assert.doesNotThrow(() => grantPaint(null, 'rainbow'), 'a missing save is tolerated');
+  assert.equal(spendPaint(save, 'rainbow'), false, 'spending what you do not own fails cleanly');
+});
+
+test('fxStops returns ascending, in-range stops for every paint', () => {
+  for (const id of ['rainbow', 'shimmer', 'multi', 'unknown-falls-back']) {
+    for (const t of [0, 500, 1234.5, 60000]) {
+      const { stops } = fxStops(id, t, 0.3);
+      assert.ok(Array.isArray(stops) && stops.length >= 2, `${id}@${t} needs at least two stops`);
+      let last = -Infinity;
+      for (const [off, colour] of stops) {
+        assert.ok(off >= 0 && off <= 1, `${id}@${t} offset ${off} out of [0,1]`);
+        assert.ok(off >= last, `${id}@${t} offsets must be non-descending (canvas requires it)`);
+        assert.equal(typeof colour, 'string', `${id}@${t} each stop carries a CSS colour`);
+        last = off;
+      }
+      assert.equal(stops[0][0], 0, `${id}@${t} must start at 0`);
+      assert.equal(stops[stops.length - 1][0], 1, `${id}@${t} must end at 1`);
+    }
+  }
+});
+
+test('fxStops animates — the gradient differs across time', () => {
+  for (const id of ['rainbow', 'shimmer', 'multi']) {
+    const a = JSON.stringify(fxStops(id, 0, 0).stops);
+    const b = JSON.stringify(fxStops(id, 1500, 0).stops);
+    assert.notEqual(a, b, `${id} must move over time (a still frame would be a flat fill)`);
+  }
+  // The per-cell phase scatters neighbours so they do not pulse as one.
+  const p0 = JSON.stringify(fxStops('rainbow', 1000, 0).stops);
+  const p1 = JSON.stringify(fxStops('rainbow', 1000, 0.5).stops);
+  assert.notEqual(p0, p1, 'a different phase must give a different frame');
+});
+
+test('special paints are wired through the paint path, save and UI', () => {
+  const game = readSource('src/game.js');
+  const render = readSource('src/render.js');
+  const html = readSource('src/index.html');
+
+  // game.js: import, in-hand state, apply + undo, selection, tray, shop.
+  assert.match(game, /from '\.\/paints\.js'/, 'game.js must import paints.js');
+  assert.match(game, /\bpaint: null,/, 'S needs the in-hand special-paint slot');
+  assert.match(game, /function applyPaint\(cell\)/, 'game.js needs applyPaint()');
+  assert.match(game, /if \(S\.paint\) \{\s*\n\s*if \(cell\) applyPaint\(cell\);/,
+    'tryPaint must hand a tap to the special paint when one is held');
+  assert.match(game, /function undoPaintStep\(/, 'a special-paint application must be undoable');
+  assert.match(game, /function selectPaint\(id\)/, 'game.js needs selectPaint()');
+  assert.match(game, /function syncPaintTray\(\)/, 'game.js needs the tray sync');
+  assert.match(game, /function renderPaintsShop\(/, 'game.js needs the paints shop');
+  assert.match(game, /grantPaint\(S\.save, p\.id, p\.pack\)/, 'buying grants a whole pack');
+  assert.match(game, /case 'paint-select':/, 'a chip tap must select a paint');
+  assert.match(game, /case 'paints-shop':/, 'the shop chip must open the store');
+  // The tray only appears once a paint is owned (so a fresh save keeps the whole
+  // footer for its tubs and the picture keeps its room — the integration gate
+  // enforces board > tray*1.8). First-time discovery is a Settings entry.
+  assert.match(game, /tray\.classList\.toggle\('hidden', owned\.length === 0\)/,
+    'the tray stays hidden until the player owns a paint');
+  assert.match(game, /openPanel\('paints'\)/, 'Settings must offer a way into the paints shop');
+
+  // Works on a finished picture: applyPaint runs BEFORE the finished-guard.
+  const tp = game.slice(game.indexOf('function tryPaint'), game.indexOf('function launch'));
+  assert.ok(tp.indexOf('if (S.paint)') < tp.indexOf('if (S.finished) return;'),
+    'the special-paint branch must precede the finished guard so it works on finished art');
+
+  // Save shape: both DEFAULT_SAVE literals + a boot backfill + per-picture fx.
+  assert.match(readSource('src/platform.js'), /paints: \{\},/, 'platform.js DEFAULT_SAVE needs paints');
+  assert.match(readSource('electron/main.cjs'), /paints: \{\},/, 'electron DEFAULT_SAVE needs paints');
+  assert.match(game, /S\.save\.paints \?\?= \{\};/, 'boot must backfill the paints inventory');
+  assert.match(game, /fx: Object\.fromEntries\(board\.fx\)/, 'persist must save the picture’s applied paints');
+  assert.match(game, /board\.fx = new Map\(/, 'loadPuzzle must restore the picture’s applied paints');
+
+  // render.js: the fx overlay + the snapshot bake share fxStops.
+  assert.match(render, /import \{ fxStops \} from '\.\/paints\.js'/, 'render.js must import fxStops');
+  assert.match(render, /this\.fx = new Map\(\)/, 'the Board holds an fx map');
+  assert.match(render, /fxFillStyle\(/, 'the Board builds the animated gradient');
+  const snap = render.slice(render.indexOf('snapshot()'), render.indexOf('fxFillStyle'));
+  assert.match(snap, /for \(const \[id, paintId\] of this\.fx\)/, 'snapshot must bake the fx into the PNG');
+
+  // The tray lives in the footer (never over the canvas), the fix the user asked for.
+  assert.match(html, /id="paintTray"/, 'the paint tray must be in the DOM');
+  assert.ok(html.indexOf('id="paintTray"') > html.indexOf('<footer'),
+    'the tray belongs in the footer, not floating over the board');
 });

@@ -178,6 +178,26 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
   audio cues. Save-shape: `fill` in both `DEFAULT_SAVE` literals + a boot
   backfill. The "Blob speed/density/opacity" sliders tune the blob (speed also
   scales the in-cell fills).
+- **Special paints** — `paints.js` (pure catalogue + supply economy + `fxStops`
+  animation maths) + `game.js` + `render.js`. Three purchasable, limited-supply
+  **wildcards** — `rainbow` / `shimmer` / `multi` (oil-slick) — that OVERRIDE a
+  cell's natural colour with an animation that never settles (the finished picture
+  keeps moving; **Save image bakes whatever frame it's on**). `S.paint` is the one
+  in hand (session-only); `save.paints` is the inventory (id → uses left, a 4th
+  save-shape key: both `DEFAULT_SAVE` literals + a `??=` boot backfill); a
+  picture's per-cell assignments persist on `progress[id].fx` (cellId → paintId,
+  mirrored live in `board.fx`, a `Map`). `applyPaint(cell)` spends one from supply
+  and either **fills** an unpainted cell (no points/streak — decoration must never
+  become a coin loop) or **re-skins** a painted one; usable **on a finished
+  picture** (the tap branch in `tryPaint` runs *before* the finished guard). Fully
+  undoable — a paint step is `{ paint: {…} }`, and a finished-picture re-skin stays
+  undoable so a stray tap never burns supply. The **paint tray** (`#paintTray`,
+  `syncPaintTray`) is a chip row in the **footer, never over the canvas** (the same
+  reason Undo/Path moved off the board); the shop is `openPanel('paints')` →
+  `renderPaintsShop` (buy a pack via `spendPoints` → `grantPaint`). `render.js`
+  draws `board.fx` each frame (`fxFillStyle`, a per-cell golden-ratio phase) and
+  `snapshot()` bakes the same stops; the RAF `busy` flag includes `board.fx.size >
+  0` so it animates for free. **Stickers are the planned Drop 2** (see Pending).
 - **Wardrobe / avatar** — 62 garments across 9 slots (shirt, bottoms, dress,
   socks, shoes + outerwear, headwear, eyewear, neckwear); six render styles;
   fixed-accent multicolor. The Outfits shop groups by slot.
@@ -226,6 +246,15 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
 
 ## Pending / good-to-know
 
+- **Stickers (special-paints Drop 2)** — the planned follow-up to the special
+  paints above: placeable hearts / stars / letters / numbers / shapes / little
+  animals / aliens, static + 3D + animated, positioned on a picture, saved per
+  picture, and baked into `Board.snapshot()` the same way `board.fx` is. The
+  paints laid the groundwork (per-picture overlay data on `progress`, a shop, a
+  tray); stickers add a place-and-position editor on top.
+- **Animated export (later drop)** — Save image currently bakes a **static** PNG
+  of the current animation frame (shimmer/rainbow + eventually animated stickers).
+  A GIF / short-video export that captures the motion is a deliberate later drop.
 - **True two-tone dyeable garments** (independently recolourable panels) is the
   planned fast-follow to fixed accents: port the Room's per-part colour model
   (`house.colours` + a sub-part selection) onto the avatar — save shape, `part()`,

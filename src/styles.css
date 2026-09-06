@@ -1388,6 +1388,57 @@ button {
 }
 .tub.nudge { animation: nudge 320ms ease-in-out 2; }
 
+/* -------------------------------------------------------------- special paints */
+
+/* The row of special-paint chips under the tubs. In the footer, never over the
+   canvas — the whole reason it lives here rather than floating on the board. */
+.paint-tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: center;
+  margin-top: 9px;
+}
+
+.paint-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 15px;
+  border: 1.5px solid rgba(var(--sheen-rgb), 0.16);
+  background: var(--card-solid);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 140ms cubic-bezier(0.34, 1.56, 0.64, 1), border-color 140ms, box-shadow 140ms;
+}
+.paint-chip:hover { transform: translateY(-2px); }
+.paint-chip .paint-mark { font-size: 15px; line-height: 1; }
+.paint-chip .paint-count {
+  min-width: 15px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: rgba(var(--sheen-rgb), 0.12);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  text-align: center;
+}
+/* Held: the same cyan ring the selected tub wears, so "in hand" reads the same
+   whether it's a numbered paint or a special one. */
+.paint-chip.selected {
+  transform: translateY(-3px);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.9), var(--glow-cyan);
+}
+/* The shop chip: dashed and quieter — it opens the store rather than holding paint. */
+.paint-chip.shop { border-style: dashed; color: var(--muted); }
+.paint-chip.shop .paint-plus { font-size: 13px; font-weight: 800; }
+
 /* ------------------------------------------------------------------ finish */
 
 .finish {
