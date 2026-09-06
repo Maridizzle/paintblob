@@ -50,8 +50,9 @@ const DEFAULT_SAVE = {
   progress: {},      // puzzleId -> { filled: number[], done: bool, seconds }
   stats: { blobs: 0, cells: 0, puzzles: 0, colourSwitches: 0, seconds: 0, undos: 0, bestStreak: 0, wrongTaps: 0, dayStreak: 0, bestDayStreak: 0 },
   unlocked: [],      // achievement ids
-  settings: { sound: true, volume: 0.7, alwaysOnTop: true, scale: 1, opacity: 0.7, fill: 'blob', theme: 'void', themePinned: false, lowStim: false, overtime: true },
+  settings: { sound: true, volume: 0.7, alwaysOnTop: true, scale: 1, opacity: 0.7, fill: 'blob', theme: 'void', themePinned: false, lowStim: false, overtime: true, newsSeen: 0 },
   story: { chapter: 1, seen: {} },   // story mode: current chapter, openings seen
+  paints: {},                        // special-paint inventory: id -> uses left
   bounds: null,
   avatar: {
     customize: {

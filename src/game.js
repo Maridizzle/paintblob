@@ -31,6 +31,10 @@ import { BASES as MIX_BASES, SECONDS as MIX_SECONDS, mix as mixWell, within as m
 import { SECONDS as DRIP_SECONDS, spawn as dripSpawn, step as dripStep, caught as dripCaught, missed as dripMissed, fallSpeed as dripSpeed } from './drips.js';
 import { SECONDS as RECALL_SECONDS, buildSequence as recallBuild, prefixOk as recallPrefixOk, complete as recallComplete } from './recall.js';
 import { perkTarget, PERKS } from './perks.js';
+import {
+  PAINTS, isPaint, paintDef, paintCount, ownedPaints, grantPaint, spendPaint,
+} from './paints.js';
+import { NEWS, hasUnseenNews, markNewsSeen } from './news.js';
 import { outlineSVG, outlineWeight } from './thumbnail.js';
 import { computePlayStats } from './playstats.js';
 import { Tour } from './tour.js';
@@ -66,6 +70,12 @@ const S = {
   filled: new Set(),
   remaining: [],
   selected: -1,
+  // The special paint currently in hand (a paints.js id — shimmer/rainbow/multi),
+  // or null for the ordinary numbered tubs. Set by tapping a paint chip; cleared
+  // by picking a tub. Per-picture and session-only: which one you are holding is
+  // not saved, but the paints you have LAID on a picture persist on its
+  // progress.fx (mirrored live in board.fx), the way `filled` does.
+  paint: null,
   bursts: [],
   seed: 1,
   elapsedMs: 0,
@@ -155,6 +165,10 @@ function persist(immediate = false) {
         // The cell count this progress was taken at, so a later re-bake of the
         // picture can tell the ids no longer line up and start it fresh.
         cells: S.cells.length,
+        // Special paints laid on this picture (cellId → paintId). A plain object
+        // so it serialises; {} when none, which is the common case. Loaded back
+        // into board.fx on the next open (see loadPuzzle).
+        fx: Object.fromEntries(board.fx),
       };
     }
     S.save.unlocked = [...achievements.unlocked];
@@ -384,16 +398,21 @@ function closeConfirm(result) {
 
 function selectTub(i, fromUser = false) {
   if (i < 0 || i >= S.puzzle.palette.length) return;
-  if (S.remaining[i] === 0 || i === S.selected) return;
+  if (S.remaining[i] === 0) return;
+  // Re-tapping the held tub is a no-op — UNLESS a special paint is in hand, in
+  // which case the tap is how you put that paint down and go back to numbers.
+  if (i === S.selected && !S.paint) return;
   if (isColourDisabled(i)) { if (fromUser) sfx.play('nope'); return; } // X has this colour frozen
 
-  if (fromUser && S.selected >= 0) {
+  if (fromUser && S.selected >= 0 && S.selected !== i) {
     S.save.stats.colourSwitches++;
     achievements.sync(S.save.stats);
   }
   S.selected = i;
+  S.paint = null; // picking a numbered tub puts any special paint back on the shelf
   board.setSelected(i);
   syncTubs();
+  syncPaintTray();
   sfx.play('pick', i);
 }
 
@@ -404,6 +423,60 @@ function nextTub() {
     if (S.remaining[i] > 0) return selectTub(i);
   }
   return undefined;
+}
+
+/* -------------------------------------------------------------- special paints */
+
+/** Put a special paint in hand (or, tapping the one already held, put it back).
+ *  Leaves the numbered selection alone, so picking a tub returns to normal paint. */
+function selectPaint(id) {
+  if (!isPaint(id) || paintCount(S.save, id) <= 0) { sfx.play('nope'); return; }
+  S.paint = (S.paint === id) ? null : id;
+  syncPaintTray();
+  syncTubs();
+  sfx.play('pick', 0);
+}
+
+/**
+ * The row of special-paint chips beside the tubs: one per paint the player owns
+ * (its mark + supply left, tap to hold or put down), plus a shop chip that opens
+ * the paints store. Lives in the footer, never over the canvas, so it can't block
+ * a cell. Rebuilt on every change so the counts stay live.
+ *
+ * Shown only once the player OWNS a paint — so a fresh save keeps the whole
+ * footer for its tubs and the picture keeps its room (a dedicated always-on row
+ * crowds the board on an 18-colour picture, and the integration gate enforces
+ * that). First-time discovery is the "Special paints" entry in Settings; once you
+ * own some, this tray is the fast way to pick and re-buy.
+ */
+function syncPaintTray() {
+  const tray = $('paintTray');
+  if (!tray) return;
+  const owned = S.puzzle ? ownedPaints(S.save) : [];
+  tray.classList.toggle('hidden', owned.length === 0);
+  tray.textContent = '';
+  if (!owned.length) return;
+
+  for (const p of owned) {
+    const left = paintCount(S.save, p.id);
+    const chip = document.createElement('button');
+    chip.className = 'paint-chip';
+    chip.dataset.act = 'paint-select';
+    chip.dataset.paint = p.id;
+    chip.classList.toggle('selected', S.paint === p.id);
+    chip.title = `${p.label} — ${left} left`;
+    chip.innerHTML = '<span class="paint-mark"></span><span class="paint-count"></span>';
+    chip.querySelector('.paint-mark').textContent = p.mark;
+    chip.querySelector('.paint-count').textContent = String(left);
+    tray.append(chip);
+  }
+
+  const shop = document.createElement('button');
+  shop.className = 'paint-chip shop';
+  shop.dataset.act = 'paints-shop';
+  shop.title = 'Buy more special paints';
+  shop.innerHTML = '<span class="paint-mark">🎨</span><span class="paint-plus">+</span>';
+  tray.append(shop);
 }
 
 /* -------------------------------------------------------------------- puzzle */
@@ -507,6 +580,15 @@ async function loadPuzzle(id) {
 
   streaks.reset();
   board.setPuzzle(puzzle, S.cells, S.filled);
+  // Special paints laid on this picture, back from its save (cellId → paintId).
+  // Only entries whose cell is a real, still-filled one survive — a stale id from
+  // a since-changed picture is dropped rather than drawn on the wrong cell.
+  S.paint = null;
+  board.fx = new Map(
+    Object.entries(saved.fx ?? {})
+      .map(([k, v]) => [Number(k), v])
+      .filter(([id, paintId]) => isPaint(paintId) && S.filled.has(id)),
+  );
   board.reveal = S.finished ? 1 : 0;
   $('board').classList.toggle('done', S.finished);
   $('finish').classList.add('hidden');
@@ -516,6 +598,7 @@ async function loadPuzzle(id) {
   syncZoom(); // board.setPuzzle() already reset zoom for the new picture
   syncCompare(); // ditto showSource
   syncUndo(); // history was just cleared, so this always hides it
+  syncPaintTray(); // owned special paints, for this newly-opened picture
   if (!S.finished) nextTub();
 
   // Opening a free-gallery picture is leaving the story. Story mode is walked
@@ -674,8 +757,18 @@ $('board').addEventListener('wheel', (e) => {
 
 /** Resolves a settled tap: paint the cell underneath it, if there is one. */
 function tryPaint(clientX, clientY, pointerType) {
-  if (S.finished) return;
   const { point, cell } = pointerToCell(clientX, clientY);
+
+  // A special paint in hand takes over the tap: it overrides the cell's true
+  // colour with a shimmer/rainbow/oil-slick, needs no tub, and works even after
+  // the picture is finished — decorating the art you made is the whole point. It
+  // never fires the wrong-colour buzz below, because a wildcard has no wrong cell.
+  if (S.paint) {
+    if (cell) applyPaint(cell);
+    return;
+  }
+
+  if (S.finished) return;
 
   // Named, the Swap's boon: the colours answer to their numbers again. A tap on
   // any unfilled cell fills that cell's OWN colour, whatever tub is in hand —
@@ -893,6 +986,80 @@ function commitFill(burst) {
 }
 
 /**
+ * Lays the special paint in hand (S.paint) over a cell — overriding its natural
+ * colour with an ever-moving shimmer/rainbow/oil-slick that the board redraws
+ * each frame and Save image bakes on whatever frame it is on. Spends one from
+ * the limited supply. Two cases:
+ *   • an UNPAINTED cell is also FILLED, progressing the picture toward done — but
+ *     grants no points, cell tally or streak. A special paint buys decoration,
+ *     not the coin income the shop is priced against, so it can never become a
+ *     paint-for-coins loop (same reasoning as a perk's free bonus cell);
+ *   • an ALREADY-painted cell is just re-skinned, which is the only paint action
+ *     a finished picture allows.
+ * Undoable while painting; a finished-picture re-skin is undoable too (undoLast),
+ * so a stray decorating tap never permanently burns supply.
+ */
+function applyPaint(cell) {
+  const paintId = S.paint;
+  if (!isPaint(paintId) || paintCount(S.save, paintId) <= 0) { sfx.play('nope'); return; }
+  if (S.pending.has(cell.id)) return; // a burst already has this cell in flight
+  // X's freeze walls bind the special paint too — a locked cell can't be touched.
+  if (cellLocked(cell.id)) { sfx.play('nope'); return; }
+
+  const wasFilled = S.filled.has(cell.id);
+  const prevFx = board.fx.get(cell.id) ?? null;
+  // Re-laying the very same paint on a cell that already has it would spend supply
+  // for no visible change — a no-op, not a silent waste.
+  if (wasFilled && prevFx === paintId) return;
+
+  if (!spendPaint(S.save, paintId)) { sfx.play('nope'); return; }
+
+  if (!wasFilled) {
+    S.filled.add(cell.id);
+    S.remaining[cell.colour]--;
+    board.markFilled(cell.id);
+  }
+  board.fx.set(cell.id, paintId);
+
+  // A paint step is its own kind (see undoLast): undo refunds the supply and
+  // restores the previous look, unfilling the cell only if the paint filled it.
+  S.history.push({ paint: { id: cell.id, colour: cell.colour, paintId, wasFilled, prevFx } });
+
+  sfx.play('splat');
+  syncTubs();       // remaining count / progress bar move if we filled a cell
+  syncPaintTray();  // the chip's supply just dropped
+  syncUndo();
+  persist();
+  ensureFrame();    // board.fx.size > 0 now pins the loop so it animates
+
+  // Filling the final cell with a special paint finishes the picture, like any
+  // other last cell would.
+  if (!wasFilled && !S.finished && S.filled.size === S.cells.length) finish();
+}
+
+/** Undo one special-paint application: refund the supply, restore the cell's
+ *  previous look, and unfill it if the paint is what had filled it. */
+function undoPaintStep(p) {
+  grantPaint(S.save, p.paintId, 1);
+  if (p.prevFx) board.fx.set(p.id, p.prevFx);
+  else board.fx.delete(p.id);
+  if (!p.wasFilled) {
+    S.filled.delete(p.id);
+    board.markUnfilled(p.id);
+    S.remaining[p.colour]++;
+    // Land holding the numbered colour of the cell just cleared, and put the
+    // special paint down — the same "back to painting" state a normal undo leaves.
+    S.paint = null;
+    if (S.selected !== p.colour) selectTub(p.colour);
+  }
+  syncTubs();
+  syncPaintTray();
+  syncUndo();
+  persist();
+  ensureFrame();
+}
+
+/**
  * Takes back the last thing painted. Free, and as far back as this sitting
  * goes: a misclick is a misclick, and either charging for it or capping it at
  * one step would be worse than the mistake itself.
@@ -906,16 +1073,26 @@ function commitFill(burst) {
  * Once a picture is finished, undo is over. Unwinding that would mean undoing
  * stats.puzzles, the reveal and the stats card — and there is nothing to
  * correct anyway, since only a cell of the colour you are holding can ever be
- * filled, so the last one was never a mistake.
+ * filled, so the last one was never a mistake. The lone exception is a special-
+ * paint RE-SKIN (which never changed fill state): safe to take back even on a
+ * finished picture, so a stray decorating tap doesn't permanently burn supply.
  */
 function undoLast() {
-  if (!S.puzzle || S.finished || !S.history.length) return;
+  if (!S.puzzle || !S.history.length) return;
+  const top = S.history[S.history.length - 1];
+  const reskin = top.paint && top.paint.wasFilled; // decoration only — no fill to unwind
+  if (S.finished && !reskin) return;
+
   const step = S.history.pop();
+  // A special-paint step unwinds on its own path (refund supply, restore look).
+  if (step.paint) { undoPaintStep(step.paint); return; }
+
   const stats = S.save.stats;
 
   for (const id of step.cells) {
     S.filled.delete(id);
     board.markUnfilled(id);
+    board.fx.delete(id); // a special paint can't outlive the fill it sat on
   }
   S.remaining[step.colour] += step.cells.length;
 
@@ -924,6 +1101,7 @@ function undoLast() {
   if (step.extra) {
     S.filled.delete(step.extra.id);
     board.markUnfilled(step.extra.id);
+    board.fx.delete(step.extra.id);
     S.remaining[step.extra.colour]++;
   }
 
@@ -970,7 +1148,13 @@ function undoLast() {
 function syncUndo() {
   const pill = $('undoPill');
   if (!pill) return;
-  pill.classList.toggle('hidden', S.finished || !S.history.length);
+  // Normally hidden once finished — but a special-paint re-skin (which changed no
+  // fill state) stays undoable even then, so decorating a finished picture keeps
+  // its take-back. undoLast enforces the same rule.
+  const top = S.history[S.history.length - 1];
+  const canUndo = S.history.length > 0
+    && (!S.finished || (top.paint && top.paint.wasFilled));
+  pill.classList.toggle('hidden', !canUndo);
 }
 
 /**
@@ -1235,7 +1419,8 @@ function frame(now) {
   // it eases to a stop by itself, so the loop drops back to the idle cadence
   // rather than being pinned at full rate forever.
   const busy = S.bursts.length > 0 || S.revealFrom > 0 || board.hintTarget
-    || board.colourFlash || board.focus || board.shock || board.living || board.liftMoving();
+    || board.colourFlash || board.focus || board.shock || board.living || board.liftMoving()
+    || board.fx.size > 0; // special paints animate every frame while any is on screen
   if (busy || now - lastDraw > 33) {
     lastDraw = now;
     board.draw(S.bursts, now);
@@ -1264,6 +1449,7 @@ async function openPanel(kind) {
     : kind === 'trophies' ? 'Achievements'
     : kind === 'avatar' ? 'Avatar'
     : kind === 'dev' ? 'Developer'
+    : kind === 'paints' ? 'Special paints'
     : 'Settings';
   $('panel').classList.remove('hidden');
   // The panel sits at a lower z-index than #stage's floating pills so a
@@ -1287,6 +1473,8 @@ async function openPanel(kind) {
     maybeAvatarTour();
   } else if (kind === 'dev') {
     renderDevPanel(body);
+  } else if (kind === 'paints') {
+    renderPaintsShop(body);
   } else {
     renderSettings(body);
   }
@@ -3054,6 +3242,62 @@ function renderDevPanel(body) {
   band(body);
 }
 
+/**
+ * The special-paints store. Each paint is a limited supply bought in packs with
+ * coins; the tray by the tubs shows the running count. Modelled on the wardrobe
+ * and room shops — spendPoints charges, the button dims when you can't afford it,
+ * a toast confirms — and it re-renders in place so the balance and owned counts
+ * stay live after a purchase.
+ */
+function renderPaintsShop(body) {
+  const note = document.createElement('div');
+  note.className = 'dev-note';
+  note.textContent = 'Special paints override a cell’s natural colour with an animation that never settles — the finished picture keeps moving, and Save image bakes it on whatever frame it is on. Buy a pack, then pick the paint from the tray by the tubs and tap any cell (works on a finished picture too).';
+  body.append(note);
+
+  const bal = document.createElement('div');
+  bal.className = 'empty';
+  bal.style.padding = '2px 4px 8px';
+  bal.textContent = `${S.save.stats.points ?? 0}🪙 to spend`;
+  body.append(bal);
+
+  const redraw = () => {
+    persist();
+    syncAvatarWidget(); // the coin count on the main screen
+    syncPaintTray();    // the tray's chips + counts
+    body.textContent = '';
+    renderPaintsShop(body);
+  };
+
+  for (const p of PAINTS) {
+    const owned = paintCount(S.save, p.id);
+    const el = row();
+    const text = document.createElement('div');
+    text.className = 'grow';
+    text.innerHTML = '<div class="label"></div><div class="sub"></div>';
+    text.querySelector('.label').textContent = `${p.mark} ${p.label}`;
+    text.querySelector('.sub').textContent = owned > 0 ? `${p.blurb} · ${owned} left` : p.blurb;
+    el.append(text);
+
+    const affordable = (S.save.stats.points ?? 0) >= p.price;
+    const buy = document.createElement('button');
+    buy.className = 'primary buy';
+    buy.disabled = !affordable;
+    buy.textContent = affordable ? `Buy ${p.pack} · ${p.price}🪙` : `${p.price}🪙`;
+    buy.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!spendPoints(S.save.stats, p.price)) { sfx.play('nope'); return; }
+      grantPaint(S.save, p.id, p.pack);
+      toast({ icon: p.mark, name: `${p.pack} ${p.label} paints`, desc: 'Pick it from the tray by the tubs.' });
+      redraw();
+    });
+    el.append(buy);
+    body.append(el);
+  }
+
+  band(body);
+}
+
 function renderSettings(body) {
   const settings = S.save.settings;
 
@@ -3240,6 +3484,25 @@ function renderSettings(body) {
   avatarGuide.addEventListener('click', () => startAvatarTour({ fromSettings: true }));
   body.append(avatarGuide);
   }
+
+  // What's New — the digest of updates. Always reachable here, badged on the
+  // title screen while there is something unread.
+  const news = row('clickable');
+  news.innerHTML = '<div class="grow"><div class="label">✨ What’s new</div>' +
+    '<div class="sub">Everything added since low-stim mode</div></div>' +
+    '<div class="dev-go">Read</div>';
+  news.addEventListener('click', () => { closePanel(); openNews(); });
+  body.append(news);
+
+  // Special paints store. Also reachable from the tray's shop chip once you own
+  // some — this is the first-time way in, since the tray stays hidden until then
+  // (so a fresh save keeps the whole footer for its tubs).
+  const paints = row('clickable');
+  paints.innerHTML = '<div class="grow"><div class="label">🎨 Special paints</div>' +
+    '<div class="sub">Shimmer, rainbow &amp; oil-slick — buy a pack, paint any cell</div></div>' +
+    '<div class="dev-go">Shop</div>';
+  paints.addEventListener('click', () => { closePanel(); openPanel('paints'); });
+  body.append(paints);
 
   // Data safety: keep your whole save as a file, and put one back. Always shown
   // (a backup matters most on the day storage clears). On desktop, restore is by
@@ -4906,10 +5169,72 @@ function showTitle() {
   if (!lowStim) add('Story mode', 'The colours are on strike', !S.save.story.mode, () => enterStory());
   add('Free mode', 'Just paint', lowStim && !S.save.story.mode, () => enterFree());
 
+  // A quiet way into the What's New splash, badged while there is unread news.
+  const news = document.createElement('button');
+  news.className = 'title-news';
+  news.dataset.act = 'news';
+  news.textContent = "What's new";
+  news.classList.toggle('badge', hasUnseenNews(S.save));
+  actions.append(news);
+
   $('title').classList.remove('hidden');
 }
 
 function hideTitle() { $('title').classList.add('hidden'); }
+
+/* ------------------------------------------------------------- what's new */
+
+/** Fills the What's New splash from the catalogue (news.js). A plain, static
+ *  list — no animation — so it reads calmly even in low-stim. */
+function renderNews() {
+  const list = $('newsList');
+  list.textContent = '';
+  for (const item of NEWS) {
+    const el = document.createElement('div');
+    el.className = 'news-item';
+    el.innerHTML = '<span class="news-icon"></span>'
+      + '<span class="news-text"><span class="news-title"></span>'
+      + '<span class="news-blurb"></span></span>';
+    el.querySelector('.news-icon').textContent = item.icon;
+    el.querySelector('.news-title').textContent = item.title;
+    el.querySelector('.news-blurb').textContent = item.blurb;
+    list.append(el);
+  }
+}
+
+/** Open the What's New splash and mark everything read — so the title badge
+ *  clears and it won't auto-open again until an update adds a newer entry. */
+function openNews() {
+  renderNews();
+  $('news').classList.remove('hidden');
+  markNewsSeen(S.save);
+  persist();
+  syncNewsBadge();
+}
+
+function closeNews() { $('news').classList.add('hidden'); }
+
+/** The title-screen "What's new" link wears a dot while there is unread news. */
+function syncNewsBadge() {
+  document.querySelector('[data-act="news"]')?.classList.toggle('badge', hasUnseenNews(S.save));
+}
+
+/**
+ * The launch splash: show What's New once when there is unread news. Skipped for
+ * the headless harnesses (?notour) and by an explicit ?nonews, and — like the
+ * first-run tour — not auto-popped in low-stim (the title link still offers it).
+ * A brand-new player is caught up silently rather than shown a "what's new" for a
+ * game they just met; a returning player with unread entries gets the splash over
+ * whatever the boot landed on.
+ */
+function maybeShowNews() {
+  if (/[?&](notour|nonews)\b/.test(location.search)) return;
+  if (!hasUnseenNews(S.save)) return;
+  const fresh = !S.save.stats.cells && !S.save.stats.puzzles && !S.save.stats.imported;
+  if (fresh) { markNewsSeen(S.save); persist(); return; }
+  if (S.save.settings.lowStim) { syncNewsBadge(); return; }
+  openNews();
+}
 
 // The Story ⇄ Free confirm, filled from the current mode. Switching changes the
 // theme, the bonus round and the gallery routing, so it asks first rather than
@@ -5203,6 +5528,15 @@ document.addEventListener('click', async (e) => {
     }
     case 'hint': useHint(); break;
     case 'undo': undoLast(); break;
+    case 'paint-select': {                              // put a special paint in hand
+      const chip = e.target.closest('[data-paint]');
+      if (chip) selectPaint(chip.dataset.paint);
+      break;
+    }
+    case 'paints-shop':                                // the special-paints shop
+      if (S.panel === 'paints') closePanel();
+      else await openPanel('paints');
+      break;
     case 'zoom-reset': board.resetZoom(); syncZoom(); ensureFrame(); break;
     case 'toggle-source': {
       // Every trip into photo view plays the picture's living element again,
@@ -5254,6 +5588,8 @@ document.addEventListener('click', async (e) => {
       if (S.panel === 'dev') closePanel();
       else await openPanel('dev');
       break;
+    case 'news': openNews(); break;                    // the What's New splash
+    case 'news-close': closeNews(); break;
     case 'story-board': openStoryBoard(); break;      // the pill, back to the path
     case 'story-back': closeStoryBoard(); showTitle(); break;
     case 'story-free': enterFree(); break;
@@ -5275,6 +5611,10 @@ $('finish').addEventListener('click', (e) => {
 // Same for the mode-swap confirm: clicking the dark part cancels it.
 $('modeSwap').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) $('modeSwap').classList.add('hidden');
+});
+// And the What's New splash: clicking the dark part closes it.
+$('news').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) closeNews();
 });
 
 // A repeated list of icon buttons keyed by ability id, not a single fixed
@@ -5409,6 +5749,8 @@ async function boot() {
   // seeing the artwork through it is the point. The slider goes back to 100%.
   S.save.settings.opacity ??= 0.7;
   S.save.settings.fill ??= DEFAULT_FILL;   // fill animation style (fill-fx.js)
+  S.save.settings.newsSeen ??= 0;          // highest What's-New rev read (news.js)
+  S.save.paints ??= {};                    // special-paint inventory (paints.js)
   S.save.stats.mutedCells ??= 0;
   S.save.stats.patientLandings ??= 0;
   S.save.stats.hints ??= 0;
@@ -5608,6 +5950,11 @@ async function boot() {
   // everyone else meets the login menu, Continue first.
   if (/[?&](notour|free)\b/.test(location.search)) enterFree();
   else showTitle();
+
+  // Once the app has settled, a returning player with unread updates gets the
+  // What's New splash over the top (gated inside: harnesses, low-stim and
+  // brand-new players are handled there).
+  maybeShowNews();
 }
 
 boot();

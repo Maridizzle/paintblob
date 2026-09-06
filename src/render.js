@@ -1,3 +1,5 @@
+import { fxStops } from './paints.js';
+
 // Two-layer canvas renderer.
 //
 // The base layer holds the picture as it currently stands — painted cells,
@@ -95,6 +97,10 @@ export class Board {
     this.puzzle = null;
     this.cells = [];
     this.filled = new Set();
+    // Special paints: cellId → paint id (shimmer/rainbow/multi). These cells are
+    // always in `filled`; the live layer animates a gradient over them every
+    // frame. Loaded from the picture's progress by game.js after setPuzzle.
+    this.fx = new Map();
     this.selected = -1;
     this.hover = -1;
     this.reveal = 0;      // 1 = finished picture, outlines faded away
@@ -188,6 +194,7 @@ export class Board {
     this.puzzle = puzzle;
     this.cells = cells;
     this.filled = filled;
+    this.fx = new Map(); // game.js repopulates from the picture's saved fx
     this.reveal = filled.size === cells.length ? 1 : 0;
     this.resetZoom();
 
@@ -629,7 +636,30 @@ export class Board {
       ctx.fillStyle = this.filled.has(cell.id) ? this.hexOf(cell.colour) : '#ffffff';
       ctx.fill(cell.path);
     }
+    // Bake the special paints on whatever frame they are on right now, so the
+    // saved PNG matches the shimmer/rainbow the player is looking at.
+    const t = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    for (const [id, paintId] of this.fx) {
+      const cell = this.cells[id];
+      if (!cell || !this.filled.has(id)) continue;
+      ctx.fillStyle = this.fxFillStyle(ctx, cell, paintId, t);
+      ctx.fill(cell.path);
+    }
     return out;
+  }
+
+  /**
+   * The animated gradient a special-painted cell is filled with at time `t`,
+   * laid along the cell's bounding-box diagonal. The stop maths lives in
+   * paints.js (fxStops) so the live board and the saved-PNG bake share it; a
+   * per-cell phase off the cell id keeps neighbours out of lockstep.
+   */
+  fxFillStyle(ctx, cell, paintId, t) {
+    const { x0, y0, x1, y1 } = cell.bounds;
+    const g = ctx.createLinearGradient(x0, y0, x1, y1);
+    const phase = (cell.id * 0.6180339887) % 1; // golden-ratio scatter, stable per cell
+    for (const [off, colour] of fxStops(paintId, t, phase).stops) g.addColorStop(off, colour);
+    return g;
   }
 
   /* ------------------------------------------------------------- live layer */
@@ -699,6 +729,20 @@ export class Board {
     const lifted = (this.liftCells && !this.focus) ? this.drawLift(sx, sy) : null;
 
     this.applyTransform(ctx, sx, sy);
+
+    // Special paints: every cell the player laid a shimmer/rainbow/multi over,
+    // redrawn each frame with its animated gradient on top of the base's flat
+    // fill — so the finished picture keeps moving. fx cells are always filled.
+    if (this.fx.size) {
+      ctx.save();
+      for (const [id, paintId] of this.fx) {
+        const cell = this.cells[id];
+        if (!cell || !this.filled.has(id)) continue;
+        ctx.fillStyle = this.fxFillStyle(ctx, cell, paintId, timeMs);
+        ctx.fill(cell.path);
+      }
+      ctx.restore();
+    }
 
     // The colour in hand breathes: a soft hatch of that paint lifts and settles
     // over its unpainted cells, drawing the eye to where the next strokes go.

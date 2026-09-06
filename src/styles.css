@@ -1388,6 +1388,57 @@ button {
 }
 .tub.nudge { animation: nudge 320ms ease-in-out 2; }
 
+/* -------------------------------------------------------------- special paints */
+
+/* The row of special-paint chips under the tubs. In the footer, never over the
+   canvas — the whole reason it lives here rather than floating on the board. */
+.paint-tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: center;
+  margin-top: 9px;
+}
+
+.paint-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 15px;
+  border: 1.5px solid rgba(var(--sheen-rgb), 0.16);
+  background: var(--card-solid);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 140ms cubic-bezier(0.34, 1.56, 0.64, 1), border-color 140ms, box-shadow 140ms;
+}
+.paint-chip:hover { transform: translateY(-2px); }
+.paint-chip .paint-mark { font-size: 15px; line-height: 1; }
+.paint-chip .paint-count {
+  min-width: 15px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: rgba(var(--sheen-rgb), 0.12);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  text-align: center;
+}
+/* Held: the same cyan ring the selected tub wears, so "in hand" reads the same
+   whether it's a numbered paint or a special one. */
+.paint-chip.selected {
+  transform: translateY(-3px);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.9), var(--glow-cyan);
+}
+/* The shop chip: dashed and quieter — it opens the store rather than holding paint. */
+.paint-chip.shop { border-style: dashed; color: var(--muted); }
+.paint-chip.shop .paint-plus { font-size: 13px; font-weight: 800; }
+
 /* ------------------------------------------------------------------ finish */
 
 .finish {
@@ -1434,6 +1485,55 @@ button {
   background: rgba(var(--accent-rgb), 0.14);
   border-color: rgba(var(--accent-rgb), 0.4);
   transform: translateY(-1px);
+}
+
+/* What's New splash — reuses the finish overlay + card; a scrollable digest list
+   read left-aligned, with the title and the Got-it button still centred. It is a
+   top-level overlay (sibling of the title screen) and appears OVER it on launch,
+   so it must out-stack the title screen (z-index 46). */
+#news { z-index: 47; }
+.news-card { width: min(440px, 92vw); }
+.news-list {
+  max-height: min(56vh, 460px);
+  overflow-y: auto;
+  margin: 14px 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 4px;
+  text-align: left;
+}
+.news-item { display: flex; gap: 11px; align-items: flex-start; }
+.news-icon { flex: 0 0 auto; width: 24px; text-align: center; font-size: 20px; line-height: 1.15; }
+.news-text { display: flex; flex-direction: column; gap: 2px; }
+.news-title { font-size: 13.5px; font-weight: 700; color: var(--text); }
+.news-blurb { font-size: 12px; line-height: 1.4; color: var(--muted); }
+
+/* The title-screen "What's new" link — quiet underlined text, a hot dot when
+   there is something unread. */
+.title-news {
+  -webkit-app-region: no-drag;
+  align-self: center;
+  margin-top: 4px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  position: relative;
+}
+.title-news:hover { color: var(--text); }
+.title-news.badge::after {
+  content: '';
+  position: absolute;
+  top: -3px; right: -10px;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--hot);
+  box-shadow: var(--glow-hot);
 }
 
 .primary {
