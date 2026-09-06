@@ -3288,8 +3288,9 @@ test('NEWS catalogue: ordered revs starting at low-stim, unique, all fields', ()
   for (const n of NEWS) {
     assert.ok(n.icon && n.title && n.blurb, `${n.rev} needs an icon, title and blurb`);
   }
-  // The whole point of this drop — special paints — is in the digest.
+  // The two paints-and-stickers drops are both in the digest.
   assert.ok(NEWS.some((n) => /special paints/i.test(n.title)), 'special paints must be listed');
+  assert.ok(NEWS.some((n) => /sticker/i.test(n.title)), 'stickers must be listed');
 });
 
 test('news seen-gating: unseen, hasUnseen, markSeen', () => {
