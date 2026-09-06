@@ -26,6 +26,9 @@ import {
   PAINTS, isPaint, paintDef, paintCount, ownedPaints, grantPaint, spendPaint, fxStops,
 } from '../src/paints.js';
 import {
+  NEWS, NEWS_MAX_REV, hasUnseenNews, unseenNews, markNewsSeen,
+} from '../src/news.js';
+import {
   CHUNKS, MIN_STEP, labL, rampFrom, randomStops, lerpHue, scramble, swap, isSolved, placedCount, partnerFor,
 } from '../src/overtime.js';
 import {
@@ -3260,4 +3263,75 @@ test('special paints are wired through the paint path, save and UI', () => {
   assert.match(html, /id="paintTray"/, 'the paint tray must be in the DOM');
   assert.ok(html.indexOf('id="paintTray"') > html.indexOf('<footer'),
     'the tray belongs in the footer, not floating over the board');
+});
+
+/* ------------------------------------------------------------- what's new */
+
+// The What's New splash: a returning player sees a digest of updates since
+// low-stim mode. The catalogue and the seen-gating are pure (news.js); game.js
+// renders the list and auto-shows it once per update.
+
+test('NEWS catalogue: ordered revs starting at low-stim, unique, all fields', () => {
+  assert.ok(NEWS.length >= 2, 'the digest needs entries');
+  assert.equal(NEWS[0].title, 'Low-stim mode', 'the list starts with low-stim mode, as asked');
+  const revs = NEWS.map((n) => n.rev);
+  assert.equal(new Set(revs).size, revs.length, 'revs must be unique');
+  for (let i = 1; i < revs.length; i++) {
+    assert.ok(revs[i] > revs[i - 1], 'revs must ascend in display order');
+  }
+  assert.equal(NEWS_MAX_REV, Math.max(...revs), 'NEWS_MAX_REV is the highest rev');
+  for (const n of NEWS) {
+    assert.ok(n.icon && n.title && n.blurb, `${n.rev} needs an icon, title and blurb`);
+  }
+  // The whole point of this drop — special paints — is in the digest.
+  assert.ok(NEWS.some((n) => /special paints/i.test(n.title)), 'special paints must be listed');
+});
+
+test('news seen-gating: unseen, hasUnseen, markSeen', () => {
+  const save = { settings: { newsSeen: 0 } };
+  assert.equal(hasUnseenNews(save), true, 'a fresh reader has unread news');
+  assert.equal(unseenNews(save).length, NEWS.length, 'everything is unread at newsSeen 0');
+
+  // A save from before the field exists (no newsSeen) reads as 0 → all unread.
+  assert.equal(hasUnseenNews({ settings: {} }), true, 'a pre-field save sees everything');
+  assert.equal(hasUnseenNews({}), true, 'a save with no settings still resolves');
+
+  markNewsSeen(save);
+  assert.equal(save.settings.newsSeen, NEWS_MAX_REV, 'markNewsSeen catches up to the top');
+  assert.equal(hasUnseenNews(save), false, 'nothing unread once caught up');
+  assert.equal(unseenNews(save).length, 0, 'and the unseen list is empty');
+
+  // Only entries newer than what was read come back as unseen.
+  const partial = { settings: { newsSeen: NEWS_MAX_REV - 1 } };
+  assert.equal(unseenNews(partial).length, 1, 'one new entry since last read');
+  assert.equal(hasUnseenNews(partial), true);
+});
+
+test('the What’s New splash is wired into the app, save and boot gate', () => {
+  const game = readSource('src/game.js');
+  const html = readSource('src/index.html');
+
+  assert.match(game, /from '\.\/news\.js'/, 'game.js must import news.js');
+  assert.match(game, /function openNews\(\)/, 'game.js needs openNews()');
+  assert.match(game, /function maybeShowNews\(\)/, 'game.js needs the auto-splash gate');
+  assert.match(game, /markNewsSeen\(S\.save\)/, 'opening the splash marks it read');
+  assert.match(game, /case 'news': openNews\(\)/, 'the title link opens the splash');
+  assert.match(game, /case 'news-close': closeNews\(\)/, 'the splash can be closed');
+  // The gate must skip the harnesses and be silenced in low-stim, and catch a
+  // brand-new player up rather than splashing them.
+  const gate = game.slice(game.indexOf('function maybeShowNews'), game.indexOf('function maybeShowNews') + 700);
+  assert.match(gate, /notour\|nonews/, 'the auto-splash must skip the headless harnesses');
+  assert.match(gate, /lowStim/, 'the auto-splash must respect low-stim');
+  assert.match(gate, /fresh/, 'a brand-new player is caught up, not splashed');
+  assert.match(game, /maybeShowNews\(\);/, 'boot must call the auto-splash gate');
+
+  // Save shape: newsSeen in both DEFAULT_SAVE literals + a boot backfill.
+  assert.match(readSource('src/platform.js'), /newsSeen: 0/, 'platform.js DEFAULT_SAVE needs newsSeen');
+  assert.match(readSource('electron/main.cjs'), /newsSeen: 0/, 'electron DEFAULT_SAVE needs newsSeen');
+  assert.match(game, /S\.save\.settings\.newsSeen \?\?= 0/, 'boot must backfill newsSeen');
+
+  // The splash and the title link are in the DOM.
+  assert.match(html, /id="news"/, 'the What’s New overlay must exist');
+  assert.match(html, /id="newsList"/, 'the splash needs a list container');
+  assert.match(html, /data-act="news-close"/, 'the splash needs a close control');
 });

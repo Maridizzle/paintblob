@@ -234,6 +234,20 @@
         <div id="chapterNext" class="chapter-next hidden"></div>
       </div>
     </section>
+
+    <!-- What's New: a digest of updates, filled by renderNews() from news.js.
+         Auto-shown once to a returning player after an update, and always
+         reachable from the title-screen link and Settings. A top-level overlay
+         (sibling of the title, not inside #stage) so it can stack ABOVE the
+         title screen it appears over; reuses the finish card's styling. -->
+    <div id="news" class="finish news hidden">
+      <div class="finish-card news-card">
+        <button class="icon finish-close" data-act="news-close" title="Close">✕</button>
+        <div class="finish-title">What’s new</div>
+        <div class="news-list" id="newsList"></div>
+        <button class="primary" data-act="news-close">Got it</button>
+      </div>
+    </div>
   </div>
 
   <script type="module" src="game.js"></script>

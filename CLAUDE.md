@@ -220,6 +220,20 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
   `restoreFromFile` before the image-import path). The destructive restore
   confirms with an in-page modal (`#confirm` / `confirmModal`), never a native
   dialog.
+- **What's New splash** — `news.js` (pure catalogue + seen-gating) + `game.js`.
+  A digestible list of updates **starting with low-stim mode**; each `NEWS` entry
+  is `{ rev, icon, title, blurb }` in display order. `settings.newsSeen` holds the
+  highest `rev` read (a save-shape key: both `DEFAULT_SAVE` literals + a `??=`
+  boot backfill), so **adding a higher-rev entry is all it takes to resurface the
+  splash** — no other bookkeeping. The `#news` overlay is a **top-level sibling of
+  the title** (z-index 47, above the title's 46) so it shows over the launch
+  screen; `renderNews`/`openNews`/`closeNews` + `maybeShowNews` drive it.
+  `maybeShowNews` (end of `boot()`) auto-shows it once for a **returning** player
+  with unread news — gated off for the headless harnesses (`?notour`, plus an
+  explicit `?nonews`), silenced in low-stim (the title link still offers it), and
+  it **catches a brand-new player up silently** (no splash for a game they just
+  met). Reachable any time from a badged title-screen link and a Settings row
+  (both `data-act="news"` / `openNews`). Adding an entry is data-only.
 
 ## Release & branch workflow — READ THIS
 

@@ -34,6 +34,7 @@ import { perkTarget, PERKS } from './perks.js';
 import {
   PAINTS, isPaint, paintDef, paintCount, ownedPaints, grantPaint, spendPaint,
 } from './paints.js';
+import { NEWS, hasUnseenNews, markNewsSeen } from './news.js';
 import { outlineSVG, outlineWeight } from './thumbnail.js';
 import { computePlayStats } from './playstats.js';
 import { Tour } from './tour.js';
@@ -3484,6 +3485,15 @@ function renderSettings(body) {
   body.append(avatarGuide);
   }
 
+  // What's New — the digest of updates. Always reachable here, badged on the
+  // title screen while there is something unread.
+  const news = row('clickable');
+  news.innerHTML = '<div class="grow"><div class="label">✨ What’s new</div>' +
+    '<div class="sub">Everything added since low-stim mode</div></div>' +
+    '<div class="dev-go">Read</div>';
+  news.addEventListener('click', () => { closePanel(); openNews(); });
+  body.append(news);
+
   // Special paints store. Also reachable from the tray's shop chip once you own
   // some — this is the first-time way in, since the tray stays hidden until then
   // (so a fresh save keeps the whole footer for its tubs).
@@ -5159,10 +5169,72 @@ function showTitle() {
   if (!lowStim) add('Story mode', 'The colours are on strike', !S.save.story.mode, () => enterStory());
   add('Free mode', 'Just paint', lowStim && !S.save.story.mode, () => enterFree());
 
+  // A quiet way into the What's New splash, badged while there is unread news.
+  const news = document.createElement('button');
+  news.className = 'title-news';
+  news.dataset.act = 'news';
+  news.textContent = "What's new";
+  news.classList.toggle('badge', hasUnseenNews(S.save));
+  actions.append(news);
+
   $('title').classList.remove('hidden');
 }
 
 function hideTitle() { $('title').classList.add('hidden'); }
+
+/* ------------------------------------------------------------- what's new */
+
+/** Fills the What's New splash from the catalogue (news.js). A plain, static
+ *  list — no animation — so it reads calmly even in low-stim. */
+function renderNews() {
+  const list = $('newsList');
+  list.textContent = '';
+  for (const item of NEWS) {
+    const el = document.createElement('div');
+    el.className = 'news-item';
+    el.innerHTML = '<span class="news-icon"></span>'
+      + '<span class="news-text"><span class="news-title"></span>'
+      + '<span class="news-blurb"></span></span>';
+    el.querySelector('.news-icon').textContent = item.icon;
+    el.querySelector('.news-title').textContent = item.title;
+    el.querySelector('.news-blurb').textContent = item.blurb;
+    list.append(el);
+  }
+}
+
+/** Open the What's New splash and mark everything read — so the title badge
+ *  clears and it won't auto-open again until an update adds a newer entry. */
+function openNews() {
+  renderNews();
+  $('news').classList.remove('hidden');
+  markNewsSeen(S.save);
+  persist();
+  syncNewsBadge();
+}
+
+function closeNews() { $('news').classList.add('hidden'); }
+
+/** The title-screen "What's new" link wears a dot while there is unread news. */
+function syncNewsBadge() {
+  document.querySelector('[data-act="news"]')?.classList.toggle('badge', hasUnseenNews(S.save));
+}
+
+/**
+ * The launch splash: show What's New once when there is unread news. Skipped for
+ * the headless harnesses (?notour) and by an explicit ?nonews, and — like the
+ * first-run tour — not auto-popped in low-stim (the title link still offers it).
+ * A brand-new player is caught up silently rather than shown a "what's new" for a
+ * game they just met; a returning player with unread entries gets the splash over
+ * whatever the boot landed on.
+ */
+function maybeShowNews() {
+  if (/[?&](notour|nonews)\b/.test(location.search)) return;
+  if (!hasUnseenNews(S.save)) return;
+  const fresh = !S.save.stats.cells && !S.save.stats.puzzles && !S.save.stats.imported;
+  if (fresh) { markNewsSeen(S.save); persist(); return; }
+  if (S.save.settings.lowStim) { syncNewsBadge(); return; }
+  openNews();
+}
 
 // The Story ⇄ Free confirm, filled from the current mode. Switching changes the
 // theme, the bonus round and the gallery routing, so it asks first rather than
@@ -5516,6 +5588,8 @@ document.addEventListener('click', async (e) => {
       if (S.panel === 'dev') closePanel();
       else await openPanel('dev');
       break;
+    case 'news': openNews(); break;                    // the What's New splash
+    case 'news-close': closeNews(); break;
     case 'story-board': openStoryBoard(); break;      // the pill, back to the path
     case 'story-back': closeStoryBoard(); showTitle(); break;
     case 'story-free': enterFree(); break;
@@ -5537,6 +5611,10 @@ $('finish').addEventListener('click', (e) => {
 // Same for the mode-swap confirm: clicking the dark part cancels it.
 $('modeSwap').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) $('modeSwap').classList.add('hidden');
+});
+// And the What's New splash: clicking the dark part closes it.
+$('news').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) closeNews();
 });
 
 // A repeated list of icon buttons keyed by ability id, not a single fixed
@@ -5671,6 +5749,7 @@ async function boot() {
   // seeing the artwork through it is the point. The slider goes back to 100%.
   S.save.settings.opacity ??= 0.7;
   S.save.settings.fill ??= DEFAULT_FILL;   // fill animation style (fill-fx.js)
+  S.save.settings.newsSeen ??= 0;          // highest What's-New rev read (news.js)
   S.save.paints ??= {};                    // special-paint inventory (paints.js)
   S.save.stats.mutedCells ??= 0;
   S.save.stats.patientLandings ??= 0;
@@ -5871,6 +5950,11 @@ async function boot() {
   // everyone else meets the login menu, Continue first.
   if (/[?&](notour|free)\b/.test(location.search)) enterFree();
   else showTitle();
+
+  // Once the app has settled, a returning player with unread updates gets the
+  // What's New splash over the top (gated inside: harnesses, low-stim and
+  // brand-new players are handled there).
+  maybeShowNews();
 }
 
 boot();

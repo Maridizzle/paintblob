@@ -1487,6 +1487,55 @@ button {
   transform: translateY(-1px);
 }
 
+/* What's New splash — reuses the finish overlay + card; a scrollable digest list
+   read left-aligned, with the title and the Got-it button still centred. It is a
+   top-level overlay (sibling of the title screen) and appears OVER it on launch,
+   so it must out-stack the title screen (z-index 46). */
+#news { z-index: 47; }
+.news-card { width: min(440px, 92vw); }
+.news-list {
+  max-height: min(56vh, 460px);
+  overflow-y: auto;
+  margin: 14px 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 4px;
+  text-align: left;
+}
+.news-item { display: flex; gap: 11px; align-items: flex-start; }
+.news-icon { flex: 0 0 auto; width: 24px; text-align: center; font-size: 20px; line-height: 1.15; }
+.news-text { display: flex; flex-direction: column; gap: 2px; }
+.news-title { font-size: 13.5px; font-weight: 700; color: var(--text); }
+.news-blurb { font-size: 12px; line-height: 1.4; color: var(--muted); }
+
+/* The title-screen "What's new" link — quiet underlined text, a hot dot when
+   there is something unread. */
+.title-news {
+  -webkit-app-region: no-drag;
+  align-self: center;
+  margin-top: 4px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  position: relative;
+}
+.title-news:hover { color: var(--text); }
+.title-news.badge::after {
+  content: '';
+  position: absolute;
+  top: -3px; right: -10px;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--hot);
+  box-shadow: var(--glow-hot);
+}
+
 .primary {
   -webkit-app-region: no-drag;
   padding: 9px 19px;
