@@ -39,6 +39,10 @@ import {
   STICKER_PACKS, isPack, packDef, packOf, stickerCount, ownedPacks,
   grantStickers, spendSticker, STYLES as STICKER_STYLES, MOTIONS as STICKER_MOTIONS,
 } from './stickers.js';
+import {
+  companionSVG, nextSpot, dwellTime, colorComment, playtimeComment, ambientComment,
+  finishComment, PLAY_MILESTONES, SCAMPER_MS, BUBBLE_MS, COMMENT_GAP_MS, AMBIENT_EVERY_MS,
+} from './companion.js';
 import { outlineSVG, outlineWeight } from './thumbnail.js';
 import { computePlayStats } from './playstats.js';
 import { Tour } from './tour.js';
@@ -88,6 +92,10 @@ const S = {
   stickerMode: false,
   sticker: null,
   stickerSel: null,
+  // Pip, the roaming paint-squirrel (companion.js). Session runtime only — whether
+  // he's on is a setting; this holds where he is and what he's said. `on` is the
+  // resolved state (setting AND not low-stim AND not a headless harness).
+  companion: { on: false, spot: null, saidHours: {}, lastSaid: 0 },
   bursts: [],
   seed: 1,
   elapsedMs: 0,
@@ -161,7 +169,17 @@ const S = {
 // Read-only handle for the smoke test (electron/main.cjs) so it can click a
 // real cell instead of spraying screen coordinates and hoping one lands —
 // normal play never touches this.
-window.__paintblobTest = { board, state: S };
+window.__paintblobTest = {
+  board,
+  state: S,
+  // Drive the companion in a harness without waiting 30 minutes: scamper now, say
+  // a line, or compliment a colour by tub index. Normal play never touches this.
+  pip: {
+    roam: () => { S.companion.spot = nextSpot(S.companion.spot?.side); placeCompanion(true); },
+    say: (t) => pipSay(t, { force: true }),
+    color: (i) => pipSay(colorComment(board.hexOf(i)), { force: true }),
+  },
+};
 
 /* ---------------------------------------------------------------- persistence */
 
@@ -435,6 +453,7 @@ function selectTub(i, fromUser = false) {
   syncTubs();
   syncPaintTray();
   sfx.play('pick', i);
+  if (fromUser) companionColorComment(i); // Pip may compliment the shade
 }
 
 function nextTub() {
@@ -801,6 +820,121 @@ function renderStickerShop(body) {
   band(body);
 }
 
+/* ------------------------------------------------------------- companion (Pip) */
+
+// "How long you've been painting" is this sitting, timed from boot — so a line
+// like "three hours!" means real elapsed time at the canvas.
+const pipStart = Date.now();
+let pipRoamTimer = 0;
+let pipBubbleTimer = 0;
+let pipTickTimer = 0;
+
+/** Resolve whether Pip is on (the setting, minus low-stim and the headless
+ *  harness), show/hide him, and start or stop his loops. Idempotent. */
+function syncCompanion() {
+  const el = $('companion');
+  if (!el) return;
+  const on = !!S.save?.settings?.companion
+    && !S.save.settings.lowStim
+    && !/[?&](notour|nopip)\b/.test(location.search);
+  S.companion.on = on;
+  el.classList.toggle('hidden', !on);
+  if (!on) { stopCompanion(); return; }
+  if (!el.querySelector('.sq')) el.querySelector('.companion-body').innerHTML = companionSVG();
+  if (!S.companion.spot) S.companion.spot = nextSpot(null);
+  placeCompanion(false);
+  scheduleRoam();
+  scheduleTick();
+}
+
+function stopCompanion() {
+  clearTimeout(pipRoamTimer);
+  clearTimeout(pipTickTimer);
+  clearTimeout(pipBubbleTimer);
+  $('companionBubble')?.setAttribute('hidden', '');
+}
+
+/** Position Pip along the stage border from his spot {side, t, face}. He rides the
+ *  frame, not the zoomed picture, so pan/zoom never drag him around. */
+function placeCompanion(animate = true) {
+  const el = $('companion');
+  const stage = $('stage');
+  if (!el || !stage || !S.companion.spot || !S.companion.on) return;
+  const { side, t, face } = S.companion.spot;
+  const sz = 72, inset = 6;
+  const runX = Math.max(0, stage.clientWidth - 2 * inset - sz);
+  const runY = Math.max(0, stage.clientHeight - 2 * inset - sz);
+  let x, y;
+  if (side === 'top') { x = inset + t * runX; y = inset; }
+  else if (side === 'bottom') { x = inset + t * runX; y = stage.clientHeight - inset - sz; }
+  else if (side === 'left') { x = inset; y = inset + t * runY; }
+  else { x = stage.clientWidth - inset - sz; y = inset + t * runY; }
+  el.dataset.face = String(face);
+  // Keep the speech bubble on-screen: below him up top, anchored inward at a side.
+  el.classList.toggle('bubble-below', side === 'top');
+  el.classList.toggle('bubble-right', side === 'left');
+  el.classList.toggle('bubble-left', side === 'right');
+  el.classList.toggle('no-anim', !animate);
+  el.classList.toggle('running', animate);
+  el.style.left = `${Math.round(x)}px`;
+  el.style.top = `${Math.round(y)}px`;
+  if (animate) setTimeout(() => el.classList.remove('running'), SCAMPER_MS);
+}
+
+function scheduleRoam() {
+  clearTimeout(pipRoamTimer);
+  pipRoamTimer = setTimeout(() => {
+    if (!S.companion.on) return;
+    S.companion.spot = nextSpot(S.companion.spot?.side);
+    placeCompanion(true);
+    scheduleRoam();
+  }, dwellTime());
+}
+
+/** Show a line in Pip's bubble, rate-limited so he never natters. `force` skips
+ *  the gap for a once-only moment (finishing a picture). */
+function pipSay(text, { force = false } = {}) {
+  if (!text || !S.companion.on) return;
+  const now = Date.now();
+  if (!force && now - S.companion.lastSaid < COMMENT_GAP_MS) return;
+  S.companion.lastSaid = now;
+  const bubble = $('companionBubble');
+  if (!bubble) return;
+  bubble.textContent = text;
+  bubble.removeAttribute('hidden');
+  clearTimeout(pipBubbleTimer);
+  pipBubbleTimer = setTimeout(() => bubble.setAttribute('hidden', ''), BUBBLE_MS);
+}
+
+/** Periodic chatter: a crossed playtime milestone takes priority, otherwise an
+ *  occasional ambient line. Reschedules itself. */
+function scheduleTick() {
+  clearTimeout(pipTickTimer);
+  pipTickTimer = setTimeout(() => {
+    if (!S.companion.on) return;
+    const hours = (Date.now() - pipStart) / 3.6e6;
+    const due = PLAY_MILESTONES.filter((m) => m <= hours && !S.companion.saidHours[m]);
+    if (due.length) {
+      const m = due[due.length - 1];
+      S.companion.saidHours[m] = true;
+      pipSay(playtimeComment(m));
+    } else if (Math.random() < 0.5) {
+      pipSay(ambientComment({ filledFrac: S.cells.length ? S.filled.size / S.cells.length : 0 }));
+    }
+    scheduleTick();
+  }, AMBIENT_EVERY_MS * (0.7 + Math.random() * 0.6));
+}
+
+/** When the player picks a colour, Pip sometimes compliments the exact shade —
+ *  rarely, and never twice in quick succession, so it stays a treat. */
+function companionColorComment(colourIndex) {
+  if (!S.companion.on) return;
+  if (Date.now() - S.companion.lastSaid < COMMENT_GAP_MS) return;
+  if (Math.random() > 0.4) return;
+  const hex = board.hexOf(colourIndex);
+  if (hex) pipSay(colorComment(hex));
+}
+
 /* -------------------------------------------------------------------- puzzle */
 
 /** Turns a #rrggbb string into { h, s, l } (hue 0..360, sat/lightness 0..1). */
@@ -934,6 +1068,7 @@ async function loadPuzzle(id) {
   syncUndo(); // history was just cleared, so this always hides it
   syncPaintTray(); // owned special paints, for this newly-opened picture
   syncStickerUI(); // sticker mode is off on a fresh open; refresh the toolbar gate
+  syncCompanion(); // Pip, if he's on — place him on this picture's border
   if (!S.finished) nextTub();
 
   // Opening a free-gallery picture is leaving the story. Story mode is walked
@@ -1638,6 +1773,7 @@ function finish() {
   stopBoss(); // the boss dies the instant the last cell lands — no more regen, no spells
   syncDevPill(); // hide the instant-complete pill on a finished picture
   syncUndo();
+  pipSay(finishComment(), { force: true }); // Pip cheers the finish
 
   S.save.stats.puzzles++;
   if (streaks.wrongClicks === 0) achievements.award('flawless');
@@ -3847,6 +3983,24 @@ function renderSettings(body) {
     if (!on) hideBonusChip();
   });
 
+  // Pip, the roaming painting buddy — a chatty squirrel is exactly the kind of
+  // extra low-stim hides, so his switch lives in here.
+  const pipRow = row('clickable');
+  const pipText = document.createElement('div');
+  pipText.className = 'grow';
+  pipText.innerHTML = '<div class="label">🐿️ Painting buddy</div>'
+    + '<div class="sub">Pip roams your picture’s border and chats about your colours</div>';
+  const pipSw = document.createElement('div');
+  pipSw.className = `switch ${settings.companion ? 'on' : ''}`;
+  pipRow.append(pipText, pipSw);
+  pipRow.addEventListener('click', () => {
+    settings.companion = !settings.companion;
+    pipSw.classList.toggle('on', settings.companion);
+    syncCompanion();
+    persist();
+  });
+  body.append(pipRow);
+
   const guide = row('clickable');
   guide.innerHTML = '<div class="grow"><div class="label">Squirrel tour</div>' +
     '<div class="sub">Send the squirrel round the screen again</div></div>' +
@@ -3959,6 +4113,7 @@ function applyLowStim() {
   // Sound is one of the extras it silences; turned off again, the player's own
   // sound choice applies once more.
   sfx?.setEnabled(on ? false : (S.save.settings.sound !== false));
+  syncCompanion(); // Pip is an extra low-stim hides, so re-resolve him too
 }
 /* --------------------------------------------------- free-mode bonus rounds */
 
@@ -6123,6 +6278,7 @@ window.addEventListener('paste', async (e) => {
 const ro = new ResizeObserver(() => {
   board.layout();
   board.dirty = true;
+  if (S.companion.on) placeCompanion(false); // keep Pip on the (new) border
 });
 
 /* -------------------------------------------------------------------- boot */
@@ -6150,6 +6306,7 @@ async function boot() {
   S.save.settings.newsSeen ??= 0;          // highest What's-New rev read (news.js)
   S.save.paints ??= {};                    // special-paint inventory (paints.js)
   S.save.stickers ??= {};                  // sticker-pack inventory (stickers.js)
+  S.save.settings.companion ??= true;      // Pip the roaming companion, on by default (companion.js)
   S.save.stats.mutedCells ??= 0;
   S.save.stats.patientLandings ??= 0;
   S.save.stats.hints ??= 0;

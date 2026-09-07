@@ -162,6 +162,15 @@
         <div class="boss-health"><i class="boss-health-fill"></i></div>
       </div>
 
+      <!-- Pip, the roaming paint-squirrel (companion.js). A frame buddy: he hugs
+           the picture's border and never blocks a tap (pointer-events: none). His
+           SVG is injected by syncCompanion(); his bubble carries the current line.
+           Shown only when the setting is on and low-stim is off. -->
+      <div id="companion" class="companion hidden" data-face="1" aria-hidden="true">
+        <div id="companionBubble" class="companion-bubble" hidden></div>
+        <div class="companion-body"></div>
+      </div>
+
       <div id="toasts"></div>
     </div>
 

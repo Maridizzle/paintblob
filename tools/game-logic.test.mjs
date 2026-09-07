@@ -34,6 +34,11 @@ import {
   isStyle, isMotion, stickerTransform,
 } from '../src/stickers.js';
 import {
+  colorName, colorComment, playtimeComment, ambientComment, finishComment,
+  nextSpot, dwellTime, PLAY_MILESTONES, DWELL_MS, DWELL_JITTER_MS,
+  apronMarkup, companionSVG,
+} from '../src/companion.js';
+import {
   CHUNKS, MIN_STEP, labL, rampFrom, randomStops, lerpHue, scramble, swap, isSolved, placedCount, partnerFor,
 } from '../src/overtime.js';
 import {
@@ -3477,4 +3482,120 @@ test('the shop inventories are actually persisted (regression: paints + stickers
   const writeSet = game.slice(game.indexOf('api?.writeSave({'), game.indexOf('api?.writeSave({') + 800);
   assert.match(writeSet, /\bpaints: S\.save\.paints\b/, 'persist must write the paints inventory');
   assert.match(writeSet, /\bstickers: S\.save\.stickers\b/, 'persist must write the sticker inventory');
+});
+
+/* ------------------------------------------------------------- companion (Pip) */
+
+// Pip, the roaming paint-squirrel. His writing and roaming maths are pure
+// (companion.js); game.js positions him and shows his bubble. The prized bit is
+// the colour-namer: what he says about a colour must come from the actual hex,
+// so it never feels canned.
+
+test('colorName: specific, non-empty names across the wheel and the neutrals', () => {
+  const cases = {
+    '#e0453f': /red/, '#2f74d0': /blue/, '#8a6d4a': /brown/, '#2a6f6f': /teal/,
+    '#e8b4c8': /rose|pink|blush/, '#6a4fb0': /indigo|violet|purple/,
+    '#111111': /black/, '#f7f7f7': /white/, '#c9c9c9': /grey/,
+  };
+  for (const [hex, re] of Object.entries(cases)) {
+    const name = colorName(hex);
+    assert.ok(name && !/undefined|NaN/.test(name), `${hex} → a real name, got "${name}"`);
+    assert.match(name, re, `${hex} should read like ${re}`);
+  }
+  // Deterministic: the same colour always earns the same name (variety lives in
+  // the templates, not in renaming the colour).
+  assert.equal(colorName('#2f74d0'), colorName('#2f74d0'));
+});
+
+test('colorComment names the exact colour and varies with the roll', () => {
+  const hex = '#2a6f6f';
+  const name = colorName(hex); // "rich teal"
+  assert.ok(colorComment(hex, () => 0).includes(name), 'the line names the colour');
+  // Different rolls give different templates (so it isn\'t one canned line).
+  const a = colorComment(hex, () => 0.05);
+  const b = colorComment(hex, () => 0.95);
+  assert.notEqual(a, b, 'the phrasing varies');
+});
+
+test('playtime lines exist for every milestone and nod to time/water', () => {
+  for (const m of PLAY_MILESTONES) {
+    const line = playtimeComment(m, () => 0);
+    assert.ok(line && line.length > 4, `a line for the ${m}h milestone`);
+  }
+  assert.equal(playtimeComment(1.37), null, 'a non-milestone gets no line');
+  // The 3h line honours the user\'s ask ("I feel so loved") and nudges water.
+  assert.match(playtimeComment(3, () => 0), /loved/i);
+  assert.ok(PLAY_MILESTONES.some((m) => /water/i.test(playtimeComment(m, () => 0) || '')),
+    'somewhere he reminds you to drink water');
+});
+
+test('ambient lines: welcome, near-done and idle are all non-empty', () => {
+  assert.ok(ambientComment({ justArrived: true }, () => 0).length > 0);
+  assert.ok(ambientComment({ filledFrac: 0.92 }, () => 0).length > 0);
+  assert.ok(ambientComment({ filledFrac: 0.2 }, () => 0).length > 0);
+  assert.ok(finishComment(() => 0).length > 0);
+});
+
+test('roaming: nextSpot never repeats a side, stays in-bounds, faces inward', () => {
+  let prev = null;
+  for (let i = 0; i < 60; i++) {
+    const spot = nextSpot(prev, () => (i % 7) / 7);
+    assert.notEqual(spot.side, prev, 'he actually travels to a new side');
+    assert.ok(['top', 'right', 'bottom', 'left'].includes(spot.side));
+    assert.ok(spot.t >= 0.12 && spot.t <= 0.88, 'kept off the corners');
+    assert.ok(spot.face === 1 || spot.face === -1);
+    if (spot.side === 'left') assert.equal(spot.face, 1);
+    if (spot.side === 'right') assert.equal(spot.face, -1);
+    prev = spot.side;
+  }
+  // Dwell is ~30 min, jittered within bounds.
+  for (let i = 0; i < 20; i++) {
+    const d = dwellTime(() => i / 20);
+    assert.ok(d >= DWELL_MS - DWELL_JITTER_MS - 1 && d <= DWELL_MS + DWELL_JITTER_MS + 1);
+  }
+});
+
+test('the squirrel art carries the shared idiom + the paint apron', () => {
+  const svg = companionSVG();
+  for (const cls of ['sq-flip', 'sq-tail', 'sq-fur', 'sq-eye', 'sq-nose', 'sq-apron']) {
+    assert.ok(svg.includes(cls), `the companion SVG uses .${cls}`);
+  }
+  assert.ok(!svg.includes('sq-arm'), 'the resting companion drops the tour\'s pointing arm');
+  const apron = apronMarkup();
+  assert.match(apron, /class="sq-apron"/);
+  assert.ok((apron.match(/<circle/g) || []).length >= 4, 'the apron is paint-splattered');
+});
+
+test('the companion is wired into the app, save and low-stim gate', () => {
+  const game = readSource('src/game.js');
+  const html = readSource('src/index.html');
+  const tour = readSource('src/tour.js');
+
+  assert.match(game, /from '\.\/companion\.js'/, 'game.js imports companion.js');
+  assert.match(game, /function syncCompanion\(\)/, 'game.js needs syncCompanion');
+  assert.match(game, /function placeCompanion\(/, 'game.js positions him');
+  assert.match(game, /function scheduleRoam\(/, 'game.js roams him');
+  assert.match(game, /function pipSay\(/, 'game.js shows his bubble');
+  assert.match(game, /companionColorComment\(i\)/, 'picking a tub can trigger a colour compliment');
+  assert.match(game, /pipSay\(finishComment\(\), \{ force: true \}\)/, 'he cheers a finished picture');
+  // Gated: the setting, minus low-stim and the headless harness.
+  const gate = game.slice(game.indexOf('function syncCompanion'), game.indexOf('function syncCompanion') + 500);
+  assert.match(gate, /settings\??\.companion/, 'the setting drives him');
+  assert.match(gate, /lowStim/, 'low-stim turns him off');
+  assert.match(gate, /notour\|nopip/, 'the harness turns him off');
+  assert.match(game, /syncCompanion\(\); \/\/ Pip is an extra low-stim hides/, 'low-stim re-resolves him');
+
+  // Save shape: setting in both DEFAULT_SAVE literals + a boot backfill.
+  assert.match(readSource('src/platform.js'), /companion: true/, 'platform.js DEFAULT_SAVE needs companion');
+  assert.match(readSource('electron/main.cjs'), /companion: true/, 'electron DEFAULT_SAVE needs companion');
+  assert.match(game, /S\.save\.settings\.companion \?\?= true/, 'boot backfills the companion setting');
+
+  // In the DOM, inside the stage, never intercepting a tap.
+  assert.match(html, /id="companion"/, 'the companion element exists');
+  assert.match(html, /id="companionBubble"/, 'his bubble exists');
+  assert.ok(html.indexOf('id="companion"') > html.indexOf('<div id="stage">'), 'he lives in the stage');
+  assert.match(readSource('src/styles.css'), /\.companion \{[\s\S]*?pointer-events: none/, 'he never blocks a tap');
+
+  // The tour squirrel wears the same apron.
+  assert.match(tour, /apronMarkup\(\)/, 'the tour squirrel wears the apron too');
 });
