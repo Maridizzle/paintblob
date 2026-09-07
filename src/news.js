@@ -74,6 +74,19 @@ export const NEWS = [
     title: 'Stickers',
     blurb: 'Stamp hearts, stars, shapes, letters, numbers, animals and aliens onto a picture — bought in packs, then sized, spun or given a 3D pop. Tap 🏷 in the toolbar to decorate.',
   },
+
+  // ─── NEXT SPLASH BATCH STARTS HERE (rev 12+) ────────────────────────────────
+  // Everything above has shipped AND been announced. To avoid resurfacing the
+  // splash on every little patch, features that ship between batches are NOT
+  // listed the moment they land — they wait here and get announced together in
+  // the next batch. Add the next round of entries below this line, continuing at
+  // `rev: 12`. Adding any entry bumps NEWS_MAX_REV, which re-shows the splash for
+  // returning players, so add them as a batch, not one at a time.
+  //
+  // Already shipped, waiting to be listed (write these first, in ship order):
+  //   • Pip, the painting buddy (v0.7.61) — an optional paint-aproned squirrel
+  //     who roams the picture's border and chats about your colours. Toggle in
+  //     Settings → "Painting buddy". Suggested: icon 🐿️, title "A painting buddy".
 ];
 
 /** The highest rev in the catalogue — what "caught up" means. */
