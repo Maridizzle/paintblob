@@ -11,12 +11,13 @@
 
 /* ----------------------------------------------------------------- timing */
 
-export const DWELL_MS = 30 * 60 * 1000;       // sit ~30 minutes before moving on
-export const DWELL_JITTER_MS = 8 * 60 * 1000; // ± up to 8 min, so he isn't a metronome
+export const DWELL_MS = 2 * 60 * 1000;        // sit ~2 minutes, then scamper somewhere new
+export const DWELL_JITTER_MS = 45 * 1000;     // ± up to 45s, so he isn't a metronome
 export const SCAMPER_MS = 900;                // how long a move takes (matches the CSS tween)
 export const BUBBLE_MS = 6800;                // a comment stays up this long
-export const COMMENT_GAP_MS = 75 * 1000;      // minimum quiet between any two comments
-export const AMBIENT_EVERY_MS = 6 * 60 * 1000;// roughly how often an unprompted line drops
+export const COMMENT_GAP_MS = 20 * 1000;      // minimum quiet between any two comments
+export const AMBIENT_EVERY_MS = 95 * 1000;    // roughly how often an unprompted line drops
+export const FIDGET_EVERY_MS = 15 * 1000;     // roughly how often he bounces / wiggles / waves the brush
 
 // Playtime milestones (hours) he'll remark on, once each, as the session passes them.
 export const PLAY_MILESTONES = [0.5, 1, 2, 3, 4, 6, 8];
@@ -141,6 +142,10 @@ const AMBIENT = [
   'Cosy in here.',
   'You make this look easy.',
   "I love watching a picture find itself.",
+  'Mind if I sit here? Best seat in the house.',
+  'You and me, a quiet afternoon of colour. Bliss.',
+  "Psst — you're doing great.",
+  'Ooh, drag me somewhere if I\'m in your way. 🐿️',
 ];
 const NEAR_DONE = [
   "So close now — I can feel it!",
@@ -192,6 +197,20 @@ export function nextSpot(prevSide = null, rng = Math.random) {
 /** A dwell time around DWELL_MS, jittered so he isn't a metronome. */
 export function dwellTime(rng = Math.random) {
   return DWELL_MS + (rng() * 2 - 1) * DWELL_JITTER_MS;
+}
+
+/* ---------------------------------------------------------------- fidgets */
+
+// The little in-place moves he does between roams — a bounce, a wiggle, a shake
+// of the loaded brush. game.js plays the chosen one as a one-shot CSS class; the
+// set and the picking live here (pure) so they're testable and never repeat back
+// to back.
+export const FIDGETS = ['bounce', 'wiggle', 'brush'];
+
+/** Pick a fidget, never the same one twice running, so he stays surprising. */
+export function nextFidget(prev = null, rng = Math.random) {
+  const choices = FIDGETS.filter((f) => f !== prev);
+  return pick(choices, rng);
 }
 
 /* ------------------------------------------------------------------- art */

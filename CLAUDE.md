@@ -226,26 +226,40 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
 - **Companion (Pip)** — `companion.js` (pure) + `game.js`. An optional
   paint-aproned squirrel who lives on the picture's **border** and chats. He is a
   `#companion` DOM element positioned along the `#stage` frame (NOT zoomed board
-  content), `pointer-events:none` so he can **never** block a paint tap. He
-  **roams**: sits a spot for `dwellTime()` (~30 min ± jitter), then scampers
-  (`.running` hop) to a new border side (`nextSpot` never repeats a side, faces
-  center). **Non-canned speech** — bubbles are built from data: `colorName(hex)`
-  turns the tapped tub's real hex into a name via **HSL buckets** (near-neutrals →
-  earthy browns → `mod + hueWord`, e.g. "dusty rose", "rich teal"), and
-  `colorComment` / `playtimeComment` / `ambientComment` / `finishComment` vary the
-  wrapper (playtime milestones `PLAY_MILESTONES` fire lines like the 3-hour
-  "I feel SO loved… also, water?"). Rate-limited by `COMMENT_GAP_MS`; colour
-  compliments are a *chance* per user-picked tub, not every tap. `pipSay` pops
-  `#companionBubble` (edge-anchored `bubble-below`/`-right`/`-left` so it never
-  clips off-screen). The **apron** is shared: `apronMarkup()` is injected into both
-  `companionSVG()` and the intro/tour `squirrelSVG` (`tour.js`). Save-shape:
-  `settings.companion` (both `DEFAULT_SAVE` literals + a `??=` boot backfill; it's
-  a *setting*, so it rides the settings deep-merge — no write-set entry). Toggle is
-  the **"Painting buddy" 🐿️** row in Settings. **Gated OFF** in low-stim and under
-  the headless harness (`?notour`/`?nopip`), so `check:web` never sees him.
-  **CSS-token gotcha:** `--sq-fur`/`--sq-nose`/`--sq-eye` are declared on `.tour`;
-  Pip lives outside `.tour`, so `.companion` **redeclares** them (a warm chestnut)
-  or `var()` falls back to black. Test hook: `window.__paintblobTest.pip =
+  content). He must stay **lively** or he reads as broken — the shipped v1 sat
+  frozen and silent for half an hour, which is what the v2 numbers below fix. He
+  **roams**: sits a spot for `dwellTime()` (~2 min ± jitter — short, so he actually
+  moves), then scampers (`.running` hop) to a new border side (`nextSpot` never
+  repeats a side, faces center). Between roams he **fidgets**: `scheduleFidget`
+  plays a one-shot `fidget-{bounce,wiggle,brush}` class every ~15s (`nextFidget`,
+  reduced-motion-guarded) so he never looks static. **Non-canned speech** — bubbles
+  are built from data: `colorName(hex)` turns the tapped tub's real hex into a name
+  via **HSL buckets** (near-neutrals → earthy browns → `mod + hueWord`, e.g. "dusty
+  rose", "rich teal"), and `colorComment` / `playtimeComment` / `ambientComment` /
+  `finishComment` vary the wrapper (playtime milestones `PLAY_MILESTONES` fire lines
+  like the 3-hour "I feel SO loved… also, water?"). He says **hello ~3.5s** after
+  landing on a board, so you see straight away that he talks; colour compliments
+  fire ~80% of a fresh tub pick and ambient chatter every ~95s, all rate-limited by
+  `COMMENT_GAP_MS` (~20s). `pipSay` pops `#companionBubble`; `anchorBubble()` points
+  it from his **live** position (horizontal `bubble-right`/`-left`, vertical
+  `bubble-below`, independent so corners work) on every move AND right before he
+  speaks — **not** only when `placeCompanion` runs, which was why the hello clipped
+  off-screen. (Gotcha: the `pip-pop` entrance keyframes hard-set `translateX(-50%)`
+  and, with `fill-mode:both`, override an edge rule's `transform:none` — the side
+  anchors use their own `pip-pop-side` keyframes without the X-shift.)
+  **Draggable:** only `.companion-body` is `pointer-events:auto` (grab cursor); the
+  wrapper and bubble stay `pointer-events:none` so painting is only ever blocked by
+  his own ~72px footprint. `wireCompanionDrag` (pointer-capture) drops him at a free
+  `spot={x,y,face}` that `placeCompanion` honours; his next roam sends him back to a
+  border. A **tap** (no drag) makes him talk. The **apron** is shared: `apronMarkup()`
+  is injected into both `companionSVG()` and the intro/tour `squirrelSVG` (`tour.js`).
+  Save-shape: `settings.companion` (both `DEFAULT_SAVE` literals + a `??=` boot
+  backfill; it's a *setting*, so it rides the settings deep-merge — no write-set
+  entry). Toggle is the **"Painting buddy" 🐿️** row in Settings. **Gated OFF** in
+  low-stim and under the headless harness (`?notour`/`?nopip`), so `check:web` never
+  sees him. **CSS-token gotcha:** `--sq-fur`/`--sq-nose`/`--sq-eye` are declared on
+  `.tour`; Pip lives outside `.tour`, so `.companion` **redeclares** them (a warm
+  chestnut) or `var()` falls back to black. Test hook: `window.__paintblobTest.pip =
   { roam, say, color }`.
 - **Wardrobe / avatar** — 62 garments across 9 slots (shirt, bottoms, dress,
   socks, shoes + outerwear, headwear, eyewear, neckwear); six render styles;

@@ -40,8 +40,9 @@ import {
   grantStickers, spendSticker, STYLES as STICKER_STYLES, MOTIONS as STICKER_MOTIONS,
 } from './stickers.js';
 import {
-  companionSVG, nextSpot, dwellTime, colorComment, playtimeComment, ambientComment,
+  companionSVG, nextSpot, dwellTime, nextFidget, colorComment, playtimeComment, ambientComment,
   finishComment, PLAY_MILESTONES, SCAMPER_MS, BUBBLE_MS, COMMENT_GAP_MS, AMBIENT_EVERY_MS,
+  FIDGET_EVERY_MS,
 } from './companion.js';
 import { outlineSVG, outlineWeight } from './thumbnail.js';
 import { computePlayStats } from './playstats.js';
@@ -828,6 +829,10 @@ const pipStart = Date.now();
 let pipRoamTimer = 0;
 let pipBubbleTimer = 0;
 let pipTickTimer = 0;
+let pipFidgetTimer = 0;
+let pipHelloTimer = 0;
+let pipLastFidget = null;
+let pipDragWired = false;
 
 /** Resolve whether Pip is on (the setting, minus low-stim and the headless
  *  harness), show/hide him, and start or stop his loops. Idempotent. */
@@ -839,18 +844,27 @@ function syncCompanion() {
     && !/[?&](notour|nopip)\b/.test(location.search);
   S.companion.on = on;
   el.classList.toggle('hidden', !on);
+  wireCompanionDrag();                    // once — the body element persists
   if (!on) { stopCompanion(); return; }
   if (!el.querySelector('.sq')) el.querySelector('.companion-body').innerHTML = companionSVG();
   if (!S.companion.spot) S.companion.spot = nextSpot(null);
   placeCompanion(false);
   scheduleRoam();
   scheduleTick();
+  scheduleFidget();
+  // A quick hello a few seconds after he lands, so you see right away that he talks.
+  clearTimeout(pipHelloTimer);
+  pipHelloTimer = setTimeout(() => {
+    if (S.companion.on) pipSay(ambientComment({ justArrived: true }), { force: true });
+  }, 3500);
 }
 
 function stopCompanion() {
   clearTimeout(pipRoamTimer);
   clearTimeout(pipTickTimer);
   clearTimeout(pipBubbleTimer);
+  clearTimeout(pipFidgetTimer);
+  clearTimeout(pipHelloTimer);
   $('companionBubble')?.setAttribute('hidden', '');
 }
 
@@ -860,25 +874,47 @@ function placeCompanion(animate = true) {
   const el = $('companion');
   const stage = $('stage');
   if (!el || !stage || !S.companion.spot || !S.companion.on) return;
-  const { side, t, face } = S.companion.spot;
   const sz = 72, inset = 6;
-  const runX = Math.max(0, stage.clientWidth - 2 * inset - sz);
-  const runY = Math.max(0, stage.clientHeight - 2 * inset - sz);
+  const W = stage.clientWidth, H = stage.clientHeight;
+  const spot = S.companion.spot;
   let x, y;
-  if (side === 'top') { x = inset + t * runX; y = inset; }
-  else if (side === 'bottom') { x = inset + t * runX; y = stage.clientHeight - inset - sz; }
-  else if (side === 'left') { x = inset; y = inset + t * runY; }
-  else { x = stage.clientWidth - inset - sz; y = inset + t * runY; }
-  el.dataset.face = String(face);
-  // Keep the speech bubble on-screen: below him up top, anchored inward at a side.
-  el.classList.toggle('bubble-below', side === 'top');
-  el.classList.toggle('bubble-right', side === 'left');
-  el.classList.toggle('bubble-left', side === 'right');
+  if (spot.x != null) {
+    // A hand-dropped spot — clamp it back inside the frame (e.g. after a resize).
+    x = Math.min(Math.max(inset, spot.x), Math.max(inset, W - inset - sz));
+    y = Math.min(Math.max(inset, spot.y), Math.max(inset, H - inset - sz));
+  } else {
+    const { side, t } = spot;
+    const runX = Math.max(0, W - 2 * inset - sz);
+    const runY = Math.max(0, H - 2 * inset - sz);
+    if (side === 'top') { x = inset + t * runX; y = inset; }
+    else if (side === 'bottom') { x = inset + t * runX; y = H - inset - sz; }
+    else if (side === 'left') { x = inset; y = inset + t * runY; }
+    else { x = W - inset - sz; y = inset + t * runY; }
+  }
+  el.dataset.face = String(spot.face);
   el.classList.toggle('no-anim', !animate);
   el.classList.toggle('running', animate);
   el.style.left = `${Math.round(x)}px`;
   el.style.top = `${Math.round(y)}px`;
+  anchorBubble();                         // keep his bubble on-screen from wherever he sits
   if (animate) setTimeout(() => el.classList.remove('running'), SCAMPER_MS);
+}
+
+/** Point his speech bubble the safe way from his live position — below him when
+ *  he's up top, and anchored inward (not centred) when he hugs a left/right edge,
+ *  so it never runs off-screen. Horizontal and vertical are independent, so the
+ *  corners work too. Called on every move AND right before he speaks. */
+function anchorBubble() {
+  const el = $('companion');
+  const stage = $('stage');
+  if (!el || !stage) return;
+  const sz = 72;
+  const x = parseFloat(el.style.left) || 0;
+  const y = parseFloat(el.style.top) || 0;
+  const W = stage.clientWidth, H = stage.clientHeight;
+  el.classList.toggle('bubble-below', y < H * 0.24);
+  el.classList.toggle('bubble-right', x < W * 0.20);
+  el.classList.toggle('bubble-left', x > W - sz - W * 0.20);
 }
 
 function scheduleRoam() {
@@ -900,6 +936,7 @@ function pipSay(text, { force = false } = {}) {
   S.companion.lastSaid = now;
   const bubble = $('companionBubble');
   if (!bubble) return;
+  anchorBubble();                         // re-point it from where he is right now
   bubble.textContent = text;
   bubble.removeAttribute('hidden');
   clearTimeout(pipBubbleTimer);
@@ -918,7 +955,7 @@ function scheduleTick() {
       const m = due[due.length - 1];
       S.companion.saidHours[m] = true;
       pipSay(playtimeComment(m));
-    } else if (Math.random() < 0.5) {
+    } else if (Math.random() < 0.65) {
       pipSay(ambientComment({ filledFrac: S.cells.length ? S.filled.size / S.cells.length : 0 }));
     }
     scheduleTick();
@@ -929,10 +966,87 @@ function scheduleTick() {
  *  rarely, and never twice in quick succession, so it stays a treat. */
 function companionColorComment(colourIndex) {
   if (!S.companion.on) return;
-  if (Date.now() - S.companion.lastSaid < COMMENT_GAP_MS) return;
-  if (Math.random() > 0.4) return;
+  if (Date.now() - S.companion.lastSaid < COMMENT_GAP_MS) return;   // the gap already keeps him from nattering
+  if (Math.random() > 0.8) return;                                  // most fresh picks earn a word, a few don't
   const hex = board.hexOf(colourIndex);
   if (hex) pipSay(colorComment(hex));
+}
+
+/** Between roams, an occasional in-place fidget — a bounce, a wiggle, a shake of
+ *  the brush — so he never looks frozen. One-shot CSS class, then back to idle. */
+function scheduleFidget() {
+  clearTimeout(pipFidgetTimer);
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) return;
+  pipFidgetTimer = setTimeout(() => {
+    if (!S.companion.on) { return; }
+    const el = $('companion');
+    if (el && !el.classList.contains('running') && !el.classList.contains('dragging')) {
+      pipLastFidget = nextFidget(pipLastFidget);
+      const cls = `fidget-${pipLastFidget}`;
+      el.classList.add(cls);
+      setTimeout(() => el.classList.remove(cls), 800);
+    }
+    scheduleFidget();
+  }, FIDGET_EVERY_MS * (0.6 + Math.random() * 0.9));
+}
+
+/** Make Pip draggable: grab him and set him down anywhere. A plain tap (no drag)
+ *  makes him say hello. Wired once onto his body, which is the only part that
+ *  catches the pointer — the frame around him stays click-through for painting. */
+function wireCompanionDrag() {
+  if (pipDragWired) return;
+  const el = $('companion');
+  const body = el?.querySelector('.companion-body');
+  if (!body) return;
+  pipDragWired = true;
+  let down = false, moved = false, startX = 0, startY = 0, offX = 0, offY = 0, lastX = 0, lastY = 0;
+
+  body.addEventListener('pointerdown', (e) => {
+    if (!S.companion.on) return;
+    const r = el.getBoundingClientRect();
+    down = true; moved = false;
+    startX = e.clientX; startY = e.clientY;
+    offX = e.clientX - r.left; offY = e.clientY - r.top;
+    clearTimeout(pipRoamTimer);            // hold still while he's in hand
+    el.classList.add('dragging');
+    body.setPointerCapture?.(e.pointerId);
+    e.preventDefault();
+  });
+
+  body.addEventListener('pointermove', (e) => {
+    if (!down) return;
+    if (Math.hypot(e.clientX - startX, e.clientY - startY) > 4) moved = true;
+    const stage = $('stage');
+    const sr = stage.getBoundingClientRect();
+    const sz = 72, inset = 6;
+    lastX = Math.min(Math.max(inset, e.clientX - sr.left - offX), Math.max(inset, sr.width - inset - sz));
+    lastY = Math.min(Math.max(inset, e.clientY - sr.top - offY), Math.max(inset, sr.height - inset - sz));
+    el.style.left = `${Math.round(lastX)}px`;
+    el.style.top = `${Math.round(lastY)}px`;
+  });
+
+  const end = (e) => {
+    if (!down) return;
+    down = false;
+    el.classList.remove('dragging');
+    body.releasePointerCapture?.(e.pointerId);
+    if (moved) {
+      // Set him down here; face toward the middle. He'll scamper off to a border
+      // again after his usual dwell.
+      const stage = $('stage');
+      const face = lastX + 36 < stage.clientWidth / 2 ? 1 : -1;
+      S.companion.spot = { x: lastX, y: lastY, face };
+      placeCompanion(false);
+      scheduleRoam();
+    } else {
+      // A tap, not a drag — a friendly poke. He says something on the spot.
+      scheduleRoam();
+      pipSay(ambientComment({ filledFrac: S.cells.length ? S.filled.size / S.cells.length : 0 }), { force: true });
+    }
+  };
+  body.addEventListener('pointerup', end);
+  body.addEventListener('pointercancel', end);
 }
 
 /* -------------------------------------------------------------------- puzzle */
