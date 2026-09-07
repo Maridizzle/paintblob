@@ -35,7 +35,7 @@ import {
 } from '../src/stickers.js';
 import {
   colorName, colorComment, playtimeComment, ambientComment, finishComment,
-  nextSpot, dwellTime, PLAY_MILESTONES, DWELL_MS, DWELL_JITTER_MS,
+  nextSpot, dwellTime, nextFidget, FIDGETS, PLAY_MILESTONES, DWELL_MS, DWELL_JITTER_MS,
   apronMarkup, companionSVG,
 } from '../src/companion.js';
 import {
@@ -3548,10 +3548,22 @@ test('roaming: nextSpot never repeats a side, stays in-bounds, faces inward', ()
     if (spot.side === 'right') assert.equal(spot.face, -1);
     prev = spot.side;
   }
-  // Dwell is ~30 min, jittered within bounds.
+  // Dwell is a couple of minutes now (was 30), jittered within bounds.
   for (let i = 0; i < 20; i++) {
     const d = dwellTime(() => i / 20);
     assert.ok(d >= DWELL_MS - DWELL_JITTER_MS - 1 && d <= DWELL_MS + DWELL_JITTER_MS + 1);
+  }
+  assert.ok(DWELL_MS <= 5 * 60 * 1000, 'he moves every few minutes, not once a session');
+});
+
+test('fidgets: nextFidget stays in the set and never repeats back to back', () => {
+  assert.deepEqual([...FIDGETS].sort(), ['bounce', 'brush', 'wiggle']);
+  let prev = null;
+  for (let i = 0; i < 40; i++) {
+    const f = nextFidget(prev, () => (i % 5) / 5);
+    assert.ok(FIDGETS.includes(f), 'a real fidget');
+    assert.notEqual(f, prev, 'never the same one twice running');
+    prev = f;
   }
 });
 
@@ -3590,11 +3602,20 @@ test('the companion is wired into the app, save and low-stim gate', () => {
   assert.match(readSource('electron/main.cjs'), /companion: true/, 'electron DEFAULT_SAVE needs companion');
   assert.match(game, /S\.save\.settings\.companion \?\?= true/, 'boot backfills the companion setting');
 
-  // In the DOM, inside the stage, never intercepting a tap.
+  // Livelier: he fidgets between roams and can be dragged / tapped.
+  assert.match(game, /function scheduleFidget\(/, 'he fidgets between roams');
+  assert.match(game, /nextFidget\(/, 'the fidget is picked from the pure set');
+  assert.match(game, /function wireCompanionDrag\(/, 'he is draggable');
+  assert.match(game, /setPointerCapture/, 'a drag captures the pointer');
+
+  // In the DOM, inside the stage. The frame stays click-through; only his body
+  // catches the pointer (so he can be grabbed) — painting is never blocked.
+  const css = readSource('src/styles.css');
   assert.match(html, /id="companion"/, 'the companion element exists');
   assert.match(html, /id="companionBubble"/, 'his bubble exists');
   assert.ok(html.indexOf('id="companion"') > html.indexOf('<div id="stage">'), 'he lives in the stage');
-  assert.match(readSource('src/styles.css'), /\.companion \{[\s\S]*?pointer-events: none/, 'he never blocks a tap');
+  assert.match(css, /\.companion \{[\s\S]*?pointer-events: none/, 'the frame around him never blocks a tap');
+  assert.match(css, /\.companion-body \{[^}]*pointer-events: auto/, 'his body catches the pointer for dragging');
 
   // The tour squirrel wears the same apron.
   assert.match(tour, /apronMarkup\(\)/, 'the tour squirrel wears the apron too');
