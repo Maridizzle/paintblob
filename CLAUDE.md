@@ -223,6 +223,30 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
     be listed there or a purchase never reaches disk. `save.paints` had been
     omitted (bought paints vanished on reload in v0.7.58); both are in the write-set
     now, with a regression test.
+- **Companion (Pip)** — `companion.js` (pure) + `game.js`. An optional
+  paint-aproned squirrel who lives on the picture's **border** and chats. He is a
+  `#companion` DOM element positioned along the `#stage` frame (NOT zoomed board
+  content), `pointer-events:none` so he can **never** block a paint tap. He
+  **roams**: sits a spot for `dwellTime()` (~30 min ± jitter), then scampers
+  (`.running` hop) to a new border side (`nextSpot` never repeats a side, faces
+  center). **Non-canned speech** — bubbles are built from data: `colorName(hex)`
+  turns the tapped tub's real hex into a name via **HSL buckets** (near-neutrals →
+  earthy browns → `mod + hueWord`, e.g. "dusty rose", "rich teal"), and
+  `colorComment` / `playtimeComment` / `ambientComment` / `finishComment` vary the
+  wrapper (playtime milestones `PLAY_MILESTONES` fire lines like the 3-hour
+  "I feel SO loved… also, water?"). Rate-limited by `COMMENT_GAP_MS`; colour
+  compliments are a *chance* per user-picked tub, not every tap. `pipSay` pops
+  `#companionBubble` (edge-anchored `bubble-below`/`-right`/`-left` so it never
+  clips off-screen). The **apron** is shared: `apronMarkup()` is injected into both
+  `companionSVG()` and the intro/tour `squirrelSVG` (`tour.js`). Save-shape:
+  `settings.companion` (both `DEFAULT_SAVE` literals + a `??=` boot backfill; it's
+  a *setting*, so it rides the settings deep-merge — no write-set entry). Toggle is
+  the **"Painting buddy" 🐿️** row in Settings. **Gated OFF** in low-stim and under
+  the headless harness (`?notour`/`?nopip`), so `check:web` never sees him.
+  **CSS-token gotcha:** `--sq-fur`/`--sq-nose`/`--sq-eye` are declared on `.tour`;
+  Pip lives outside `.tour`, so `.companion` **redeclares** them (a warm chestnut)
+  or `var()` falls back to black. Test hook: `window.__paintblobTest.pip =
+  { roam, say, color }`.
 - **Wardrobe / avatar** — 62 garments across 9 slots (shirt, bottoms, dress,
   socks, shoes + outerwear, headwear, eyewear, neckwear); six render styles;
   fixed-accent multicolor. The Outfits shop groups by slot.

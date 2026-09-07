@@ -1,6 +1,9 @@
+import { apronMarkup } from './companion.js';
+
 // A little squirrel that scampers across the window and, stopping at each part
 // of the screen in turn, says what it does — the first-run guided tour, and the
-// same thing Settings can play back on demand.
+// same thing Settings can play back on demand. He wears the same paint-splattered
+// apron as the roaming companion (companion.js) — one squirrel, two jobs.
 //
 // The module is only the *mechanism*: a spotlight that dims everything but one
 // control, a flash card that speaks for the squirrel, and the squirrel itself.
@@ -43,6 +46,9 @@ function squirrelSVG() {
 
       <!-- back foot -->
       <path class="sq-fur" d="M40 84 C36 88 34 92 40 93 C47 94 54 92 54 88 C54 84 48 83 40 84 Z"/>
+
+      <!-- the paint-splattered apron (shared with the roaming companion) -->
+      ${apronMarkup()}
 
       <!-- pointing front paw + arm, lifted toward the card -->
       <g class="sq-arm">
