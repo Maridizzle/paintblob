@@ -269,6 +269,26 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
   menu** (`renderDevPanel` via `openPanel('dev')`): launch any minigame on demand
   for testing — built straight off the `BONUS_ROUNDS` registry (+ The Swap), so a
   new round appears there for free — plus the instant-complete.
+- **Replay** — `replay.js` (pure timing) + `render.js` + `game.js`. On a finished
+  picture, **▶ Replay** re-reveals it cell-by-cell **in the exact order it was
+  painted, at warp speed**. The order is FREE: `S.filled` is an insertion-ordered
+  Set persisted/reloaded as an array, so `[...S.filled]` *is* the paint order —
+  "record mode" records nothing. `replay.js` is only the pacing (`REPLAY_SPEEDS`
+  play/fast/warp, `replayDurationMs` floored+capped+scaled, `replayReveal` an
+  eased 0→total count). `Board.startReplay(ids,{durationMs,onDone})` drives it
+  WITHOUT swapping the shared `filled` set: it keeps a `replay = {ids, shown, count}`,
+  `stepReplay(now)` (top of `draw()`) grows `shown` from `replayReveal`, and
+  `drawBase` paints via `isShown()` (unrevealed cells = plain `cBlank`, numbers/edges
+  skipped) — so game state is untouched and a finished re-opened picture replays
+  the same. `board.replaying` joins the frame-loop `busy` set. UI: a **▶ Replay pill**
+  (rides `S.finished` in `syncCompare`, like the save pill) + a finish-card button +
+  a footer **#replayBar** (speed chips `data-act="replay-speed"` / replay-again /
+  close); `startReplay` hides the finish card + corner pills so the bar owns the
+  bottom, and the 2800ms finish-card timer is guarded by `!board.replaying`.
+  Session-only (speed isn't saved) — **no save-shape change**. Available in low-stim
+  (opt-in, like Save image). It's the on-ramp to the animated GIF/video export on
+  the Pending list. The **fill-style picker is now surfaced as a low-stim control**
+  (a 🫧 label + note) since low-stim keeps the fill animation, it just calms the hint.
 - **Save & backup** — every finished picture has a **Save image** button (on the
   finish card, and a bottom-right save pill so re-opened finished pictures get it
   too) that exports the flat painted mosaic as a PNG via `Board.snapshot()`.

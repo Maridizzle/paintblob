@@ -474,5 +474,54 @@
       "Fantasy",
       "Trees"
     ]
+  },
+  "crystal-star": {
+    "difficulty": "normal",
+    "themes": [
+      "Elements",
+      "Space"
+    ]
+  },
+  "malachite-orbs": {
+    "difficulty": "normal",
+    "themes": [
+      "Elements",
+      "Abstract"
+    ]
+  },
+  "quicksilver": {
+    "difficulty": "normal",
+    "themes": [
+      "Elements",
+      "Abstract"
+    ]
+  },
+  "the-chemistry-set": {
+    "difficulty": "normal",
+    "themes": [
+      "Elements",
+      "Abstract"
+    ]
+  },
+  "violet-vapour": {
+    "difficulty": "normal",
+    "themes": [
+      "Elements",
+      "Fantasy"
+    ]
+  },
+  "diamond-blossom": {
+    "difficulty": "normal",
+    "themes": [
+      "Flowers",
+      "Elements"
+    ]
+  },
+  "silver-starburst": {
+    "difficulty": "normal",
+    "themes": [
+      "Elements",
+      "Space"
+    ]
   }
 }

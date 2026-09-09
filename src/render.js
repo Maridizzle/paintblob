@@ -1,5 +1,6 @@
 import { fxStops } from './paints.js';
 import { stickerTransform, packDef } from './stickers.js';
+import { replayReveal } from './replay.js';
 
 // Two-layer canvas renderer.
 //
@@ -373,6 +374,45 @@ export class Board {
     this.dirty = true;
   }
 
+  /** Replay: re-reveal a finished picture cell-by-cell in the order it was
+   *  painted. `ids` is that order (game.js passes `[...S.filled]`). We do NOT
+   *  touch the shared `filled` set — drawBase consults `isShown` while a replay
+   *  runs, so game state stays exactly as it was. draw() advances it each frame. */
+  startReplay(ids, { durationMs = 4000, onDone } = {}) {
+    this.replay = { ids, shown: new Set(), count: 0, start: performance.now(), durationMs, onDone };
+    this.dirty = true;
+  }
+
+  /** End a replay — jump to the finished picture. `finishIt` fires the onDone
+   *  callback (natural end / skip); it's the same either way here. */
+  stopReplay(finishIt = true) {
+    const r = this.replay;
+    if (!r) return;
+    this.replay = null;
+    this.dirty = true;
+    if (finishIt && r.onDone) r.onDone();
+  }
+
+  get replaying() { return !!this.replay; }
+
+  /** Is this cell painted, as far as the current view is concerned? During a
+   *  replay that's "revealed so far"; otherwise it's the real filled set. */
+  isShown(id) { return this.replay ? this.replay.shown.has(id) : this.filled.has(id); }
+
+  /** Advance the replay for this frame: reveal any cells now due. Called at the
+   *  top of draw(). Returns nothing; sets dirty when the view changed. */
+  stepReplay(timeMs) {
+    const r = this.replay;
+    if (!r) return;
+    const target = replayReveal(timeMs - r.start, r.ids.length, r.durationMs);
+    if (target > r.count) {
+      for (let i = r.count; i < target; i++) r.shown.add(r.ids[i]);
+      r.count = target;
+      this.dirty = true;
+    }
+    if (r.count >= r.ids.length) this.stopReplay(true);
+  }
+
   showHint(cellId, now) {
     this.hintTarget = { id: cellId, start: now };
   }
@@ -558,8 +598,12 @@ export class Board {
     };
 
     for (const cell of this.cells) {
-      if (this.filled.has(cell.id)) {
+      if (this.isShown(cell.id)) {
         ctx.fillStyle = this.hexOf(cell.colour);
+      } else if (this.replay) {
+        // Replay: cells not yet revealed are just blank paper — a clean field the
+        // picture paints itself onto, no stripes/hatch/numbers to clutter it.
+        ctx.fillStyle = this.cBlank;
       } else if (cell.inradius * this.scale < NUMBER_MIN_PX) {
         // Too small for a number — a stripe of the cell's own colour stands
         // in for it, brighter when it is the colour currently in hand.
@@ -587,7 +631,7 @@ export class Board {
     }
 
     const edge = 1 - this.reveal;
-    if (edge > 0.01) {
+    if (edge > 0.01 && !this.replay) {
       ctx.save();
       ctx.globalAlpha = edge;
       ctx.strokeStyle = this.cBlankEdge;
@@ -756,6 +800,7 @@ export class Board {
       this.numberOverride = null;
       this.dirty = true;
     }
+    if (this.replay) this.stepReplay(timeMs);
     if (this.dirty) this.drawBase();
 
     const ctx = this.ctx;
