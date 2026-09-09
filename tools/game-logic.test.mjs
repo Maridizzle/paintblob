@@ -2520,6 +2520,44 @@ test('a subject with no room to move against is not raised at all', () => {
   }
 });
 
+test('the house rule: every picture carries an animation AND a lift', () => {
+  // Set by the maintainer: a baked picture leaves with BOTH a living animation
+  // and a raised subject (the "3D" lift). The only misses are pictures with a
+  // genuine reason — nothing that reads as alive, or no figure/ground subject
+  // under LIFT_MAX_AREA — and each such miss is named below on purpose. A NEW
+  // picture with a tag missing fails this test until it is tagged (see
+  // docs/animating-pictures.md) or added, WITH a reason, to an exemption here.
+  const ids = JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles/manifest.json'), 'utf8')).map((p) => p.id);
+  const anim = JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles/animations.json'), 'utf8'));
+  const lifts = JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles/lifts.json'), 'utf8'));
+
+  // Flat, front-on repeating grids that fill the frame: no single element reads
+  // as alive, and no figure/ground subject to raise.
+  const NO_ANIMATION = ['thread-cupboard', 'wrong-colour-day'];
+  // Full-frame textures / immersive scenes with no subject under the size cap.
+  const NO_LIFT = [
+    'framed-tidepool-bird',     // the bird fuses into its rock; nothing else is a whole subject
+    'malachite-orbs',           // packed orbs — a full-frame texture, over the cap
+    'mossy-forest-stream',      // immersive forest, foliage edge to edge
+    'orchid-conservatory-dusk', // immersive interior, pots share the floor colour
+    'thread-cupboard',
+    'wrong-colour-day',
+  ];
+
+  // A dead exemption (naming a picture that no longer exists) would hide a real
+  // gap the day that id is baked again — so every exemption must be a real id.
+  for (const id of new Set([...NO_ANIMATION, ...NO_LIFT])) {
+    assert.ok(ids.includes(id), `exemption names "${id}", which is not a current picture`);
+  }
+
+  const missingAnim = ids.filter((id) => !(id in anim) && !NO_ANIMATION.includes(id));
+  const missingLift = ids.filter((id) => !(id in lifts) && !NO_LIFT.includes(id));
+  assert.deepEqual(missingAnim, [],
+    `no animation and no stated exemption: ${missingAnim.join(', ')} — tag it (docs/animating-pictures.md) or add a reasoned exemption`);
+  assert.deepEqual(missingLift, [],
+    `no lift and no stated exemption: ${missingLift.join(', ')} — tag it or add a reasoned exemption`);
+});
+
 test('every source read in this file goes through readSource', () => {
   // The whole reason readSource exists. A bare readFileSync works on every
   // machine anyone develops on and then fails on a Windows runner, which means
