@@ -45,6 +45,7 @@ import {
   FIDGET_EVERY_MS,
 } from './companion.js';
 import { outlineSVG, outlineWeight } from './thumbnail.js';
+import { REPLAY_SPEEDS, replaySpeed, replayDurationMs, DEFAULT_REPLAY_SPEED } from './replay.js';
 import { computePlayStats } from './playstats.js';
 import { Tour } from './tour.js';
 import {
@@ -346,6 +347,9 @@ function syncCompare() {
   // — any finished picture can be saved as art. It stays reachable when you
   // re-open a completed picture, so "every finished picture" truly gets it.
   $('savePill')?.classList.toggle('hidden', !S.finished);
+  // The Replay pill rides the same finished state — every finished picture can
+  // replay its own paint order, re-opened ones included.
+  $('replayPill')?.classList.toggle('hidden', !S.finished);
 }
 
 /* --------------------------------------------------- save image / backup */
@@ -365,6 +369,64 @@ async function saveImage() {
   toast(res?.savedTo
     ? { icon: '🖼', name: 'Image saved', desc: res.savedTo }
     : { icon: '🖼', name: 'Image saved', desc: 'Look in your downloads.' }, '', { sticky: !!res?.savedTo });
+}
+
+/* ------------------------------------------------------------------ replay */
+
+// "Record mode" needs no recording: S.filled is an insertion-ordered Set (and is
+// persisted/reloaded in order), so [...S.filled] IS the order the picture was
+// painted in. render.js reveals the cells over time; this drives the button, the
+// speed chips and the little control bar. Session-only — the speed isn't saved.
+let replaySpeedId = DEFAULT_REPLAY_SPEED;
+
+/** Play (or replay) the finished picture filling back in, in paint order. */
+function startReplay() {
+  if (!S.finished || !board.puzzle) return;
+  const ids = [...S.filled];
+  if (!ids.length) return;
+  $('finish')?.classList.add('hidden');            // get the finish card out of the way to watch
+  if (board.showSource) { board.showSource = false; syncCompare(); } // the painting, not the photo
+  const { mult } = replaySpeed(replaySpeedId);
+  board.startReplay(ids, { durationMs: replayDurationMs(ids.length, mult), onDone: syncReplayBar });
+  // The control bar owns the bottom now — tuck the corner pills away so they
+  // don't stack under it; closeReplay brings them back via syncCompare.
+  $('savePill')?.classList.add('hidden');
+  $('replayPill')?.classList.add('hidden');
+  $('replayBar')?.classList.remove('hidden');
+  syncReplayBar();
+  ensureFrame();
+}
+
+/** Change speed; if a replay is on screen, restart it at the new pace. */
+function setReplaySpeed(id) {
+  if (!REPLAY_SPEEDS.some((s) => s.id === id)) return;
+  replaySpeedId = id;
+  if (board.replaying) startReplay();
+  else syncReplayBar();
+}
+
+/** Close the control bar and settle on the finished picture. */
+function closeReplay() {
+  board.stopReplay(true);
+  $('replayBar')?.classList.add('hidden');
+  syncCompare();          // bring the Save / Replay pills back for the finished picture
+  ensureFrame();
+}
+
+/** Reflect the current speed + whether a replay is mid-flight on the bar. */
+function syncReplayBar() {
+  const bar = $('replayBar');
+  if (!bar) return;
+  for (const chip of bar.querySelectorAll('[data-act="replay-speed"]')) {
+    chip.classList.toggle('on', chip.dataset.id === replaySpeedId);
+  }
+  bar.classList.toggle('playing', board.replaying);
+}
+
+/** Leaving the picture (a new puzzle, or story/free swap) stops any replay. */
+function resetReplay() {
+  board.stopReplay(false);
+  $('replayBar')?.classList.add('hidden');
 }
 
 /** Download the whole save (progress, avatar, settings, unlocks, stats, story)
@@ -1098,6 +1160,7 @@ function sortPaletteByShade(puzzle) {
 }
 
 async function loadPuzzle(id) {
+  resetReplay();                          // never carry a replay across pictures
   const puzzle = await api.loadPuzzle(id);
   sortPaletteByShade(puzzle);
   let saved = S.save.progress[id] || { filled: [], done: false, seconds: 0 };
@@ -1927,7 +1990,8 @@ function finish() {
   // that one.
   const finishing = S.puzzle.id;
   setTimeout(() => {
-    if (S.puzzle?.id === finishing && S.finished) {
+    // Not if a replay is playing — the card would drop over it mid-fill.
+    if (S.puzzle?.id === finishing && S.finished && !board.replaying) {
       // The pop-up outranks the finish card, so it would hang over the reveal.
       closeAbilityFan();
       $('finish').classList.remove('hidden');
@@ -2044,7 +2108,8 @@ function frame(now) {
   const busy = S.bursts.length > 0 || S.revealFrom > 0 || board.hintTarget
     || board.colourFlash || board.focus || board.shock || board.living || board.liftMoving()
     || board.fx.size > 0 // special paints animate every frame while any is on screen
-    || board.stickersAnimate; // animated stickers (bob/spin/pulse/flip) keep the loop alive
+    || board.stickersAnimate // animated stickers (bob/spin/pulse/flip) keep the loop alive
+    || board.replaying; // a replay reveals cells every frame until it finishes
   if (busy || now - lastDraw > 33) {
     lastDraw = now;
     board.draw(S.bursts, now);
@@ -4059,13 +4124,19 @@ function renderSettings(body) {
   fillText.className = 'grow';
   const fillLabelEl = document.createElement('div');
   fillLabelEl.className = 'label';
-  fillLabelEl.textContent = 'Fill style';
+  // Surfaced as a low-stim control: a calm player easily assumes low-stim killed
+  // the fill animation, so name it plainly as still theirs to choose.
+  fillLabelEl.textContent = settings.lowStim ? '🫧 Fill style' : 'Fill style';
   const fillSub = document.createElement('div');
   fillSub.className = 'sub';
   const fillSeg = document.createElement('div');
   fillSeg.className = 'segmented wrap';
   const curFill = () => FILL_STYLES.find((f) => f.id === (settings.fill ?? DEFAULT_FILL)) ?? FILL_STYLES[0];
-  const syncFillSub = () => { fillSub.textContent = curFill().blurb; };
+  const syncFillSub = () => {
+    fillSub.textContent = settings.lowStim
+      ? `${curFill().blurb} · still your call in low-stim — keep it calm, or turn it off.`
+      : curFill().blurb;
+  };
   for (const f of FILL_STYLES) {
     const chip = document.createElement('button');
     chip.textContent = f.label;
@@ -6248,6 +6319,9 @@ document.addEventListener('click', async (e) => {
       break;
     case 'finish-dismiss': $('finish').classList.add('hidden'); break;
     case 'save-image': saveImage(); break;             // save the finished picture as a PNG
+    case 'replay': startReplay(); break;               // watch it fill in, in paint order
+    case 'replay-speed': setReplaySpeed(button.dataset.id); break;
+    case 'replay-close': closeReplay(); break;
     case 'confirm-ok': closeConfirm(true); break;      // the in-page confirm modal
     case 'confirm-cancel': closeConfirm(false); break;
     case 'dev-complete': devComplete(); break;         // dev mode: clear the picture instantly

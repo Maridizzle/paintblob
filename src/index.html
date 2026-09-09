@@ -69,6 +69,10 @@
            (just-finished or re-opened from the gallery), so every one gets it. -->
       <button id="savePill" class="save-pill hidden" data-act="save-image"
         title="Save this picture as an image">💾 Save</button>
+      <!-- Watch the finished picture fill back in, in the order it was painted.
+           Shown for ANY finished picture, re-opened ones included. -->
+      <button id="replayPill" class="replay-pill hidden" data-act="replay"
+        title="Watch it fill in, in the order you painted">▶ Replay</button>
 
       <div id="pointsHud" class="points-hud" title="Points">
         <span class="points-hud-icon">🪙</span>
@@ -82,9 +86,23 @@
           <div class="finish-title">Finished</div>
           <div class="finish-name" id="finishName"></div>
           <div class="finish-stats" id="finishStats"></div>
+          <button class="finish-save" data-act="replay">▶ Replay the paint</button>
           <button class="finish-save" data-act="save-image">💾 Save image</button>
           <button class="primary" data-act="next">Next picture</button>
         </div>
+      </div>
+
+      <!-- Replay controls: a slim bar (never over the canvas the way the tray and
+           undo aren't) with the speed and a close. Shown only while replaying. -->
+      <div id="replayBar" class="replay-bar hidden">
+        <span class="replay-bar-label">▶ Replay</span>
+        <div class="replay-speeds segmented">
+          <button data-act="replay-speed" data-id="play">1×</button>
+          <button data-act="replay-speed" data-id="fast">2×</button>
+          <button data-act="replay-speed" data-id="warp">⚡</button>
+        </div>
+        <button class="replay-again" data-act="replay" title="Play it again">↻</button>
+        <button class="replay-done" data-act="replay-close" title="Done">✕</button>
       </div>
 
       <!-- The Story ⇄ Free confirm, reusing the finish card's modal styling.

@@ -834,7 +834,7 @@ button {
 #board.done { cursor: default; }
 
 /* Shown only once zoomed past fit-to-window; doubles as the reset button. */
-.zoom-pill, .compare-pill, .save-pill {
+.zoom-pill, .compare-pill, .save-pill, .replay-pill {
   position: absolute;
   z-index: 15;
   -webkit-app-region: no-drag;
@@ -848,7 +848,7 @@ button {
   box-shadow: 0 4px 14px rgba(var(--shade-rgb), 0.4);
   transition: background 120ms, transform 120ms, border-color 120ms;
 }
-.zoom-pill:hover, .compare-pill:hover, .save-pill:hover {
+.zoom-pill:hover, .compare-pill:hover, .save-pill:hover, .replay-pill:hover {
   background: rgba(var(--accent-rgb), 0.14);
   border-color: rgba(var(--accent-rgb), 0.34);
   transform: translateY(-1px);
@@ -863,6 +863,56 @@ button {
    no other bottom chrome (no bonus chip, boss HUD or perk pill up), so this sits
    alone. Shown for any finished picture; see syncCompare(). */
 .save-pill { bottom: 12px; right: 12px; }
+/* Its opposite bottom corner — Replay left, Save right, no collision. */
+.replay-pill { bottom: 12px; left: 12px; }
+
+/* Replay control bar — a slim pill row centred along the bottom of the stage,
+   shown only while a replay is on screen. Never over the canvas content the way
+   the paint tray and undo aren't; the board plays above it. */
+.replay-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 16;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  border-radius: 22px;
+  background: var(--card-solid);
+  border: 1px solid var(--edge-strong);
+  box-shadow: 0 6px 18px rgba(var(--shade-rgb), 0.45);
+  -webkit-app-region: no-drag;
+}
+.replay-bar-label { font-size: 11.5px; font-weight: 700; color: var(--text); }
+.replay-bar .replay-speeds { display: flex; gap: 2px; }
+.replay-bar .replay-speeds button {
+  min-width: 30px;
+  padding: 4px 8px;
+  border-radius: 14px;
+  border: 1px solid var(--edge);
+  background: rgba(var(--chip-rgb), 0.6);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  transition: background 120ms, border-color 120ms;
+}
+.replay-bar .replay-speeds button.on {
+  background: rgba(var(--accent-rgb), 0.9);
+  border-color: rgba(var(--accent-rgb), 0.9);
+  color: var(--accent-ink, #fff);
+}
+.replay-again, .replay-done {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--edge);
+  background: rgba(var(--chip-rgb), 0.6);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1;
+}
+.replay-again:hover, .replay-done:hover { background: rgba(var(--accent-rgb), 0.16); }
 
 /* Top-center is the one corner of #stage nothing else claims. Deliberately
    more transparent than the zoom/compare pills (0.68 vs their 0.9) — this

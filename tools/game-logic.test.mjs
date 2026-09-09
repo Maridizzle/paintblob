@@ -39,6 +39,9 @@ import {
   apronMarkup, companionSVG,
 } from '../src/companion.js';
 import {
+  REPLAY_SPEEDS, replaySpeed, replayDurationMs, replayReveal, DEFAULT_REPLAY_SPEED,
+} from '../src/replay.js';
+import {
   CHUNKS, MIN_STEP, labL, rampFrom, randomStops, lerpHue, scramble, swap, isSolved, placedCount, partnerFor,
 } from '../src/overtime.js';
 import {
@@ -1554,7 +1557,8 @@ test('fill styles are wired into the paint path, Settings, and the save', () => 
   assert.match(game, /style === 'blob'\s*\?\s*new Burst\(/, "'blob' must still build the classic Burst");
   assert.match(game, /new CellFill\(style,/, 'the in-cell styles must build a CellFill');
   assert.match(game, /burst instanceof Burst \? audioCue/, 'only the blob fires the suck/fill audio cues');
-  assert.match(game, /fillLabelEl\.textContent = 'Fill style'/, 'Settings must offer a Fill style picker');
+  assert.match(game, /fillLabelEl\.textContent = [^;]*'Fill style'/, 'Settings must offer a Fill style picker');
+  assert.match(game, /settings\.lowStim \? '🫧 Fill style'/, 'the fill picker is surfaced as a low-stim control');
   assert.match(game, /S\.save\.settings\.fill \?\?= DEFAULT_FILL/, 'boot must backfill the fill setting');
   // The save-shape default lives in both DEFAULT_SAVE literals (the ~4-places rule).
   assert.match(readSource('src/platform.js'), /fill: 'blob'/, 'platform.js DEFAULT_SAVE needs fill');
@@ -3619,4 +3623,60 @@ test('the companion is wired into the app, save and low-stim gate', () => {
 
   // The tour squirrel wears the same apron.
   assert.match(tour, /apronMarkup\(\)/, 'the tour squirrel wears the apron too');
+});
+
+/* -------------------------------------------------------------- replay (paint order) */
+
+// The picture replays in the exact order it was painted — free, because S.filled
+// is insertion-ordered. replay.js is only the pacing; render.js reveals the cells.
+test('replay speeds: resolvable, ordered fastest-last, with a sane default', () => {
+  assert.ok(REPLAY_SPEEDS.length >= 2, 'more than one speed to pick');
+  assert.equal(replaySpeed(DEFAULT_REPLAY_SPEED).id, DEFAULT_REPLAY_SPEED);
+  assert.equal(replaySpeed('nonsense').id, DEFAULT_REPLAY_SPEED, 'a bad id falls back to the default');
+  // Every speed has a positive duration multiplier; "warp" is the fastest.
+  for (const s of REPLAY_SPEEDS) assert.ok(s.mult > 0, `${s.id} has a real multiplier`);
+  const warp = REPLAY_SPEEDS.find((s) => s.id === 'warp');
+  const play = REPLAY_SPEEDS.find((s) => s.id === 'play');
+  assert.ok(warp.mult < play.mult, 'warp runs faster than 1×');
+});
+
+test('replay duration: floored, capped, grows with size and scales with speed', () => {
+  const tiny = replayDurationMs(10, 1);
+  const huge = replayDurationMs(1200, 1);
+  assert.ok(tiny >= 1800, 'a tiny picture still reads as an animation');
+  assert.ok(huge <= 6500, 'even a huge picture stays a "watch it go" moment');
+  assert.ok(huge > tiny, 'more cells take a little longer');
+  assert.ok(replayDurationMs(500, 0.28) < replayDurationMs(500, 1), 'a faster speed is a shorter run');
+});
+
+test('replay reveal: eased 0→total, monotonic, clamped', () => {
+  const total = 200, dur = 4000;
+  assert.equal(replayReveal(0, total, dur), 0, 'nothing shown at the start');
+  assert.equal(replayReveal(-50, total, dur), 0, 'negative time is clamped');
+  assert.equal(replayReveal(dur, total, dur), total, 'all shown at the end');
+  assert.equal(replayReveal(dur + 999, total, dur), total, 'past the end stays complete');
+  assert.equal(replayReveal(100, 0, dur), 0, 'an empty picture reveals nothing');
+  let prev = -1;
+  for (let t = 0; t <= dur; t += 200) {
+    const n = replayReveal(t, total, dur);
+    assert.ok(n >= prev, 'the reveal never goes backwards');
+    assert.ok(n >= 0 && n <= total, 'always in range');
+    prev = n;
+  }
+});
+
+test('replay is wired into the board and the finished-picture UI', () => {
+  const game = readSource('src/game.js');
+  const render = readSource('src/render.js');
+  const html = readSource('src/index.html');
+  // The order is taken straight from the ordered filled set — no separate record.
+  assert.match(game, /\[\.\.\.S\.filled\]/, 'replay reads the paint order from S.filled');
+  assert.match(game, /board\.startReplay\(/, 'game.js starts the board replay');
+  assert.match(game, /board\.replaying/, 'the frame loop stays alive while replaying');
+  assert.match(render, /startReplay\(|stepReplay\(/, 'the board reveals cells over time');
+  assert.match(render, /isShown\(/, 'drawBase consults the replay view, not just filled');
+  // Reachable on every finished picture: a pill + a finish-card button + the bar.
+  assert.match(html, /id="replayPill"/, 'the replay pill exists');
+  assert.match(html, /id="replayBar"/, 'the replay control bar exists');
+  assert.match(html, /data-act="replay-speed"/, 'the speed chips are wired');
 });

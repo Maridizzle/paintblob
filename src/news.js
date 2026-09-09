@@ -75,18 +75,26 @@ export const NEWS = [
     blurb: 'Stamp hearts, stars, shapes, letters, numbers, animals and aliens onto a picture — bought in packs, then sized, spun or given a 3D pop. Tap 🏷 in the toolbar to decorate.',
   },
 
-  // ─── NEXT SPLASH BATCH STARTS HERE (rev 12+) ────────────────────────────────
+  {
+    rev: 12,
+    icon: '🐿️',
+    title: 'A painting buddy',
+    blurb: 'Pip, a little paint-aproned squirrel, keeps you company: he roams the edge of your picture, does the odd wiggle, and chirps about the exact colours you pick. Turn him on or off in Settings.',
+  },
+  {
+    rev: 13,
+    icon: '⏪',
+    title: 'Replay your painting',
+    blurb: 'Finish a picture, then hit Replay to watch it fill back in — in the exact order you painted it, at your pick of speeds right up to warp. On the finish card and a ▶ Replay button on every finished picture.',
+  },
+
+  // ─── NEXT SPLASH BATCH STARTS HERE (rev 14+) ────────────────────────────────
   // Everything above has shipped AND been announced. To avoid resurfacing the
   // splash on every little patch, features that ship between batches are NOT
   // listed the moment they land — they wait here and get announced together in
   // the next batch. Add the next round of entries below this line, continuing at
-  // `rev: 12`. Adding any entry bumps NEWS_MAX_REV, which re-shows the splash for
+  // `rev: 14`. Adding any entry bumps NEWS_MAX_REV, which re-shows the splash for
   // returning players, so add them as a batch, not one at a time.
-  //
-  // Already shipped, waiting to be listed (write these first, in ship order):
-  //   • Pip, the painting buddy (v0.7.61) — an optional paint-aproned squirrel
-  //     who roams the picture's border and chats about your colours. Toggle in
-  //     Settings → "Painting buddy". Suggested: icon 🐿️, title "A painting buddy".
 ];
 
 /** The highest rev in the catalogue — what "caught up" means. */
