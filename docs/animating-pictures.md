@@ -38,9 +38,17 @@ say so instead.
 - **Never hand-edit `puzzles/<id>.json`.** Ever. Use the tool.
 - **Never edit `src/render.js`, `src/game.js`, or `tools/mapify.mjs`** as part
   of this task.
-- **Not every picture needs an animation.** If nothing in a picture obviously
-  wants to move, tag nothing and say so. An untagged picture is a completely
-  normal, fully supported outcome. A forced, arbitrary tag is worse than none.
+- **House rule (as of this repo): every picture gets BOTH treatments — a living
+  animation AND a raised subject (the "3D" lift).** This is the standard now:
+  when a new picture is baked, it must leave with an animation tag and a lift tag.
+  The *only* exceptions, and you must say which one applies when you use it:
+  1. **Nothing wants to move** — a genuinely flat, static composition with no
+     element that reads as alive. Rare. Tag no animation, but still add a lift.
+  2. **No liftable subject** — a full-frame abstract with no figure/ground, OR a
+     subject that covers more than `LIFT_MAX_AREA` (see `src/render.js`) so a lift
+     could never fire. Tag no lift, but still add an animation.
+  A forced, arbitrary tag is still worse than none — but "I couldn't be bothered"
+  is not one of the two exceptions. Reach for a real element first.
 
 ---
 
@@ -223,8 +231,10 @@ Two rules, different from the animation's:
 - **The subject can be a region, if the region is the point of the picture.**
   The aurora's lights, a nebula's clouds, the bed of anemones: each rises as
   one mass and reads fine. A scattered set (three koi) does too. What does not
-  work is lifting scenery that is merely *around* the subject — and a picture
-  can be left untagged, in which case it simply stays flat.
+  work is lifting scenery that is merely *around* the subject. Per the house rule
+  above, add a lift to every picture that has a subject under `LIFT_MAX_AREA`;
+  only a genuine full-frame abstract (or an over-cap subject) is left flat, and
+  then you say so.
 
 Past `LIFT_MAX_AREA` of the frame (see `src/render.js`) nothing is raised — a
 lift needs enough background to move against. The guard test tells you if a tag

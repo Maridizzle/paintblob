@@ -16,13 +16,5 @@
     "On bake, tools/bake-weekly-mystery.mjs copies the entry into",
     "puzzles/tags.json under the final id (the source of truth apply-tags reads)",
     "and removes it from here. Underscore keys are ignored."
-  ],
-
-  "quicksilver": { "themes": ["Elements", "Abstract"] },
-  "violet-vapour": { "themes": ["Elements", "Fantasy"] },
-  "crystal-star": { "themes": ["Elements", "Space"] },
-  "the-chemistry-set": { "themes": ["Elements", "Abstract"] },
-  "malachite-orbs": { "themes": ["Elements", "Abstract"] },
-  "silver-starburst": { "themes": ["Elements", "Space"] },
-  "diamond-blossom": { "themes": ["Flowers", "Elements"] }
+  ]
 }

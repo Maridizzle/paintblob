@@ -150,11 +150,11 @@
     "cells": 17,
     "colours": 12,
     "thumb": [
+      "#8b3022",
+      "#ad412b",
       "#d9633b",
       "#f9a167",
-      "#e55a5f",
-      "#ad412b",
-      "#8b3022"
+      "#ffe0a1"
     ],
     "difficulty": "normal",
     "themes": [
@@ -292,6 +292,25 @@
     ]
   },
   {
+    "id": "crystal-star",
+    "title": "Crystal Star",
+    "cells": 500,
+    "colours": 25,
+    "thumb": [
+      "#4e2213",
+      "#321a11",
+      "#6f2c14",
+      "#8b3715",
+      "#a14216"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Elements",
+      "Space"
+    ],
+    "blind": true
+  },
+  {
     "id": "desert-milky-way",
     "title": "Desert Milky Way",
     "cells": 500,
@@ -311,16 +330,35 @@
     ]
   },
   {
+    "id": "diamond-blossom",
+    "title": "Diamond Blossom",
+    "cells": 500,
+    "colours": 24,
+    "thumb": [
+      "#221308",
+      "#302011",
+      "#4f2f0f",
+      "#563d23",
+      "#664017"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Flowers",
+      "Elements"
+    ],
+    "blind": true
+  },
+  {
     "id": "dusk-harbour",
     "title": "Dusk Harbour",
     "cells": 23,
     "colours": 13,
     "thumb": [
       "#f07e53",
+      "#f7d3af",
       "#fac668",
-      "#ffd98a",
-      "#2e599d",
-      "#9556b8"
+      "#fcf1dd",
+      "#ffd98a"
     ],
     "difficulty": "normal",
     "themes": [
@@ -446,10 +484,10 @@
     "colours": 25,
     "thumb": [
       "#e55c42",
+      "#9c785b",
       "#f0a052",
-      "#487dbd",
-      "#3769a9",
-      "#2e7397"
+      "#edcdab",
+      "#f9f0df"
     ],
     "difficulty": "detailed",
     "themes": [
@@ -574,11 +612,11 @@
     "cells": 21,
     "colours": 10,
     "thumb": [
-      "#f56a35",
-      "#e5282e",
       "#f58766",
+      "#f56a35",
       "#f9a875",
-      "#3bb33f"
+      "#e0d2b7",
+      "#f5eee1"
     ],
     "difficulty": "normal",
     "themes": [
@@ -624,6 +662,25 @@
       "Water",
       "Space"
     ]
+  },
+  {
+    "id": "malachite-orbs",
+    "title": "Malachite Orbs",
+    "cells": 500,
+    "colours": 25,
+    "thumb": [
+      "#93b581",
+      "#739c62",
+      "#b4d9b1",
+      "#9bcea1",
+      "#56a56b"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Elements",
+      "Abstract"
+    ],
+    "blind": true
   },
   {
     "id": "mandala",
@@ -774,6 +831,25 @@
     ]
   },
   {
+    "id": "quicksilver",
+    "title": "Quicksilver",
+    "cells": 500,
+    "colours": 24,
+    "thumb": [
+      "#431a19",
+      "#57201e",
+      "#2a1615",
+      "#682925",
+      "#7f332e"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Elements",
+      "Abstract"
+    ],
+    "blind": true
+  },
+  {
     "id": "rain-blossom-island",
     "title": "Rain Blossom Island",
     "cells": 500,
@@ -866,6 +942,25 @@
       "Fantasy",
       "Abstract"
     ]
+  },
+  {
+    "id": "silver-starburst",
+    "title": "Silver Starburst",
+    "cells": 500,
+    "colours": 20,
+    "thumb": [
+      "#c0d0db",
+      "#abbfce",
+      "#819ab0",
+      "#96acbf",
+      "#d7dfe6"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Elements",
+      "Space"
+    ],
+    "blind": true
   },
   {
     "id": "snow-lava-cliff-tree",
@@ -1038,6 +1133,25 @@
       "Food",
       "Space"
     ]
+  },
+  {
+    "id": "the-chemistry-set",
+    "title": "The Chemistry Set",
+    "cells": 500,
+    "colours": 27,
+    "thumb": [
+      "#310b0b",
+      "#56100f",
+      "#7b1711",
+      "#d22716",
+      "#2e1e1c"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Elements",
+      "Abstract"
+    ],
+    "blind": true
   },
   {
     "id": "dusk-gate",
@@ -1220,6 +1334,25 @@
       "Water",
       "Abstract"
     ]
+  },
+  {
+    "id": "violet-vapour",
+    "title": "Violet Vapour",
+    "cells": 500,
+    "colours": 33,
+    "thumb": [
+      "#5b3723",
+      "#835537",
+      "#9f6d47",
+      "#b6855c",
+      "#c89c73"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Elements",
+      "Fantasy"
+    ],
+    "blind": true
   },
   {
     "id": "wildflower-bunch",

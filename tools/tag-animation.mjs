@@ -271,6 +271,14 @@ await page.goto(`http://127.0.0.1:${port}/src/index.html`);
 await page.waitForFunction(() => window.__paintblobTest?.board?.puzzle, null, { timeout: 10000, polling: 100 });
 // The photo is decoded asynchronously; without it there is no photo view.
 await page.waitForFunction(() => window.__paintblobTest.board.sourceBitmap, null, { timeout: 10000, polling: 100 });
+// The board is already loaded, but the story-mode title screen (and any first-run
+// splash / tour) sits over #stage and would land in the #board screenshot below,
+// hiding the very picture we're here to look at. Dismiss those overlays so the map
+// is clean. They postdate this tool; nothing here needs them.
+await page.evaluate(() => {
+  for (const id of ['title', 'news', 'finish']) document.getElementById(id)?.classList.add('hidden');
+  document.querySelectorAll('.tour, .tour-card, .tour-spotlight, .tour-flash').forEach((el) => el.remove());
+});
 
 const step = (ms) => page.evaluate((m) => window.__clock.step(m), ms);
 
