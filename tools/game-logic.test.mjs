@@ -84,6 +84,7 @@ import { LIVING_EFFECTS } from '../src/render.js';
 import { Burst } from '../src/paint-fx.js';
 import {
   buildAvatarSVG, defaultAvatarCustomize, setVariant, VARIANTS, RACE_PROFILE, raceSkinPalette,
+  STUDIO_PAINT,
 } from '../src/avatar.js';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -479,10 +480,48 @@ test('every store wardrobe item costs something', () => {
 });
 
 test('every wardrobe line tag is a known collection', () => {
-  const LINES = new Set(['street', 'formal', 'cozy', 'sport']);
+  const LINES = new Set(['street', 'formal', 'cozy', 'sport', 'atelier']);
   for (const item of WARDROBE_ITEMS) {
     if ('line' in item) assert.ok(LINES.has(item.line), `${item.id} has unknown line "${item.line}"`);
   }
+});
+
+test('the Atelier line dresses every slot but the dress, one piece each', () => {
+  // A collection is a whole outfit: pick up every piece and the figure is a
+  // painter head to toe. The dress slot replaces shirt + bottoms, so it's the
+  // one slot a full outfit has no need of.
+  const atelier = WARDROBE_ITEMS.filter((i) => i.line === 'atelier');
+  const bySlot = new Map(atelier.map((i) => [i.slot, i]));
+  for (const slot of ['shirt', 'bottoms', 'outerwear', 'socks', 'shoes', 'headwear', 'eyewear', 'neckwear']) {
+    assert.ok(bySlot.has(slot), `the Atelier line has nothing for the ${slot} slot`);
+  }
+  assert.equal(atelier.length, 8, 'one Atelier piece per slot');
+  for (const item of atelier) assert.equal(item.source, 'store', `${item.id} should be for sale`);
+});
+
+test('every Atelier piece carries real paint: a baked splat in a studio colour', () => {
+  // The line's signature is the splatter, in the same five paints as Pip's
+  // apron. A splat is a dot with its own fixed fill, which is what lets it
+  // survive every render style while the cloth under it stays dyeable.
+  const paints = new Set(STUDIO_PAINT);
+  for (const item of WARDROBE_ITEMS.filter((i) => i.line === 'atelier')) {
+    const c = defaultAvatarCustomize();
+    c[item.slot] = { itemId: item.id, colour: '#808080' };
+    const svg = buildAvatarSVG(c);
+    const fills = [...svg.matchAll(/<circle [^>]*fill="(#[0-9a-f]{6})"/g)].map((m) => m[1]);
+    assert.ok(fills.some((f) => paints.has(f)), `${item.id} has no paint splat`);
+  }
+});
+
+test("the studio paints are Pip's apron paints", () => {
+  // companion.js draws the apron's splatters with literal hexes and avatar.js
+  // keeps its own copy (so it stays DOM-free and independent). Keep them equal,
+  // or the buddy and the wardrobe stop reading as one studio.
+  const text = readSource('src/companion.js');
+  const apron = text.slice(text.indexOf('export function apronMarkup'), text.indexOf('export function companionSVG'));
+  const hexes = new Set([...apron.matchAll(/<circle [^>]*fill="(#[0-9a-f]{6})"/g)].map((m) => m[1]));
+  for (const p of STUDIO_PAINT) assert.ok(hexes.has(p), `the apron is missing studio paint ${p}`);
+  for (const h of hexes) assert.ok(STUDIO_PAINT.includes(h), `apron paint ${h} is not a studio paint`);
 });
 
 test('every optional avatar slot defaults to nothing worn but stays recolourable', () => {

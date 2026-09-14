@@ -88,12 +88,19 @@ export const NEWS = [
     blurb: 'Finish a picture, then hit Replay to watch it fill back in — in the exact order you painted it, at your pick of speeds right up to warp. On the finish card and a ▶ Replay button on every finished picture.',
   },
 
-  // ─── NEXT SPLASH BATCH STARTS HERE (rev 14+) ────────────────────────────────
+  {
+    rev: 14,
+    icon: '🥼',
+    title: 'The Atelier line',
+    blurb: "Dress your painter as one: a splattered smock, dungarees with a pencil in the bib, a long studio coat, wooden clogs, flecked socks, a bandana, goggles and a paint rag. Every piece dyes to any colour — the paint stays. In the Outfits shop.",
+  },
+
+  // ─── NEXT SPLASH BATCH STARTS HERE (rev 15+) ────────────────────────────────
   // Everything above has shipped AND been announced. To avoid resurfacing the
   // splash on every little patch, features that ship between batches are NOT
   // listed the moment they land — they wait here and get announced together in
   // the next batch. Add the next round of entries below this line, continuing at
-  // `rev: 14`. Adding any entry bumps NEWS_MAX_REV, which re-shows the splash for
+  // `rev: 15`. Adding any entry bumps NEWS_MAX_REV, which re-shows the splash for
   // returning players, so add them as a batch, not one at a time.
 ];
 

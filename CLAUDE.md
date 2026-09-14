@@ -261,9 +261,15 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
   `.tour`; Pip lives outside `.tour`, so `.companion` **redeclares** them (a warm
   chestnut) or `var()` falls back to black. Test hook: `window.__paintblobTest.pip =
   { roam, say, color }`.
-- **Wardrobe / avatar** — 62 garments across 9 slots (shirt, bottoms, dress,
+- **Wardrobe / avatar** — 70 garments across 9 slots (shirt, bottoms, dress,
   socks, shoes + outerwear, headwear, eyewear, neckwear); six render styles;
-  fixed-accent multicolor. The Outfits shop groups by slot.
+  fixed-accent multicolor. The Outfits shop groups by slot. A collection is a
+  `line` tag on the item (street / formal / cozy / sport / atelier) plus a
+  `LINE_LABEL` entry in game.js — nothing else branches on it. The **Atelier
+  line** is a whole painter's outfit, one piece per slot but the dress (a dress
+  replaces shirt + bottoms), every piece splattered in `STUDIO_PAINT` — Pip's
+  five apron paints, exported from avatar.js and held equal to `apronMarkup()`
+  by a test. `splats()` / `brush()` in avatar.js are the baked-accent helpers.
 - **Dev mode** — `?dev` or type `devmode`; session-only (`S.dev`). A dev-only 🛠
   toolbar button (`#devMenuBtn`, gated in `syncDevPill`) opens the **Developer
   menu** (`renderDevPanel` via `openPanel('dev')`): launch any minigame on demand

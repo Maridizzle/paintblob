@@ -4,9 +4,10 @@
 // ACHIEVEMENTS entry's `outfit` field instead. A starter item (price 0,
 // source 'starter') is unlocked from the very first save.
 //
-// `line` is an optional collection tag (street/formal/cozy/sport) shown in the
-// shop and nothing else — no logic branches on it, so an item may omit it. The
-// four newest slots (outerwear/headwear/eyewear/neckwear) are optional layers:
+// `line` is an optional collection tag (street/formal/cozy/sport/atelier) shown
+// in the shop and nothing else — no logic branches on it, so an item may omit
+// it. The four newest slots (outerwear/headwear/eyewear/neckwear) are optional
+// layers:
 // like `dress` they default to nothing worn and are removed by tapping the
 // equipped item.
 
@@ -100,4 +101,19 @@ export const WARDROBE_ITEMS = [
   // Unaligned extras
   { id: 'headwear-sunhat', slot: 'headwear', style: 'sunhat', name: 'Sun Hat', price: 220, source: 'store' },
   { id: 'headwear-crown', slot: 'headwear', style: 'crown', name: 'Paper Crown', price: 260, source: 'store' },
+
+  // ---- The Atelier line: a painter's kit, one piece per slot ----------------
+  // Every piece is splattered in Pip's five apron paints (STUDIO_PAINT in
+  // avatar.js) as baked accents, so the buddy and the line read as one studio
+  // while each garment's cloth stays fully dyeable. Wear all eight and the
+  // figure is a painter head to toe — the dress slot is the one a full outfit
+  // has no need of, since a dress replaces shirt + bottoms.
+  { id: 'shirt-smock', slot: 'shirt', style: 'smock', name: "Painter's Smock", price: 300, source: 'store', line: 'atelier' },
+  { id: 'bottoms-dungarees', slot: 'bottoms', style: 'dungarees', name: 'Paint Dungarees', price: 320, source: 'store', line: 'atelier' },
+  { id: 'outerwear-studio', slot: 'outerwear', style: 'studio', name: 'Studio Coat', price: 400, source: 'store', line: 'atelier' },
+  { id: 'socks-flecked', slot: 'socks', style: 'flecked', name: 'Flecked Socks', price: 140, source: 'store', line: 'atelier' },
+  { id: 'shoes-clogs', slot: 'shoes', style: 'clogs', name: 'Studio Clogs', price: 280, source: 'store', line: 'atelier' },
+  { id: 'headwear-bandana', slot: 'headwear', style: 'bandana', name: 'Bandana', price: 170, source: 'store', line: 'atelier' },
+  { id: 'eyewear-goggles', slot: 'eyewear', style: 'goggles', name: 'Studio Goggles', price: 160, source: 'store', line: 'atelier' },
+  { id: 'neckwear-rag', slot: 'neckwear', style: 'rag', name: 'Paint Rag', price: 150, source: 'store', line: 'atelier' },
 ];
