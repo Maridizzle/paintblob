@@ -3156,7 +3156,7 @@ const WEAR_LABEL = {
 };
 const SLOT_ORDER = ['shirt', 'bottoms', 'dress', 'outerwear', 'neckwear', 'socks', 'shoes', 'headwear', 'eyewear'];
 const OPTIONAL_SLOTS = new Set(['dress', 'outerwear', 'headwear', 'eyewear', 'neckwear']);
-const LINE_LABEL = { street: 'Streetwear', formal: 'Formal', cozy: 'Cozy', sport: 'Sport' };
+const LINE_LABEL = { street: 'Streetwear', formal: 'Formal', cozy: 'Cozy', sport: 'Sport', atelier: 'Atelier' };
 
 function renderAvatarOutfits(section, stage) {
   const customize = S.save.avatar.customize;
