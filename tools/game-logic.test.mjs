@@ -1590,7 +1590,7 @@ test('fill styles: catalogue, default, and the CellFill interface', () => {
 
 test('fill styles are wired into the paint path, Settings, and the save', () => {
   const game = readSource('src/game.js');
-  assert.match(game, /import \{ CellFill, FILL_STYLES, DEFAULT_FILL \} from '\.\/fill-fx\.js'/, 'game.js must import fill-fx');
+  assert.match(game, /import \{ CellFill, Puff, FILL_STYLES, DEFAULT_FILL \} from '\.\/fill-fx\.js'/, 'game.js must import fill-fx');
   assert.match(game, /const style = S\.save\.settings\.fill \?\? DEFAULT_FILL/, 'launch must read the chosen fill style');
   assert.match(game, /if \(style === 'none'\) \{\s*commitFill\(\{ cell \}\)/, "'none' must commit instantly, no animation");
   assert.match(game, /style === 'blob'\s*\?\s*new Burst\(/, "'blob' must still build the classic Burst");
@@ -1602,6 +1602,21 @@ test('fill styles are wired into the paint path, Settings, and the save', () => 
   // The save-shape default lives in both DEFAULT_SAVE literals (the ~4-places rule).
   assert.match(readSource('src/platform.js'), /fill: 'blob'/, 'platform.js DEFAULT_SAVE needs fill');
   assert.match(readSource('electron/main.cjs'), /fill: 'blob'/, 'electron DEFAULT_SAVE needs fill');
+});
+
+// Fast tappers were freezing: several full-picture Bursts render the whole
+// canvas every frame, so they stack into dropped frames. Past a cap, an
+// overflow tap fills its cell at once and sprays a cheap in-cell particle Puff
+// instead of a sixth explosion.
+test('fast-click stagger caps live blobs and sprays a particle Puff', () => {
+  const game = readSource('src/game.js');
+  const fillFx = readSource('src/fill-fx.js');
+  assert.match(fillFx, /export class Puff \{/, 'fill-fx must export the Puff particle effect');
+  assert.match(game, /const MAX_LIVE_BLOBS = \d+/, 'a concurrent-blob cap must exist');
+  assert.match(game, /b instanceof Burst && !b\.done/, 'the cap must count only live Bursts');
+  assert.match(game, /if \(liveBlobs >= MAX_LIVE_BLOBS\)/, 'past the cap, launch must divert to a Puff');
+  assert.match(game, /new Puff\(\{/, 'the overflow tap must spray a Puff');
+  assert.match(game, /puff\.applied = true/, 'the Puff is decoration only, so it must never re-commit the cell');
 });
 
 /* -------------------------------------------------- save image & backup */
