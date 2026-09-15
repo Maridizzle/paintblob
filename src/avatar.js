@@ -273,8 +273,13 @@ function mirrorPath(start, segs) {
 export const VARIANTS = {
   race: ['human', 'elf', 'dwarf', 'orc', 'halfling', 'tiefling'],
   gender: ['nb', 'fem', 'masc'],
-  hairStyle: ['short', 'long', 'ponytail'],
+  hairStyle: ['short', 'long', 'ponytail', 'braids'],
   eyesStyle: ['round', 'happy', 'sparkle'],
+  // Player-chosen facial hair, its own recolourable slot (see facialHairMarkup
+  // + the 'facialhair' part in avatarInner). 'none' is clean-shaven and draws
+  // nothing. Separate from the race beard (dwarves), which is a silhouette trait
+  // baked into the hair pass and left untouched.
+  facialHair: ['none', 'stubble', 'mustache', 'goatee', 'shortBeard', 'longBeard', 'fullBeard'],
   faceShape: ['oval', 'round', 'square'],
   // How the figure is drawn rather than what it is made of, so it composes
   // with every axis above instead of multiplying the geometry. Anime is the
@@ -356,6 +361,9 @@ export function defaultAvatarCustomize() {
   return {
     race: 'human', gender: 'nb', height: 1, weight: 1, style: 'inked',
     hair: { style: 'short', colour: '#3b2a1a' },
+    // Its own colour so a grey beard on dark hair is possible; the slot key is
+    // all-lowercase because tap-to-recolour reads it straight off data-slot.
+    facialhair: { style: 'none', colour: '#3b2a1a' },
     eyes: { style: 'round', colour: '#4a7a8c' },
     face: { shape: 'oval' },
     skin: { colour: RACE_PROFILE.human.skin[1] },
@@ -410,6 +418,9 @@ function metrics(c) {
 
   return {
     P,
+    // True once the player picks any facial hair: the racial beard (dwarves)
+    // yields to it so the two never stack. Read in hairFront.
+    chosenFacialHair: !!(c.facialhair && c.facialhair.style && c.facialhair.style !== 'none'),
     // Carried on the metrics object rather than threaded through forty
     // signatures: every markup function below already receives M, so the
     // style reaches all of them without one of them changing shape.
@@ -734,7 +745,102 @@ function hairBack(style, M) {
         `${n(x + 6)},${n(M.chinY + 19)} C${n(x + 9)},${n(M.chinY + 6)} ${n(x + 7)},${n(crownY + 15)} ` +
         `${n(x + 2)},${n(crownY + 9)} Z`, 0.12);
   }
+  if (style === 'braids') {
+    // Two plaited ropes hanging from the temples, behind the head like the
+    // other long styles so they never fight the clothing. `d` mirrors L/R. A
+    // tapering rope with a few shade chevrons down it reads as a braid without
+    // needing per-plait geometry.
+    const braid = (d) => {
+      const x = CX + d * (M.cheekHalf + 0.5);
+      const topY = M.browY + 1;
+      const botY = M.shoulderY + 28;
+      const w = headRx * 0.3;
+      const midY = (topY + botY) / 2;
+      const bow = d * headRx * 0.22;
+      const rope = `M${n(x - w)},${n(topY)} ` +
+        `C${n(x - w + bow)},${n(midY)} ${n(x - w * 0.4 + bow)},${n(botY - 7)} ${n(x - w * 0.25 + bow)},${n(botY)} ` +
+        `Q${n(x + bow)},${n(botY + 4)} ${n(x + w * 0.25 + bow)},${n(botY)} ` +
+        `C${n(x + w * 0.6 + bow)},${n(botY - 7)} ${n(x + w + bow * 0.5)},${n(midY)} ${n(x + w)},${n(topY)} Z`;
+      let plait = '';
+      const steps = 4;
+      for (let i = 1; i <= steps; i++) {
+        const t = i / (steps + 1);
+        const yy = topY + (botY - topY) * t;
+        const bx = x + bow * t;
+        const ww = w * (1 - t * 0.5);
+        plait += shade(`M${n(bx - ww)},${n(yy - 1.6)} Q${n(bx)},${n(yy + 1.6)} ${n(bx + ww)},${n(yy - 1.6)} ` +
+          `Q${n(bx)},${n(yy + 0.2)} ${n(bx - ww)},${n(yy - 1.6)} Z`, 0.14);
+      }
+      return `<path d="${rope}"/>` + plait;
+    };
+    return braid(1) + braid(-1);
+  }
   return '';
+}
+
+/**
+ * Player-chosen facial hair. Its own recolourable slot, drawn over the face and
+ * the shirt (a long beard falls onto the chest) but under a scarf. `none` draws
+ * nothing. The moustache and beard-body shapes echo the racial beard so the two
+ * families read as one set.
+ */
+function facialHairMarkup(M, style) {
+  if (!style || style === 'none') return '';
+  const { cheekHalf, chinY, jawHalf, mouthY, cheekY, headRy } = M;
+  const moustache = `<path d="M${n(CX - jawHalf * 0.6)},${n(mouthY - 2.4)} ` +
+    `Q${n(CX)},${n(mouthY - 4.5)} ${n(CX + jawHalf * 0.6)},${n(mouthY - 2.4)} ` +
+    `Q${n(CX)},${n(mouthY + 0.6)} ${n(CX - jawHalf * 0.6)},${n(mouthY - 2.4)} Z"/>`;
+  // A beard hugging the jaw; `drop` is how far below the chin it hangs and
+  // `cheekOut` how high up the cheek it climbs, so one shape spans stubble to
+  // a long beard. Upper edge dips under the lip so a moustache can sit in it.
+  const beard = (topY, drop, cheekOut = cheekHalf + 0.5) => {
+    const bottom = chinY + drop;
+    return `<path d="M${n(CX - cheekOut)},${n(topY)} ` +
+      `C${n(CX - cheekOut - 1.5)},${n(chinY - 2)} ${n(CX - jawHalf * 0.9)},${n(bottom - 2)} ` +
+      `${n(CX)},${n(bottom)} ` +
+      `C${n(CX + jawHalf * 0.9)},${n(bottom - 2)} ${n(CX + cheekOut + 1.5)},${n(chinY - 2)} ` +
+      `${n(CX + cheekOut)},${n(topY)} ` +
+      `C${n(CX + cheekHalf * 0.55)},${n(mouthY + 1)} ${n(CX - cheekHalf * 0.55)},${n(mouthY + 1)} ` +
+      `${n(CX - cheekOut)},${n(topY)} Z"/>`;
+  };
+  const lipShadow = shade(`M${n(CX - jawHalf * 0.5)},${n(mouthY + 3.4)} ` +
+    `Q${n(CX)},${n(mouthY + 5.4)} ${n(CX + jawHalf * 0.5)},${n(mouthY + 3.4)} ` +
+    `Q${n(CX)},${n(mouthY + 4.2)} ${n(CX - jawHalf * 0.5)},${n(mouthY + 3.4)} Z`, 0.12);
+  switch (style) {
+    case 'mustache':
+      return moustache;
+    case 'goatee': {
+      const tuft = `<path d="M${n(CX - jawHalf * 0.42)},${n(mouthY + 1.5)} ` +
+        `Q${n(CX - jawHalf * 0.5)},${n(chinY + 4)} ${n(CX)},${n(chinY + 6)} ` +
+        `Q${n(CX + jawHalf * 0.5)},${n(chinY + 4)} ${n(CX + jawHalf * 0.42)},${n(mouthY + 1.5)} ` +
+        `Q${n(CX)},${n(mouthY + 3.2)} ${n(CX - jawHalf * 0.42)},${n(mouthY + 1.5)} Z"/>`;
+      return tuft + moustache;
+    }
+    case 'stubble': {
+      // A thin strap along the jaw and chin — reads as a shadow/very short
+      // growth, clearly less than the filled short beard. One band: the outer
+      // jaw perimeter down and around, then an inner edge offset inward back up.
+      const topY = cheekY + 4;
+      const bottom = chinY + headRy * 0.16;
+      const outer = cheekHalf + 0.5;
+      const k = 2.6; // strap thickness
+      return `<path d="M${n(CX - outer)},${n(topY)} ` +
+        `C${n(CX - outer - 1.5)},${n(chinY - 2)} ${n(CX - jawHalf * 0.9)},${n(bottom - 2)} ${n(CX)},${n(bottom)} ` +
+        `C${n(CX + jawHalf * 0.9)},${n(bottom - 2)} ${n(CX + outer + 1.5)},${n(chinY - 2)} ${n(CX + outer)},${n(topY)} ` +
+        `L${n(CX + outer - k)},${n(topY + 1)} ` +
+        `C${n(CX + outer - k)},${n(chinY - 1)} ${n(CX + jawHalf * 0.7)},${n(bottom - k - 1)} ${n(CX)},${n(bottom - k)} ` +
+        `C${n(CX - jawHalf * 0.7)},${n(bottom - k - 1)} ${n(CX - outer + k)},${n(chinY - 1)} ${n(CX - outer + k)},${n(topY + 1)} Z"/>`;
+    }
+    case 'shortBeard':
+      return beard(cheekY + 3, headRy * 0.52) + moustache + lipShadow;
+    case 'longBeard':
+      // The user's distinction: a long beard WITHOUT the moustache.
+      return beard(cheekY + 3, headRy * 0.95) + lipShadow;
+    case 'fullBeard':
+      return beard(cheekY + 3, headRy * 0.95) + moustache + lipShadow;
+    default:
+      return '';
+  }
 }
 
 function hairFront(style, M) {
@@ -774,7 +880,9 @@ function hairFront(style, M) {
         `L${n(CX + d * (cheekHalf + 1.5))},${n(M.cheekY - 1)} ` +
         `L${n(CX + d * (cheekHalf - 1.5))},${n(M.cheekY - 2)} Z" stroke="none"/>`)
     : '';
-  const beard = M.P.extras.includes('beard') ? beardMarkup(M) : '';
+  // The racial beard (dwarves) yields to a player-chosen facial hair so the two
+  // never stack; with no choice it still renders, so a default dwarf is unchanged.
+  const beard = (M.P.extras.includes('beard') && !M.chosenFacialHair) ? beardMarkup(M) : '';
   // The "angel ring" — the band of shine anime hair carries across the crown.
   // A wash like every other highlight here, so it works over any hair colour.
   // Two short bands rather than one across the whole crown: the cap dips to a
@@ -1959,6 +2067,49 @@ function glassesMarkup(M, style) {
       [CX + cx + lr * 0.55, ey - lr * 0.72, 0.9],
       [CX - (cx + lr - t * 0.5 + M.earX) / 2, ey + 0.3, 0.8],
     ], 2));
+  } else if (style === 'square') {
+    // Square glasses — bold rounded-rect rims, a bridge and temples. The frame
+    // inherits the slot colour, which defaults to near-black, so they read as
+    // the black-framed pair out of the box and recolour like anything else.
+    const lw = M.headRx * 0.4, lh = M.headRx * 0.3, t = Math.min(lw, lh) * 0.36;
+    const rrect = (x0, y0, x1, y1, r) =>
+      `M${n(x0 + r)},${n(y0)} L${n(x1 - r)},${n(y0)} Q${n(x1)},${n(y0)} ${n(x1)},${n(y0 + r)} ` +
+      `L${n(x1)},${n(y1 - r)} Q${n(x1)},${n(y1)} ${n(x1 - r)},${n(y1)} ` +
+      `L${n(x0 + r)},${n(y1)} Q${n(x0)},${n(y1)} ${n(x0)},${n(y1 - r)} ` +
+      `L${n(x0)},${n(y0 + r)} Q${n(x0)},${n(y0)} ${n(x0 + r)},${n(y0)} Z`;
+    out.push(pair((d) => {
+      const c0 = CX + d * cx;
+      return `<path fill-rule="evenodd" d="${rrect(c0 - lw, ey - lh, c0 + lw, ey + lh, 1.4)} ` +
+        `${rrect(c0 - (lw - t), ey - (lh - t), c0 + (lw - t), ey + (lh - t), 0.9)}"/>`;
+    }));
+    out.push(`<rect x="${n(CX - (cx - lw) - 0.2)}" y="${n(ey - 0.9)}" width="${n(2 * (cx - lw) + 0.4)}" height="1.8" rx="0.8"/>`);
+    out.push(temples(cx + lw));
+    out.push(pair((d) => light(`M${n(CX + d * cx - lw * 0.5)},${n(ey - lh * 0.45)} l${n(lw * 0.5)},${n(lh * 0.5)}`, 0.3)));
+  } else if (style === 'rimless') {
+    // Rimless — faint lenses held by only a bridge, temples and corner mounts.
+    const lw = M.headRx * 0.4, lh = M.headRx * 0.3;
+    out.push(pair((d) => `<ellipse cx="${n(CX + d * cx)}" cy="${n(ey)}" rx="${n(lw)}" ry="${n(lh)}" fill="rgba(198,220,236,0.26)" stroke="none"/>`));
+    out.push(`<rect x="${n(CX - (cx - lw))}" y="${n(ey - 0.7)}" width="${n(2 * (cx - lw))}" height="1.4" rx="0.7"/>`);
+    out.push(temples(cx + lw));
+    out.push(pair((d) => `<circle cx="${n(CX + d * (cx + lw - 0.4))}" cy="${n(ey)}" r="0.9"/>`));
+    out.push(pair((d) => light(`M${n(CX + d * cx - lw * 0.5)},${n(ey - lh * 0.45)} l${n(lw * 0.5)},${n(lh * 0.5)}`, 0.35)));
+  } else if (style === 'browline') {
+    // Browline — thin dyeable lower rims with the signature heavy brow bar
+    // baked dark across the top (a fixed accent, like the shades' lens).
+    const lr = M.headRx * 0.34, t = lr * 0.3;
+    out.push(pair((d) => `<path fill-rule="evenodd" d="` +
+      `M${n(CX + d * cx - lr)},${n(ey)} a${n(lr)},${n(lr)} 0 1,0 ${n(2 * lr)},0 ` +
+      `a${n(lr)},${n(lr)} 0 1,0 ${n(-2 * lr)},0 Z ` +
+      `M${n(CX + d * cx - (lr - t))},${n(ey)} a${n(lr - t)},${n(lr - t)} 0 1,0 ${n(2 * (lr - t))},0 ` +
+      `a${n(lr - t)},${n(lr - t)} 0 1,0 ${n(-2 * (lr - t))},0 Z"/>`));
+    out.push(`<rect x="${n(CX - (cx - lr) - 0.2)}" y="${n(ey - 0.6)}" width="${n(2 * (cx - lr) + 0.4)}" height="1.6" rx="0.7"/>`);
+    out.push(temples(cx + lr));
+    out.push(pair((d) => panel(`M${n(CX + d * cx - lr - 1.2)},${n(ey - lr * 0.5)} ` +
+      `Q${n(CX + d * cx)},${n(ey - lr * 1.45)} ${n(CX + d * cx + lr + 1.2)},${n(ey - lr * 0.5)} ` +
+      `L${n(CX + d * cx + lr + 0.6)},${n(ey - lr * 0.05)} ` +
+      `Q${n(CX + d * cx)},${n(ey - lr * 0.9)} ${n(CX + d * cx - lr - 0.6)},${n(ey - lr * 0.05)} Z`, '#2a2530')));
+    out.push(panel(`M${n(CX - (cx - lr))},${n(ey - lr * 0.55)} L${n(CX + (cx - lr))},${n(ey - lr * 0.55)} ` +
+      `L${n(CX + (cx - lr))},${n(ey - lr * 0.12)} L${n(CX - (cx - lr))},${n(ey - lr * 0.12)} Z`, '#2a2530'));
   } else {
     // round glasses — clear lenses, so just rims + bridge + temples
     const lr = M.headRx * 0.34, t = lr * 0.34;
@@ -2111,6 +2262,11 @@ export function avatarInner(customize) {
   if (c.outerwear?.itemId) {
     parts.push(part('outerwear', c.outerwear.colour, outerwearMarkup(M, styleOf(c.outerwear.itemId)), ink));
   }
+  // Facial hair sits over the face and the shirt/jacket (a long beard falls onto
+  // the chest), but under a scarf, which wraps the neck over everything. Its own
+  // recolourable slot; falls back to the hair colour if a save lacks the field.
+  parts.push(part('facialhair', c.facialhair?.colour ?? c.hair?.colour,
+    facialHairMarkup(M, c.facialhair?.style ?? 'none'), ink));
   if (c.neckwear?.itemId) {
     parts.push(part('neckwear', c.neckwear.colour, neckMarkup(M, styleOf(c.neckwear.itemId)), ink));
   }
@@ -2210,7 +2366,7 @@ export function setVariant(customize, slot, value) {
     customize.face.shape = value;
     return;
   }
-  const list = { hair: VARIANTS.hairStyle, eyes: VARIANTS.eyesStyle }[slot];
+  const list = { hair: VARIANTS.hairStyle, eyes: VARIANTS.eyesStyle, facialhair: VARIANTS.facialHair }[slot];
   if (!list || !list.includes(value)) return;
   customize[slot].style = value;
 }

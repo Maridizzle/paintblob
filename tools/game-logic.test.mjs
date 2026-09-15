@@ -575,11 +575,13 @@ test('every achievement outfit field references a real WARDROBE_ITEMS id', () =>
 // not a thrown error — it is a path string quietly containing "NaN", which
 // renders as nothing at all. These sweep for exactly that.
 
-const SLOTS = new Set(['skin', 'hair', 'eyes', 'shirt', 'bottoms', 'dress', 'socks', 'shoes',
+const SLOTS = new Set(['skin', 'hair', 'facialhair', 'eyes', 'shirt', 'bottoms', 'dress', 'socks', 'shoes',
   'outerwear', 'headwear', 'eyewear', 'neckwear']);
 // The slots worn over the base that default to nothing on the bare figure, so
 // they only draw a group once something is equipped (the dress is the original).
-const OPTIONAL_SLOTS = new Set(['dress', 'outerwear', 'headwear', 'eyewear', 'neckwear']);
+// Facial hair joins them: clean-shaven by default, so it draws no group until a
+// style is picked.
+const OPTIONAL_SLOTS = new Set(['dress', 'outerwear', 'headwear', 'eyewear', 'neckwear', 'facialhair']);
 
 /** Every meaningful combination of the customization axes. */
 function* everyAvatar() {
@@ -804,6 +806,46 @@ test('both DEFAULT_SAVE literals declare a style, and boot backfills it', () => 
     'boot() must backfill customize.style — an existing save replaces avatar wholesale');
 });
 
+test('facial hair and twin braids render cleanly, in frame, and are recolourable', () => {
+  // Facial hair is its own optional slot; braids joined the hair styles. Sweep
+  // both across every race and the body-slider extremes for poisoned paths and
+  // out-of-frame landmarks, confirm a chosen style emits a clickable group (and
+  // clean-shaven emits none), and that a beard's washes opt out of the outline.
+  for (const race of VARIANTS.race) {
+    for (const fh of VARIANTS.facialHair) {
+      for (const [h, w] of [[0.85, 0.8], [1, 1], [1.2, 1.3]]) {
+        const c = defaultAvatarCustomize();
+        c.race = race;
+        c.height = h;
+        c.weight = w;
+        c.hair.style = 'braids';
+        c.facialhair.style = fh;
+        const svg = buildAvatarSVG(c);
+        assert.ok(!/NaN|undefined|Infinity/.test(svg), `${race}/${fh}/braids poisoned a path`);
+        for (const m of svg.matchAll(/(-?\d+\.\d+),(-?\d+\.\d+)/g)) {
+          const x = Number(m[1]);
+          const y = Number(m[2]);
+          assert.ok(x > -22 && x < 142, `${race}/${fh} h${h} w${w}: x ${x} out of frame`);
+          assert.ok(y > -22 && y < 232, `${race}/${fh} h${h} w${w}: y ${y} out of frame`);
+        }
+        for (const m of svg.matchAll(/fill="rgba\([^"]*\)"(?: stroke="([^"]*)")?/g)) {
+          assert.equal(m[1], 'none', `${race}/${fh}: a wash is taking the outline — ${m[0]}`);
+        }
+        assert.equal(/<g data-slot="facialhair"/.test(svg), fh !== 'none',
+          `${race}/${fh}: facial hair group presence does not match the chosen style`);
+      }
+    }
+  }
+});
+
+test('both DEFAULT_SAVE literals declare facial hair, and boot backfills it', () => {
+  for (const f of ['src/platform.js', 'electron/main.cjs']) {
+    assert.match(readSource(f), /facialhair: \{ style: 'none'/, `${f} is missing facialhair in DEFAULT_SAVE`);
+  }
+  assert.match(readSource('src/game.js'), /customize\.facialhair \?\?=/,
+    'boot() must backfill customize.facialhair — an existing save replaces avatar wholesale');
+});
+
 test('every customize row with more than four options is allowed to wrap', () => {
   // `.segmented` is overflow:hidden with no wrap, so a long row silently
   // drops its last buttons off the end rather than showing you it did. This
@@ -815,6 +857,7 @@ test('every customize row with more than four options is allowed to wrap', () =>
   const rows = {
     Style: VARIANTS.style, Race: VARIANTS.race, Gender: VARIANTS.gender,
     Hair: VARIANTS.hairStyle, Eyes: VARIANTS.eyesStyle, Face: VARIANTS.faceShape,
+    'Facial hair': VARIANTS.facialHair,
   };
   for (const [label, list] of Object.entries(rows)) {
     if (list.length <= LONG) continue;

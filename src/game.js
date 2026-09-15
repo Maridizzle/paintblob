@@ -3082,6 +3082,12 @@ function renderAvatarPanel(body) {
   }
 }
 
+// Facial hair ids that can't label themselves by capitalising (a two-word cut).
+const FACIAL_HAIR_LABEL = {
+  none: 'None', stubble: 'Stubble', mustache: 'Mustache', goatee: 'Goatee',
+  shortBeard: 'Short beard', longBeard: 'Long beard', fullBeard: 'Full beard',
+};
+
 function renderAvatarCustomize(section, stage) {
   const customize = S.save.avatar.customize;
   const redraw = () => {
@@ -3090,7 +3096,7 @@ function renderAvatarCustomize(section, stage) {
     syncAvatarWidget();
   };
 
-  const pick = (label, options, get, set, wrap = false) => {
+  const pick = (label, options, get, set, wrap = false, labelFor = null) => {
     const r = row();
     const text = document.createElement('div');
     text.className = 'label';
@@ -3102,7 +3108,9 @@ function renderAvatarCustomize(section, stage) {
     seg.className = wrap ? 'segmented grow wrap' : 'segmented grow';
     for (const opt of options) {
       const b = document.createElement('button');
-      b.textContent = opt[0].toUpperCase() + opt.slice(1);
+      // Most options label themselves by capitalising their id; a `labelFor`
+      // overrides that where the id can't (a multi-word "Short beard").
+      b.textContent = labelFor ? labelFor(opt) : opt[0].toUpperCase() + opt.slice(1);
       b.className = get() === opt ? 'on' : '';
       b.addEventListener('click', () => {
         set(opt);
@@ -3123,7 +3131,9 @@ function renderAvatarCustomize(section, stage) {
     (v) => setVariant(customize, 'style', v), true);
   pick('Race', VARIANTS.race, () => customize.race, (v) => setVariant(customize, 'race', v), true);
   pick('Gender', VARIANTS.gender, () => customize.gender, (v) => setVariant(customize, 'gender', v));
-  pick('Hair', VARIANTS.hairStyle, () => customize.hair.style, (v) => setVariant(customize, 'hair', v));
+  pick('Hair', VARIANTS.hairStyle, () => customize.hair.style, (v) => setVariant(customize, 'hair', v), true);
+  pick('Facial hair', VARIANTS.facialHair, () => customize.facialhair?.style ?? 'none',
+    (v) => setVariant(customize, 'facialhair', v), true, (v) => FACIAL_HAIR_LABEL[v] ?? v);
   pick('Eyes', VARIANTS.eyesStyle, () => customize.eyes.style, (v) => setVariant(customize, 'eyes', v));
   pick('Face', VARIANTS.faceShape, () => customize.face.shape, (v) => setVariant(customize, 'face', v));
 
@@ -6594,6 +6604,9 @@ async function boot() {
   // drawing, and Classic is one tap away in the Customize tab for anyone who
   // preferred the old flat look.
   S.save.avatar.customize.style ??= 'inked';
+  // Facial hair postdates most saves, so it needs the same backfill: its own
+  // recolourable slot, clean-shaven by default so a returning figure is unchanged.
+  S.save.avatar.customize.facialhair ??= { style: 'none', colour: '#3b2a1a' };
   // Same reason again: the four optional layers (outerwear/headwear/eyewear/
   // neckwear) postdate most saves, so a returning player's customize object
   // lacks them until this backfill adds each — bare (itemId null), like dress.

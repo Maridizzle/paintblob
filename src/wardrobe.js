@@ -116,4 +116,12 @@ export const WARDROBE_ITEMS = [
   { id: 'headwear-bandana', slot: 'headwear', style: 'bandana', name: 'Bandana', price: 170, source: 'store', line: 'atelier' },
   { id: 'eyewear-goggles', slot: 'eyewear', style: 'goggles', name: 'Studio Goggles', price: 160, source: 'store', line: 'atelier' },
   { id: 'neckwear-rag', slot: 'neckwear', style: 'rag', name: 'Paint Rag', price: 150, source: 'store', line: 'atelier' },
+
+  // ---- Eyewear drop -------------------------------------------------------
+  // Three more pairs of glasses. The frames inherit the eyewear slot colour
+  // (default near-black), so Square reads as the black-framed pair out of the
+  // box while staying recolourable; Browline bakes its heavy brow bar dark.
+  { id: 'eyewear-square', slot: 'eyewear', style: 'square', name: 'Square Glasses', price: 150, source: 'store', line: 'formal' },
+  { id: 'eyewear-rimless', slot: 'eyewear', style: 'rimless', name: 'Rimless Glasses', price: 160, source: 'store', line: 'formal' },
+  { id: 'eyewear-browline', slot: 'eyewear', style: 'browline', name: 'Browline Glasses', price: 170, source: 'store', line: 'formal' },
 ];
