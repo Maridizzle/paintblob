@@ -18,6 +18,8 @@ const TAU = Math.PI * 2;
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const easeOutQuint = (t) => 1 - (1 - t) ** 5;
 const easeOutCubic = (t) => 1 - (1 - t) ** 3;
+const easeInCubic = (t) => t * t * t;
+const lerp = (a, b, t) => a + (b - a) * t;
 
 // The catalogue the Settings picker reads (mirrors THEMES). `blob` and `none`
 // are real ids handled in game.js; the middle three are this module's.
@@ -200,4 +202,113 @@ export class CellFill {
       ctx.restore();
     }
   }
+}
+
+// Per-puff constants.
+const PUFF_DUR = 420;        // ms at speed 1
+const PUFF_PARTICLES = 11;
+const PUFF_SPRAY_AT = 0.34;  // fraction spent flying OUT before the suck-in
+
+/**
+ * A quick spray of paint particles: the "particle blob" that plays when taps
+ * pile up faster than the full-picture Burst can keep up (game.js caps how many
+ * Bursts run at once; the overflow tap gets one of these instead). It reads as a
+ * little wet flick: a handful of droplets fling out of the tap point, then get
+ * pulled into the cell and vanish.
+ *
+ * The cell a Puff decorates is ALREADY committed by game.js before the Puff is
+ * created, so a Puff never fills or commits anything; it is pure decoration.
+ * That is the whole point: it is cheap enough to stack without the whole-canvas
+ * cost of a Burst (no scratch layer, no lighting passes, no full-canvas
+ * gradients, no upscale, just a few flat circles). It duck-types the same
+ * interface as Burst/CellFill (`elapsed`, `speed`, `filled`, `done`, a `shake`
+ * getter, `update`, `drawFill`, `drawBlobs`), so the frame loop and board drive
+ * it with no special-casing.
+ */
+export class Puff {
+  /**
+   * @param {object} o
+   * @param {{x:number,y:number}} o.origin  tap point (picture space)
+   * @param {{x:number,y:number}} o.sink    cell anchor the spray collapses into
+   * @param {string} o.colour               the paint hex
+   * @param {number} o.reach                anchor→furthest-corner distance (sets spray size)
+   * @param {number} [o.speed]              playback rate; 1 = normal
+   */
+  constructor(o) {
+    this.origin = o.origin;
+    this.sink = o.sink;
+    this.colour = o.colour;
+    this.speed = o.speed ?? 1;
+
+    this.elapsed = 0;
+    this.filled = false;   // a Puff decorates an already-filled cell; never commits
+    this.done = false;
+    this.dur = PUFF_DUR;
+
+    // Spread scales with the cell so a puff on a tiny cell stays tight and one
+    // on a big cell fills it, but kept modest: this is a flick of paint, not
+    // an explosion.
+    const spread = Math.max(14, (o.reach ?? 20) * 1.6);
+    this.parts = [];
+    for (let i = 0; i < PUFF_PARTICLES; i++) {
+      // Evenly fanned with a little jitter, so the spray reads as a ring of
+      // droplets rather than a random scatter.
+      const a = (i / PUFF_PARTICLES) * TAU + Math.random() * 0.5;
+      const d = spread * (0.35 + Math.random() * 0.65);
+      this.parts.push({
+        mx: o.origin.x + Math.cos(a) * d,        // the point it flings out to
+        my: o.origin.y + Math.sin(a) * d * 0.9,
+        r: spread * (0.06 + Math.random() * 0.09),
+        phase: Math.random() * TAU,
+      });
+    }
+  }
+
+  /** These stay put; no screen shake. */
+  get shake() { return 0; }
+
+  /** 0..1 across the whole effect. */
+  get progress() { return clamp01(this.elapsed / this.dur); }
+
+  update(dt) {
+    this.elapsed += dt * this.speed;
+    if (this.elapsed >= this.dur) this.done = true;
+    return !this.done;
+  }
+
+  /**
+   * Drawn in picture space (the board clips it to the picture rect). Cheap on
+   * purpose: a few flat circles, no gradient, no clip.
+   */
+  drawFill(ctx) {
+    const p = this.progress;
+    ctx.save();
+    ctx.fillStyle = this.colour;
+    for (const q of this.parts) {
+      let x, y, r;
+      if (p < PUFF_SPRAY_AT) {
+        // Fling out from the tap point, popping to full size.
+        const t = easeOutCubic(p / PUFF_SPRAY_AT);
+        x = lerp(this.origin.x, q.mx, t);
+        y = lerp(this.origin.y, q.my, t);
+        r = q.r * t;
+      } else {
+        // Get pulled into the cell and shrink away.
+        const t = easeInCubic((p - PUFF_SPRAY_AT) / (1 - PUFF_SPRAY_AT));
+        x = lerp(q.mx, this.sink.x, t);
+        y = lerp(q.my, this.sink.y, t);
+        r = q.r * (1 - t);
+      }
+      if (r < 0.5) continue;
+      // A touch of wobble so the droplet reads as wet, not mechanical.
+      const wob = 1 + Math.sin(q.phase + this.elapsed / 70) * 0.12;
+      ctx.beginPath();
+      ctx.arc(x, y, r * wob, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /** No flying-splat layer; see the module header and CellFill.drawBlobs. */
+  drawBlobs() {}
 }

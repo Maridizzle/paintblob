@@ -1,6 +1,6 @@
 import { Board } from './render.js';
 import { Burst, audioCue } from './paint-fx.js';
-import { CellFill, FILL_STYLES, DEFAULT_FILL } from './fill-fx.js';
+import { CellFill, Puff, FILL_STYLES, DEFAULT_FILL } from './fill-fx.js';
 import { Sfx } from './audio.js';
 import { ACHIEVEMENTS, Achievements, StreakTracker } from './achievements.js';
 import { accruePassiveHint, grantHints, spendHint, pickHintTarget } from './hints.js';
@@ -1435,6 +1435,15 @@ $('board').addEventListener('wheel', (e) => {
   ensureFrame();
 }, { passive: false });
 
+// Fast-click relief. The full-picture blob (Burst) re-renders the whole canvas
+// every frame, so several running at once drop frames on a phone: the "freezing
+// and glitching" fast tappers hit. Once this many Bursts are already in flight,
+// a further tap commits its cell straight away (auto-fill) and plays a cheap
+// in-cell particle Puff instead of stacking yet another explosion. Bump it down
+// if 5 still stutters on a low-end device; only the blob style is capped, since
+// the in-cell fill styles are already cheap.
+const MAX_LIVE_BLOBS = 5;
+
 /** Resolves a settled tap: paint the cell underneath it, if there is one. */
 function tryPaint(clientX, clientY, pointerType) {
   const { point, cell } = pointerToCell(clientX, clientY);
@@ -1540,6 +1549,29 @@ function launch(cell, point) {
     commitFill({ cell });
     ensureFrame();
     return;
+  }
+
+  // Clicking faster than the blob can play: past MAX_LIVE_BLOBS explosions in
+  // flight, fill the cell now and spray a cheap particle Puff over it rather
+  // than stacking a sixth whole-canvas render. The Puff is decoration only (the
+  // cell is committed here), so it carries applied=true and never re-fills.
+  if (style === 'blob') {
+    const liveBlobs = S.bursts.reduce((n, b) => n + (b instanceof Burst && !b.done ? 1 : 0), 0);
+    if (liveBlobs >= MAX_LIVE_BLOBS) {
+      commitFill({ cell });
+      const puff = new Puff({
+        origin: point,
+        sink: cell.anchor,
+        colour: board.hexOf(cell.colour),
+        reach: cell.reach,
+        speed: S.save.settings.speed ?? 1,
+      });
+      puff.cell = cell;
+      puff.applied = true;
+      S.bursts.push(puff);
+      ensureFrame();
+      return;
+    }
   }
 
   const anim = style === 'blob'
