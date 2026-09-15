@@ -59,6 +59,7 @@ const DEFAULT_SAVE = {
     customize: {
       race: 'human', gender: 'nb', height: 1, weight: 1, style: 'inked',
       hair: { style: 'short', colour: '#3b2a1a' },
+      facialhair: { style: 'none', colour: '#3b2a1a' },
       eyes: { style: 'round', colour: '#4a7a8c' },
       face: { shape: 'oval' },
       skin: { colour: '#e0b088' },

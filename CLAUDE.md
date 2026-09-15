@@ -261,7 +261,7 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
   `.tour`; Pip lives outside `.tour`, so `.companion` **redeclares** them (a warm
   chestnut) or `var()` falls back to black. Test hook: `window.__paintblobTest.pip =
   { roam, say, color }`.
-- **Wardrobe / avatar** — 70 garments across 9 slots (shirt, bottoms, dress,
+- **Wardrobe / avatar** — 73 garments across 9 slots (shirt, bottoms, dress,
   socks, shoes + outerwear, headwear, eyewear, neckwear); six render styles;
   fixed-accent multicolor. The Outfits shop groups by slot. A collection is a
   `line` tag on the item (street / formal / cozy / sport / atelier) plus a
@@ -270,6 +270,18 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
   replaces shirt + bottoms), every piece splattered in `STUDIO_PAINT` — Pip's
   five apron paints, exported from avatar.js and held equal to `apronMarkup()`
   by a test. `splats()` / `brush()` in avatar.js are the baked-accent helpers.
+  Eyewear now includes square (default near-black, so it reads as the
+  black-framed pair), rimless and browline styles.
+  - **Appearance (free, not shop items):** hair styles (`VARIANTS.hairStyle`)
+    include `braids` (twin plaits drawn in `hairBack`). **Facial hair** is its
+    own recolourable appearance slot — `customize.facialhair` (`{style,colour}`,
+    all-lowercase key because tap-to-recolour reads it straight off `data-slot`),
+    `VARIANTS.facialHair` = none / stubble / mustache / goatee / short / long /
+    full beard, drawn by `facialHairMarkup()` in a `part('facialhair', …)` over
+    the shirt but under a scarf. A chosen facial hair suppresses the dwarf's
+    racial beard (`M.chosenFacialHair`) so the two never stack. Save-shape lives
+    in both `DEFAULT_SAVE` literals + a boot `??=` backfill, like the other
+    customize fields.
 - **Dev mode** — `?dev` or type `devmode`; session-only (`S.dev`). A dev-only 🛠
   toolbar button (`#devMenuBtn`, gated in `syncDevPill`) opens the **Developer
   menu** (`renderDevPanel` via `openPanel('dev')`): launch any minigame on demand
