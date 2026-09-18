@@ -11,6 +11,15 @@ const path = require('node:path');
 const DEV = process.argv.includes('--dev');
 const MIN_SIZE = 380;
 
+// Render on the CPU rather than the GPU. A Windows driver reset (TDR) or a
+// laptop switching GPUs drops the canvas context, which blanked the picture
+// until a restart; software rendering has no GPU context to lose, so the reset
+// cannot happen. The renderer also recovers from a lost context on its own (see
+// Board.wireContextRecovery), but this removes the whole class of failure for
+// the desktop build. Must be called before the app is ready. The paint blob is
+// bounded by the concurrent-blob cap, so the CPU cost stays modest.
+app.disableHardwareAcceleration();
+
 // `electron . --smoke [out.png]` boots the window, fires a handful of clicks at
 // the picture, screenshots itself and exits non-zero on any renderer error.
 // The headless preview harness covers the effect in far more detail, but only

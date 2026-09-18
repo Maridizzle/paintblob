@@ -846,6 +846,24 @@ test('both DEFAULT_SAVE literals declare facial hair, and boot backfills it', ()
     'boot() must backfill customize.facialhair — an existing save replaces avatar wholesale');
 });
 
+test('the board recovers from a lost GPU canvas context', () => {
+  // A Windows driver reset (TDR) or a GPU switch drops the canvas context; with
+  // no recovery the picture stays blank until the app restarts. The board must
+  // cancel the loss (so the browser restores) and rebuild the offscreen base on
+  // restore, and the desktop build disables GPU acceleration outright.
+  const render = readSource('src/render.js');
+  assert.match(render, /addEventListener\('contextlost'/, 'render.js must listen for contextlost');
+  assert.match(render, /contextlost'[\s\S]{0,120}preventDefault\(\)/,
+    'contextlost must be cancelled or the browser never restores the context');
+  assert.match(render, /addEventListener\('contextrestored'/, 'render.js must listen for contextrestored');
+  assert.match(render, /contextrestored'[\s\S]{0,400}document\.createElement\('canvas'\)/,
+    'restore must rebuild the offscreen base with a fresh backing store');
+  assert.match(readSource('src/game.js'), /board\.onContextRestored =/,
+    'game.js must kick the frame loop when the context is restored');
+  assert.match(readSource('electron/main.cjs'), /app\.disableHardwareAcceleration\(\)/,
+    'the desktop build must render on the CPU so the GPU reset cannot blank it');
+});
+
 test('every customize row with more than four options is allowed to wrap', () => {
   // `.segmented` is overflow:hidden with no wrap, so a long row silently
   // drops its last buttons off the end rather than showing you it did. This
