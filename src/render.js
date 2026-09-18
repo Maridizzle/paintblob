@@ -95,6 +95,9 @@ export class Board {
     this.ctx = canvas.getContext('2d');
     this.base = document.createElement('canvas');
     this.baseCtx = this.base.getContext('2d');
+    this.lost = false;              // true while the GPU has dropped our context
+    this.onContextRestored = null;  // game.js hook: kick the frame loop on recovery
+    this.wireContextRecovery();
 
     this.puzzle = null;
     this.cells = [];
@@ -155,6 +158,39 @@ export class Board {
     this.cNumber = NUMBER;
     this.cNumberActive = NUMBER_ACTIVE;
     this.syncTheme();
+  }
+
+  /**
+   * Survive a lost canvas context. A Windows GPU driver reset (TDR), a laptop
+   * switching between integrated and discrete GPUs, or the display sleeping all
+   * drop the 2D context: Chromium blanks the canvas and, unless we cancel the
+   * loss event, never restores it — which is the "picture fades out and only a
+   * restart brings it back" bug. So we cancel the loss (opting in to
+   * restoration), and on restore re-acquire the visible context and REBUILD the
+   * offscreen base from scratch. The base is a detached canvas that may lose its
+   * own context with no event of its own to recover through, so re-grabbing it
+   * would keep drawing into the void; a fresh element guarantees a live backing.
+   * Game state is untouched, so drawBase() repaints the exact same picture.
+   */
+  wireContextRecovery() {
+    this.canvas.addEventListener('contextlost', (e) => {
+      e.preventDefault();
+      this.lost = true;
+    });
+    this.canvas.addEventListener('contextrestored', () => {
+      this.ctx = this.canvas.getContext('2d');
+      const w = this.base.width;
+      const h = this.base.height;
+      this.base = document.createElement('canvas');
+      this.base.width = w;
+      this.base.height = h;
+      this.baseCtx = this.base.getContext('2d');
+      this._pulseStripe = null;   // a cached pattern belongs to the dead context
+      this.lost = false;
+      this.dirty = true;
+      this.syncTheme();
+      this.onContextRestored?.();
+    });
   }
 
   /**
@@ -793,6 +829,9 @@ export class Board {
 
   draw(bursts, timeMs) {
     if (!this.puzzle) return;
+    // Context is gone; every draw call would be a no-op into a dead surface.
+    // Skip until contextrestored rebuilds the base and flips this back.
+    if (this.lost) return;
     // Numbers live on the base layer (redrawn only on change), so a timed
     // colour swap has to force that redraw itself when its window closes —
     // nothing else would ever notice the number needs to revert.

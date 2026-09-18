@@ -68,6 +68,9 @@ let api;
 const $ = (id) => document.getElementById(id);
 
 const board = new Board($('board'));
+// When the GPU context is lost and restored, the board rebuilds itself and
+// marks dirty; make sure the frame loop is running so the repaint actually lands.
+board.onContextRestored = () => ensureFrame();
 let sfx;
 let achievements;
 const streaks = new StreakTracker();
