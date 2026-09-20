@@ -4125,9 +4125,11 @@ function renderSettings(body) {
     themeSub.textContent = THEMES.find((t) => t.id === themeOr(settings.theme))?.blurb ?? '';
   };
   for (const t of THEMES) {
-    // Patina is the Dark-mode toggle's look now (below), not a pickable theme —
-    // choosing it here used to pin it and hide the story's chapter theme.
-    if (t.id === 'patina') continue;
+    // Patina is a freely-chosen dark look, always in the picker (no unlock). The
+    // separate Dark-mode toggle below applies the same patina look as a base
+    // WITHOUT pinning, so picking the chip here and flipping the toggle are two
+    // different intents: the chip pins patina everywhere (story included), the
+    // toggle keeps a story chapter's own theme.
     const unlocked = themeUnlocked(t.id, S.save) || S.dev; // dev mode opens every look
     const b = document.createElement('button');
     b.textContent = unlocked ? t.label : `🔒 ${t.label}`;
@@ -6596,15 +6598,6 @@ async function boot() {
   // app's base (out of story), while story chapters keep their own theme. See
   // applyTheme.
   S.save.settings.dark ??= false;
-  // Migration: patina used to be a pickable theme people chose FOR dark mode,
-  // which pinned it and suppressed the story's chapter look. It is the dark-mode
-  // toggle now, so carry a legacy patina pick over — their dark stays on and the
-  // story themes come back.
-  if (S.save.settings.theme === 'patina') {
-    S.save.settings.dark = true;
-    S.save.settings.theme = DEFAULT_THEME;
-    S.save.settings.themePinned = false;
-  }
   // Low-stim mode: one switch that hides STORY MODE and calms the visuals (a
   // plain-black look, a still hint, muted sound) while keeping the whole avatar
   // layer. Off by default; set once (e.g. for a player the story overwhelms)
