@@ -1156,14 +1156,14 @@
   {
     "id": "dusk-gate",
     "title": "The Dusk Gate",
-    "cells": 130,
-    "colours": 16,
+    "cells": 500,
+    "colours": 18,
     "thumb": [
-      "#daa029",
-      "#ebad1f",
-      "#f8cb48",
-      "#ffe89a",
-      "#9bf047"
+      "#22a9c9",
+      "#c2e3ed",
+      "#0e7195",
+      "#a2d3e4",
+      "#75bbd7"
     ],
     "difficulty": "normal",
     "themes": [
@@ -1174,14 +1174,14 @@
   {
     "id": "glowvine-path",
     "title": "The Glowvine Path",
-    "cells": 117,
-    "colours": 15,
+    "cells": 500,
+    "colours": 20,
     "thumb": [
-      "#daa029",
-      "#ebad1f",
-      "#f8cb48",
-      "#ffe89a",
-      "#9bf047"
+      "#3aecf9",
+      "#a6f6fb",
+      "#17d5ed",
+      "#70ecfa",
+      "#0cb6d4"
     ],
     "difficulty": "normal",
     "themes": [
@@ -1192,14 +1192,14 @@
   {
     "id": "the-hoarder",
     "title": "The Hoarder",
-    "cells": 144,
-    "colours": 15,
+    "cells": 500,
+    "colours": 22,
     "thumb": [
-      "#daa029",
-      "#ebad1f",
-      "#e5b83e",
-      "#f8cb48",
-      "#9bf047"
+      "#2190ca",
+      "#1272a9",
+      "#48a6db",
+      "#0d598d",
+      "#82bbe8"
     ],
     "difficulty": "normal",
     "themes": [
@@ -1210,14 +1210,14 @@
   {
     "id": "mandala-clearing",
     "title": "The Mandala Clearing",
-    "cells": 122,
-    "colours": 15,
+    "cells": 500,
+    "colours": 17,
     "thumb": [
-      "#daa029",
-      "#ebad1f",
-      "#f8cb48",
-      "#ffe89a",
-      "#9bf047"
+      "#c4eeed",
+      "#329ca9",
+      "#42b2c0",
+      "#67c9d5",
+      "#2a8d9b"
     ],
     "difficulty": "normal",
     "themes": [
@@ -1228,14 +1228,14 @@
   {
     "id": "moth-lantern",
     "title": "The Moth Lantern",
-    "cells": 108,
+    "cells": 500,
     "colours": 18,
     "thumb": [
-      "#c0861d",
-      "#daa029",
-      "#ebad1f",
-      "#f8cb48",
-      "#ffe89a"
+      "#573823",
+      "#897a54",
+      "#e0ce9c",
+      "#b9ae7e",
+      "#23220e"
     ],
     "difficulty": "normal",
     "themes": [
