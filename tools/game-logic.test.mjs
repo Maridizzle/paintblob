@@ -1051,6 +1051,25 @@ test('both DEFAULT_SAVE literals declare a theme, and boot backfills it', () => 
     'the theme must reach the DOM through themeOr, so a stale id cannot strand the app');
 });
 
+test('dark mode is its own axis, separate from the theme picker', () => {
+  for (const f of ['src/platform.js', 'electron/main.cjs']) {
+    assert.match(readSource(f), /dark: false/, `${f} is missing dark in DEFAULT_SAVE.settings`);
+  }
+  const game = readSource('src/game.js');
+  assert.match(game, /settings\.dark \?\?= false/, 'boot() must backfill settings.dark');
+  // A legacy patina pick (which used to pin and hide the story look) migrates to
+  // the dark toggle.
+  assert.match(game, /settings\.theme === 'patina'[\s\S]{0,140}settings\.dark = true/,
+    'boot() must migrate a pinned patina theme to dark mode');
+  // applyTheme uses dark as the out-of-story base and never overrides the story
+  // chapter theme with it.
+  assert.match(game, /s\.dark \? 'patina' : DEFAULT_THEME/,
+    'applyTheme must use dark mode as the base look, not override the chapter theme');
+  // Patina is the toggle now, not a pickable chip; the toggle exists.
+  assert.match(game, /if \(t\.id === 'patina'\) continue;/, 'the theme picker must skip patina');
+  assert.match(game, /Dark mode<\/div>/, 'Settings must offer a Dark mode toggle');
+});
+
 test('low-stim mode: shipped in both saves, backfilled, hides story but keeps the avatar', () => {
   // The save-shape four-places rule, same as theme/overtime above.
   for (const f of ['src/platform.js', 'electron/main.cjs']) {
@@ -1372,7 +1391,7 @@ test('chapters unlock one leg at a time, gated on the previous boss', () => {
 
 test('chapterTheme hands out the chapter look, ready to switch at an act break', () => {
   assert.equal(chapterTheme(getChapter(1), { progress: {} }), 'fae');
-  assert.equal(chapterTheme(getChapter(2), { progress: {} }), 'bloom', 'chapter two wears bloom in Act I');
+  assert.equal(chapterTheme(getChapter(2), { progress: {} }), 'cobalt', 'chapter two wears cobalt in Act I');
   // Clearing the act break is the moment the light goes out of the world: the
   // chapter flips from its first look to its second, and both must be real.
   const ch2 = getChapter(2);

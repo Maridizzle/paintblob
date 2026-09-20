@@ -155,10 +155,19 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
 - **Themes** — `themes.js`: `void` (default), `fae`, `cobalt` (unlocked by beating
   the chapter-one boss), `bloom` (Ch2 Act I's bioluminescent jungle; unlocked by
   the Hoarder), `nightcut` (Ch2 Act II's strict black-and-white; unlocked by
-  The Fade once it ships) and `patina` (a freely-chosen **dark mode**, no unlock —
-  black velvet under hammered copper, rivet-and-seam surfaces, verdigris-green
-  edge). `settings.themePinned` (set when the player picks any theme) makes their
-  choice win in story too, instead of the chapter theme.
+  The Fade once it ships) and `patina` (black velvet under hammered copper,
+  rivet-and-seam surfaces, verdigris-green edge). `settings.themePinned` (set when
+  the player picks any theme) makes their choice win in story too, instead of the
+  chapter theme.
+  - **Dark mode is its own axis, not a theme.** `settings.dark` + a **Dark mode**
+    toggle in Settings (separate from the theme chips) applies `patina` as the
+    app's base look WITHOUT pinning, so `applyTheme` keeps handing a story chapter
+    its own theme (cobalt in Ch2, etc.) while dark mode dresses everything else.
+    Patina is therefore NOT in the theme picker any more; it is what the toggle
+    applies. Resolution order in `applyTheme`: low-stim → default; in-story &&
+    !pinned → chapter theme; else pinned ? chosen theme : dark ? patina : default.
+    A boot migration carries a legacy `theme:'patina'` pick over to `dark:true`
+    (it used to be pinned, which suppressed the story look — the bug this fixes).
   - **Patina blacks the canvas.** The unpainted picture (paper, blank cells,
     outlines, numbers) is the ONE place CSS reaches the `<canvas>`: render.js
     holds light-mode fallback constants, exposes `--canvas-paper` /
