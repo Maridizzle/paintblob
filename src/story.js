@@ -177,11 +177,15 @@ export const CHAPTERS = [
     label: 'Two',
     title: 'Into the Dusk',
     place: 'the dusk road',
-    theme: 'bloom',
+    // Act I wears cobalt: deep-space black lit by crystalline blue, matching the
+    // aqua "Elyria" art the stones are painted in. (bloom, the old green look,
+    // stays a wearable reward theme unlocked by the Hoarder; it is just no longer
+    // the chapter's ambient.)
+    theme: 'cobalt',
     // The act break. Beating the Hoarder is the moment the colour goes out of the
-    // world, so the chapter's look flips from bloom to nightcut (carved black and
-    // white) the next time the board opens — see chapterTheme — and the act-break
-    // scene then plays over the already-dark board: first the shock, then Ee.
+    // world, so the chapter's look flips to nightcut (carved black and white) the
+    // next time the board opens (see chapterTheme), and the act-break scene then
+    // plays over the already-dark board: first the shock, then Ee.
     actBreak: 'the-hoarder',
     theme2: 'nightcut',
     // Act I reuses The Swap for now; the dusk-flavoured "Last Light" round (and

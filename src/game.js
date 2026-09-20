@@ -4125,6 +4125,9 @@ function renderSettings(body) {
     themeSub.textContent = THEMES.find((t) => t.id === themeOr(settings.theme))?.blurb ?? '';
   };
   for (const t of THEMES) {
+    // Patina is the Dark-mode toggle's look now (below), not a pickable theme —
+    // choosing it here used to pin it and hide the story's chapter theme.
+    if (t.id === 'patina') continue;
     const unlocked = themeUnlocked(t.id, S.save) || S.dev; // dev mode opens every look
     const b = document.createElement('button');
     b.textContent = unlocked ? t.label : `🔒 ${t.label}`;
@@ -4152,6 +4155,25 @@ function renderSettings(body) {
   themeText.append(themeLabelEl, themeSub);
   themeRow.append(themeText, themeSeg);
   body.append(themeRow);
+
+  // Dark mode: its own axis, not a theme. On = the patina dark look as the base;
+  // a story chapter still shows its own theme (see applyTheme). Kept separate
+  // from the picker so choosing dark never pins over the story's look.
+  const darkRow = row();
+  const darkText = document.createElement('div');
+  darkText.className = 'grow';
+  darkText.innerHTML = '<div class="label">Dark mode</div>'
+    + '<div class="sub">A black, copper-lit look. Story chapters keep their own colours.</div>';
+  const darkSw = document.createElement('div');
+  darkSw.className = `switch ${settings.dark ? 'on' : ''}`;
+  darkRow.append(darkText, darkSw);
+  darkRow.addEventListener('click', () => {
+    settings.dark = !settings.dark;
+    darkSw.classList.toggle('on', settings.dark);
+    applyTheme();
+    persist();
+  });
+  body.append(darkRow);
 
   toggle('Sound', 'sound', (on) => {
     sfx.setEnabled(on);
@@ -4315,11 +4337,18 @@ function applyTheme() {
   // Low-stim mode forces the calm default look no matter what is saved or which
   // chapter is open — a bright theme jumping out is exactly the kind of surprise
   // it exists to spare that player.
-  const id = S.save.settings.lowStim
+  const s = S.save.settings;
+  const id = s.lowStim
     ? DEFAULT_THEME
-    : (S.inStory && !S.save.settings.themePinned)
+    // In a story chapter (and not pinned), the chapter's own look wins — dark
+    // mode deliberately does NOT override it, so Chapter Two keeps its cobalt.
+    : (S.inStory && !s.themePinned)
       ? chapterTheme(getChapter(S.save.story.chapter), S.save)
-      : S.save.settings.theme;
+      // Out of story: a pinned theme wins; otherwise dark mode's patina is the
+      // base, falling back to the plain default look.
+      : s.themePinned
+        ? s.theme
+        : s.dark ? 'patina' : DEFAULT_THEME;
   document.documentElement.dataset.theme = themeOr(id);
   // The canvas can't read CSS custom properties, so hand the board the theme's
   // paper/blank/edge/number colours and repaint the base layer — this is what
@@ -6561,8 +6590,21 @@ async function boot() {
   // themeOr does that, so this only has to fill the blank.
   S.save.settings.theme ??= DEFAULT_THEME;
   // false until the player picks a theme; once true their choice wins in story
-  // mode too, rather than the chapter overriding it (accessibility: dark mode).
+  // mode too, rather than the chapter overriding it.
   S.save.settings.themePinned ??= false;
+  // Dark mode is its own axis now, not a theme: on = the patina dark look as the
+  // app's base (out of story), while story chapters keep their own theme. See
+  // applyTheme.
+  S.save.settings.dark ??= false;
+  // Migration: patina used to be a pickable theme people chose FOR dark mode,
+  // which pinned it and suppressed the story's chapter look. It is the dark-mode
+  // toggle now, so carry a legacy patina pick over — their dark stays on and the
+  // story themes come back.
+  if (S.save.settings.theme === 'patina') {
+    S.save.settings.dark = true;
+    S.save.settings.theme = DEFAULT_THEME;
+    S.save.settings.themePinned = false;
+  }
   // Low-stim mode: one switch that hides STORY MODE and calms the visuals (a
   // plain-black look, a still hint, muted sound) while keeping the whole avatar
   // layer. Off by default; set once (e.g. for a player the story overwhelms)

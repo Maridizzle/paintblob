@@ -1156,7 +1156,7 @@
   {
     "id": "dusk-gate",
     "title": "The Dusk Gate",
-    "cells": 500,
+    "cells": 150,
     "colours": 18,
     "thumb": [
       "#22a9c9",
@@ -1174,14 +1174,14 @@
   {
     "id": "glowvine-path",
     "title": "The Glowvine Path",
-    "cells": 500,
-    "colours": 20,
+    "cells": 150,
+    "colours": 18,
     "thumb": [
       "#3aecf9",
-      "#a6f6fb",
       "#17d5ed",
       "#70ecfa",
-      "#0cb6d4"
+      "#0cb6d4",
+      "#51dcf8"
     ],
     "difficulty": "normal",
     "themes": [
@@ -1192,7 +1192,7 @@
   {
     "id": "the-hoarder",
     "title": "The Hoarder",
-    "cells": 500,
+    "cells": 180,
     "colours": 22,
     "thumb": [
       "#2190ca",
@@ -1210,14 +1210,14 @@
   {
     "id": "mandala-clearing",
     "title": "The Mandala Clearing",
-    "cells": 500,
-    "colours": 17,
+    "cells": 150,
+    "colours": 16,
     "thumb": [
-      "#c4eeed",
-      "#329ca9",
-      "#42b2c0",
-      "#67c9d5",
-      "#2a8d9b"
+      "#c5edeb",
+      "#6ccbd4",
+      "#51bdca",
+      "#227e8b",
+      "#2b8f9d"
     ],
     "difficulty": "normal",
     "themes": [
@@ -1228,14 +1228,14 @@
   {
     "id": "moth-lantern",
     "title": "The Moth Lantern",
-    "cells": 500,
-    "colours": 18,
+    "cells": 130,
+    "colours": 15,
     "thumb": [
-      "#573823",
-      "#897a54",
-      "#e0ce9c",
-      "#b9ae7e",
-      "#23220e"
+      "#3a2813",
+      "#c5b584",
+      "#e7e7c3",
+      "#0f160e",
+      "#a2d4c2"
     ],
     "difficulty": "normal",
     "themes": [
