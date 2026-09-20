@@ -1273,12 +1273,12 @@ test('the advance door is one predicate — earned AND released, dev bypasses bo
     'boot clamps a non-dev save off an un-released chapter');
 });
 
-test('chapter two stays locked until its art ships', () => {
-  // A tripwire: Chapter Two ships with placeholder art, so it must NOT be
-  // released. The PR that bakes real art flips this and updates this test in the
-  // same diff — so the gate can never melt away by accident.
-  assert.equal(getChapter(2).released, false, 'chapter two is held back until its pictures are painted');
-  assert.equal(chapterReleased(getChapter(2)), false, 'chapterReleased agrees it is not shipped');
+test('chapter two is shipped now its real art is baked', () => {
+  // Was gated while it carried placeholder art. The art PR dropped the
+  // `released: false` flag, so Chapter Two now counts as released like chapter
+  // one. It still only OPENS once chapter one is finished (chapterUnlocked).
+  assert.equal(chapterReleased(getChapter(2)), true, 'chapter two ships now its pictures are painted');
+  assert.equal(getChapter(2).released, undefined, 'the released flag is gone, not set false');
   assert.equal(chapterReleased(getChapter(1)), true, 'chapter one (no flag) is released');
   assert.equal(chapterReleased({}), true, 'a chapter with no released flag counts as released');
 });

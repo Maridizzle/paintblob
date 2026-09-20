@@ -170,12 +170,10 @@ export const CHAPTERS = [
   // hand is, what is past it) lives in that bible; keep the two in step.
   {
     id: 2,
-    // NOT YET REACHABLE. Act I ships with placeholder art (make-ch2-puzzles.mjs),
-    // and Chapter Two must not open to players until real art is baked. The
-    // board teases it; the advance door stays shut (dev mode excepted). The PR
-    // that bakes the real art flips this to `true` (or deletes the line) and
-    // updates the "stays locked" test in the same diff. See docs/story-art-prompts.md.
-    released: false,
+    // Chapter Two's real art is baked (the aqua "Elyria" renders; see
+    // docs/story-art-prompts.md), so it ships like chapter one: with no
+    // `released` flag it counts as released. It still only OPENS once chapter
+    // one's boss is beaten (chapterUnlocked); dev mode aside.
     label: 'Two',
     title: 'Into the Dusk',
     place: 'the dusk road',
