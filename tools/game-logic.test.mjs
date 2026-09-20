@@ -1057,16 +1057,17 @@ test('dark mode is its own axis, separate from the theme picker', () => {
   }
   const game = readSource('src/game.js');
   assert.match(game, /settings\.dark \?\?= false/, 'boot() must backfill settings.dark');
-  // A legacy patina pick (which used to pin and hide the story look) migrates to
-  // the dark toggle.
-  assert.match(game, /settings\.theme === 'patina'[\s\S]{0,140}settings\.dark = true/,
-    'boot() must migrate a pinned patina theme to dark mode');
   // applyTheme uses dark as the out-of-story base and never overrides the story
   // chapter theme with it.
   assert.match(game, /s\.dark \? 'patina' : DEFAULT_THEME/,
     'applyTheme must use dark mode as the base look, not override the chapter theme');
-  // Patina is the toggle now, not a pickable chip; the toggle exists.
-  assert.match(game, /if \(t\.id === 'patina'\) continue;/, 'the theme picker must skip patina');
+  // Patina is a pickable theme again: the picker must NOT skip it (a stray
+  // continue would hide the green-border look people choose here), and a patina
+  // pick must survive reload, so boot() must NOT re-run the old migration that
+  // reset a patina pick back to dark-mode + default.
+  assert.doesNotMatch(game, /=== 'patina'\) continue;/, 'the theme picker must not skip patina');
+  assert.doesNotMatch(game, /settings\.theme === 'patina'[\s\S]{0,140}settings\.dark = true/,
+    'boot() must not migrate a patina pick away (it is a real theme now)');
   assert.match(game, /Dark mode<\/div>/, 'Settings must offer a Dark mode toggle');
 });
 

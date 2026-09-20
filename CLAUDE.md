@@ -163,11 +163,12 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
     toggle in Settings (separate from the theme chips) applies `patina` as the
     app's base look WITHOUT pinning, so `applyTheme` keeps handing a story chapter
     its own theme (cobalt in Ch2, etc.) while dark mode dresses everything else.
-    Patina is therefore NOT in the theme picker any more; it is what the toggle
-    applies. Resolution order in `applyTheme`: low-stim → default; in-story &&
-    !pinned → chapter theme; else pinned ? chosen theme : dark ? patina : default.
-    A boot migration carries a legacy `theme:'patina'` pick over to `dark:true`
-    (it used to be pinned, which suppressed the story look — the bug this fixes).
+    Patina is BOTH a pickable theme chip (choose it and it pins, winning
+    everywhere including story) AND what the Dark mode toggle applies as a base
+    without pinning (a story chapter then keeps its own theme). Resolution order in
+    `applyTheme`: low-stim → default; in-story && !pinned → chapter theme; else
+    pinned ? chosen theme : dark ? patina : default. There is no patina migration:
+    a patina pick is a real theme now, so it must survive reload untouched.
   - **Patina blacks the canvas.** The unpainted picture (paper, blank cells,
     outlines, numbers) is the ONE place CSS reaches the `<canvas>`: render.js
     holds light-mode fallback constants, exposes `--canvas-paper` /
