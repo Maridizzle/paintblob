@@ -34,13 +34,12 @@ Two pieces:
 ## Sign-in
 
 - **Decided:** a separate repo; cost of Railway is not a constraint.
-- **Open:** which sign-in methods.
-  - *Sign in with Google* requires the player to have a Google account.
-    Nearly universal on Android, not universal on iPhone or desktop.
-  - *Email magic link* works for anyone with an email address (no password,
-    no third-party account) but needs an email-sending service account.
-  - Recommendation: magic link as the baseline, Google as the one-tap option
-    beside it. Either alone is also fine.
+- **Decided:** both sign-in methods.
+  - *Email magic link* is the baseline: works for anyone with an email
+    address (no password, no third-party account). Needs an email-sending
+    service account (**open:** which provider).
+  - *Sign in with Google* sits beside it as the one-tap option. Requires the
+    player to have a Google account; nearly universal on Android.
 - Sessions are bearer tokens held in the PWA's existing IndexedDB `kv` store,
   not cookies. Cross-origin cookies from an installed PWA are unreliable,
   especially on iOS.
@@ -82,20 +81,61 @@ A cloud backup that holds one copy is not a backup. Keeping the last ~10
 revisions per account (jsonb rows, a few hundred KB each) turns it into a
 safety net and makes "roll back to yesterday" a one-line call.
 
-## Data model (PostgreSQL)
+## Storage
+
+Three kinds of data, three homes. Postgres only where rows and transactions
+are the point.
+
+### PostgreSQL: account tables
 
 ```
 users         id, email, google_sub (nullable), display_name, created_at
 sessions      token_hash, user_id, expires_at
 magic_codes   code_hash, email, expires_at, used_at
-saves         user_id, revision, body jsonb, created_at     (prune to last N per user)
-entitlements  user_id, pack_id, source, granted_at          source: 'grant' | 'steam' | 'stripe'
-packs         id, kind ('puzzle' | 'story' | 'cosmetic'), title, payload jsonb
+entitlements  user_id, pack_id, source, granted_at     source: 'grant' | 'steam' | 'stripe'
+packs         id, kind ('puzzle' | 'story' | 'cosmetic'), title, puzzle_ids
+saves         user_id, revision, body bytea, created_at  (prune to last N per user)
 ```
 
 `entitlements.source` is the Steam hedge: when Steam becomes the store, its
 ownership records are mirrored into this table with `source: 'steam'` and
 nothing else on the server or client changes.
+
+`packs` is a catalogue only. Pack content is not stored in the database.
+
+### Save bodies: an opaque blob behind a seam
+
+The save is never translated into rows. The client gzips the whole save JSON
+and uploads it; the server stores the bytes as-is and hands them back as-is.
+All reads and writes go through one module, `saveStore` (`put / get / list /
+prune`), backed by the `saves` table on day one. Blob-in-database is the
+first thing to outgrow, so when that day comes the bodies move to object
+storage and the row keeps a pointer; the change touches one file.
+
+### Pack content: static files
+
+A bundled puzzle is about 900 KB of JSON (up to 2 MB), which is a file, not
+a row. Puzzle packs live as files in the `paintblob-cloud` repo
+(`packs/<pack-id>/<puzzle-id>.json`), baked by the same `mapify` tooling as
+the bundled pictures and version-controlled with the server. The API serves a
+file only after checking the caller's entitlement. If packs ever become
+numerous they move to object storage; the route does not change. Story and
+cosmetic packs ship inside the game build and are only flagged on the server.
+
+### Backing up the database
+
+The database *is* the players' backup, so it needs one of its own. A second
+live database that mirrors the first (a replica) only covers the server
+dying; a bug that deletes rows is copied to the replica within a second. A
+real backup is a snapshot frozen in time and kept somewhere else: a nightly
+`pg_dump` to S3-compatible object storage (Backblaze B2 or Cloudflare R2,
+both cheap), retained for ~30 days. Whether Railway's Postgres includes
+automatic backups on the chosen plan is to be verified against their current
+docs before relying on it. This is a launch requirement, not a nice-to-have:
+nobody is told "your progress is safe in the cloud" until it exists.
+
+Deliberately not added: Redis, a queue, or a second database. At this scale
+they are complexity with no payoff.
 
 ## Client changes in this repository
 
@@ -109,17 +149,12 @@ nothing else on the server or client changes.
 | Settings panel | Account section: sign in / signed in as X / sync now / download my data / sign out / delete account. |
 | Pack unlock | Story and cosmetic packs: code and art ship in the build, gated on `entitlements`. Puzzle packs: fetched from `/content/puzzle/:id` and stored through the existing `savePuzzle` IndexedDB path so they play offline afterwards. |
 
-## Hosting the game (open)
+## Hosting the game (decided)
 
-There is no fixed public URL for the PWA today; the README suggests dragging
-`dist-web/` onto Netlify Drop. The API must know the game's origin (CORS, and
-Google's allowed-origins list if Google sign-in is used), so the game needs a
-permanent address. Options:
-
-- (a) a proper Netlify (or similar) site with a stable URL; CSP gains the API
-  origin, server CORS allows the game origin.
-- (b) the Railway service also serves `dist-web/`, so game and API share one
-  origin; no CSP change and no CORS at all. Couples the two deploys.
+The PWA lives at **https://paintblob.netlify.app/**. That origin goes in
+three places: the game's CSP `connect-src` gains the API origin, the server's
+CORS allow-list names `https://paintblob.netlify.app`, and the Google OAuth
+client lists it as an authorised JavaScript origin.
 
 ## Legal and privacy (do before real accounts exist)
 
@@ -142,10 +177,10 @@ permanent address. Options:
 
 1. Railway: project, service, Postgres plugin, `DATABASE_URL`, `ADMIN_KEY`,
    `SESSION_SECRET` env vars.
-2. If Google sign-in: a Google Cloud OAuth client ID (web application type)
-   listing the game's origin.
-3. If magic links: an email-sending service account and its API key.
-4. A permanent origin for the game (see Hosting).
+2. Google Cloud: an OAuth client ID (web application type) with
+   `https://paintblob.netlify.app` as an authorised JavaScript origin.
+3. An email-sending service account and its API key, for magic links.
+4. An S3-compatible object-storage bucket for nightly database dumps.
 
 ## Phasing
 
@@ -160,6 +195,7 @@ Each phase is its own PR and is reviewed and approved before it is pushed.
 
 ## Open decisions
 
-- Sign-in methods: Google, magic link, or both.
-- Where the game is hosted (option a or b above).
-- Email provider, if magic links are chosen.
+- Email provider for magic links.
+- Object-storage provider for database dumps.
+- Session length (proposed: 90 days, refreshed on use).
+- A 13+ checkbox on sign-in (recommended as the simplest COPPA posture).
