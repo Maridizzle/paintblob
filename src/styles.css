@@ -2989,6 +2989,50 @@ button {
 }
 .row.clickable:hover .dev-go { background: rgba(var(--accent-rgb), 0.14); }
 
+/* ============================================================ cloud account */
+
+/* Settings › Account (game.js renderAccount). Inputs and buttons that sit inside
+   a row, dressed like the finish card's secondary buttons. */
+.cloud-field { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.cloud-input {
+  flex: 1 1 160px; min-width: 0;
+  font: inherit; font-size: 13px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--edge-strong);
+  background: rgba(var(--chip-rgb), 0.5);
+  color: var(--text);
+}
+.cloud-input.code { flex: 0 1 130px; letter-spacing: 4px; font-variant-numeric: tabular-nums; }
+.cloud-input:focus { outline: none; border-color: rgba(var(--accent-rgb), 0.6); }
+.cloud-btn {
+  -webkit-app-region: no-drag;
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--edge-strong);
+  background: rgba(var(--chip-rgb), 0.5);
+  color: var(--text);
+  font-size: 12.5px; font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cloud-btn:hover { background: rgba(var(--accent-rgb), 0.14); border-color: rgba(var(--accent-rgb), 0.4); }
+.cloud-btn:disabled { opacity: 0.5; cursor: default; }
+.cloud-btn.wide { flex: 1 1 auto; text-align: center; }
+.row.cloud-device { padding-left: 24px; }
+
+/* privacy.html: a plain readable page in the app's colours, opened from the
+   Account section. Body class scopes it so nothing here touches the game. */
+body.privacy { display: block; overflow: auto; background: var(--bg, #121216); color: var(--text, #eee); }
+.privacy-page { max-width: 640px; margin: 0 auto; padding: 28px 18px 60px; line-height: 1.55; font-size: 15px; }
+.privacy-page h1 { font-size: 24px; margin: 0 0 6px; }
+.privacy-page h2 { font-size: 16px; margin: 26px 0 8px; color: var(--accent, #7fd); }
+.privacy-page ul { padding-left: 20px; }
+.privacy-page li { margin: 6px 0; }
+.privacy-updated { color: var(--muted, #999); font-size: 13px; margin: 0 0 18px; }
+.privacy-sign { margin-top: 36px; color: var(--muted, #999); font-style: italic; }
+
 /* ================================================================ the swap */
 
 /* The Swap reuses Overtime's overlay, card, head, timer, hint and .won/.lost

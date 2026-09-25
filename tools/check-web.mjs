@@ -74,6 +74,12 @@ page.on('console', (m) => {
 });
 page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
 
+// The cloud account is opt-in: a signed-out session must never call it. Every
+// request to the API origin is recorded and asserted empty at the end.
+const CLOUD = 'https://paintblob-cloud-production.up.railway.app';
+const cloudHits = [];
+page.on('request', (r) => { if (r.url().startsWith(CLOUD)) cloudHits.push(r.url()); });
+
 const check = (label, ok, detail = '') => {
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}${detail ? ` — ${detail}` : ''}`);
   if (!ok) problems.push(`check failed: ${label} ${detail}`);
@@ -1194,6 +1200,36 @@ check('low-stim: story-mode chrome (the Story⇄Free swap) is hidden', ls.swap =
 check('low-stim: the app background is flat black — no laser streaks', ls.bg === 'none', ls.bg);
 check('low-stim: the panels (Settings, avatar menu) are flat black too', ls.panelBg === 'none', ls.panelBg);
 await page.screenshot({ path: path.join(OUT, 'low-stim.png') });
+
+/* ------------------------------------------------------------ cloud account */
+
+// Settings is still open from the low-stim block. Signed out, the Account
+// section shows the 13+ gate, the email sign-in and the privacy link, no
+// Google button (no client id is baked into this build) and nothing signed in.
+const acct = await page.evaluate(() => {
+  const rows = [...document.querySelectorAll('#panelBody .row')];
+  const find = (re) => rows.find((r) => re.test(r.textContent));
+  const head = find(/Cloud account/);
+  head?.scrollIntoView();
+  return {
+    head: !!head,
+    gate: !!find(/I am 13 or older/),
+    email: !!document.querySelector('#panelBody input[type="email"]'),
+    google: !!find(/Continue with Google/),
+    privacy: !!find(/Privacy & your data/),
+    signedIn: !!find(/Signed in as/),
+  };
+});
+check('cloud: Settings shows the signed-out Account section',
+  acct.head && acct.gate && acct.email && acct.privacy, JSON.stringify(acct));
+check('cloud: nothing signed in, and no Google button without a client id', !acct.signedIn && !acct.google);
+await page.screenshot({ path: path.join(OUT, 'account.png') });
+check('cloud: a signed-out session never calls the cloud', cloudHits.length === 0, cloudHits.join(' '));
+const builtIndex = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
+check('cloud: the built CSP allows the cloud origin', builtIndex.includes(`connect-src 'self' ${CLOUD}`));
+check('cloud: privacy.html ships and is precached',
+  fs.existsSync(path.join(WEB, 'privacy.html'))
+  && fs.readFileSync(path.join(WEB, 'sw.js'), 'utf8').includes('"privacy.html"'));
 
 await browser.close();
 server.close();

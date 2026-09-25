@@ -360,6 +360,26 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
   it **catches a brand-new player up silently** (no splash for a game they just
   met). Reachable any time from a badged title-screen link and a Settings row
   (both `data-act="news"` / `openNews`). Adding an entry is data-only.
+- **Cloud account (opt-in, PWA only)** — `cloud.js` (pure helpers + the API
+  client) + `game.js` + the separate server repo `Maridizzle/paintblob-cloud`
+  (design: `docs/cloud-accounts.md`). **The local save is the source of
+  truth**; the cloud holds a copy with a revision counter. `S.save.cloud =
+  { revision, syncedAt, dirty }` is a save-shape key (both `DEFAULT_SAVE`s, a
+  boot `??=`, AND the `persist()` write-set); the session token lives in the
+  IndexedDB `kv` store via `platform.js` `kvGet/kvSet/kvDel` (web only, so
+  `cloud` is null on desktop and nothing renders). `cloudBoot()` runs FIRST in
+  `boot()`, right after `readSave`, handling the Google return hash and the
+  `?magic=` link, then `syncPlan()`: `pull` replaces the save in place, `push`
+  schedules an upload, `conflict` asks via `confirmModal` once `hideTitle()`
+  runs, with **Keep this device** as the OK button and "use the cloud copy"
+  only in Settings › Account. `persist()` marks `dirty` in the same flush and
+  debounces `syncCloud()` 10 s; hidden-tab flushes it. `cloudLocalDirty()` also
+  counts a never-synced save that has progress, so a first sign-in can never
+  silently replace local progress. Google sign-in is a **redirect** (no
+  third-party script; CSP stays `script-src 'self'`); `GOOGLE_CLIENT_ID` in
+  `cloud.js` (empty hides the button). `renderAccount()` is the Settings
+  section. `privacy.html` ships beside the app. `check:web` asserts a
+  signed-out run never calls the cloud origin.
 
 ## Release & branch workflow — READ THIS
 

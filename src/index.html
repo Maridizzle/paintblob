@@ -9,10 +9,12 @@
   <meta name="theme-color" content="#121216" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <!-- connect-src covers fetching bundled puzzles when served over http;
-       Electron uses IPC and never needs it. -->
+  <!-- connect-src covers fetching bundled puzzles when served over http, and
+       the cloud account API (cloud.js; opt-in, only ever called signed in).
+       Electron uses IPC and never needs either. Google sign-in is a plain
+       top-level redirect, which CSP does not govern, so no script-src change. -->
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'" />
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://paintblob-cloud-production.up.railway.app; manifest-src 'self'; worker-src 'self'" />
   <title>paintblob</title>
   <link rel="icon" href="data:," />
   <link rel="stylesheet" href="styles.css" />

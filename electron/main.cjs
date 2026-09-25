@@ -63,6 +63,7 @@ const DEFAULT_SAVE = {
   story: { chapter: 1, seen: {} },   // story mode: current chapter, openings seen
   paints: {},                        // special-paint inventory: id -> uses left
   stickers: {},                      // sticker-pack inventory: packId -> placements left
+  cloud: { revision: 0, syncedAt: null, dirty: false }, // cloud sync marker (cloud.js); unused on desktop
   bounds: null,
   avatar: {
     customize: {

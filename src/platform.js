@@ -27,6 +27,10 @@ const DEFAULT_SAVE = {
   // Sticker-pack inventory: packId → placements remaining. A picture's placed
   // stickers live on its progress entry (`stickers`), like `fx` for paints.
   stickers: {},
+  // Cloud sync marker (cloud.js): the server revision this device last synced
+  // with, when, and whether the local save has changed since. Session token
+  // lives in the kv store, never in the save (a save is uploaded whole).
+  cloud: { revision: 0, syncedAt: null, dirty: false },
   bounds: null,
   avatar: {
     customize: {
@@ -290,6 +294,12 @@ async function webPlatform() {
       await idbSet(db, 'kv', 'save', save);
       return true;
     },
+
+    // Small named values beside the save (the cloud session token). Web only:
+    // the desktop build has no cloud account, and game.js gates on kvGet.
+    kvGet: (key) => idbGet(db, 'kv', key),
+    kvSet: (key, value) => idbSet(db, 'kv', key, value),
+    kvDel: (key) => idbDel(db, 'kv', key),
 
     // Window management has no meaning in a browser tab. The chrome that would
     // drive these is hidden, but the methods stay so nothing has to null-check.

@@ -161,17 +161,34 @@ progress is safe in the cloud" until it exists.
 Deliberately not added: Redis, a queue, or a second database. At this scale
 they are complexity with no payoff.
 
-## Client changes in this repository
+## Client changes in this repository (phase 2, built)
+
+The API is live at `https://paintblob-cloud-production.up.railway.app`.
 
 | where | change |
 |---|---|
-| `src/index.html` CSP | `connect-src 'self'` blocks every call to the API. Add the API origin (or host the game on the same origin, see Hosting). First wall that will be hit. |
-| `src/cloud.js` (new) | `login*()`, `pushSave(save, rev)`, `pullSave()`, `manifest()`, `fetchPack(id)`. Token in IndexedDB `kv`. |
-| `game.js` `persist()` | After the local `writeSave`, if signed in, debounce a `pushSave` (about 10 s after the last paint, plus on `visibilitychange` to hidden). Local write stays first and unconditional. |
-| `game.js` `boot()` | If signed in, `pullSave()`; if the cloud revision is newer, offer to apply it through the existing `api.replaceSave` + reload path. |
-| `DEFAULT_SAVE` x2 + boot `??=` | One new key: `cloud: { revision: 0 }`. The usual save-shape rule: both `platform.js` and `electron/main.cjs` literals, plus the boot backfill. |
-| Settings panel | Account section: sign in / signed in as X / sync now / download my data / sign out / delete account. |
-| Pack unlock | Story and cosmetic packs: code and art ship in the build, gated on `entitlements`. Puzzle packs: fetched from `/content/puzzle/:id` and stored through the existing `savePuzzle` IndexedDB path so they play offline afterwards. |
+| `src/index.html` CSP | `connect-src` gains the API origin. `script-src` stays `'self'`: Google sign-in is a top-level redirect, which CSP does not govern. |
+| `src/cloud.js` (new) | Pure helpers (`syncPlan`, magic/Google URL parsing, gzip) and `createCloud()`: `auth.*`, `me`, `sessions`, `pull`, `push`, export, delete. Token in the IndexedDB `kv` store (`platform.js` `kvGet/kvSet/kvDel`, web only). `GOOGLE_CLIENT_ID` constant; empty hides the Google button. |
+| `game.js` `persist()` | Every flush sets `save.cloud.dirty = true` in the same write, then (signed in) debounces an upload 10 s; `visibilitychange` → hidden flushes a pending one. Local write stays first and unconditional. |
+| `game.js` `boot()` | `cloudBoot()` runs right after `readSave`, before anything reads the save: handles the Google return hash and `?magic=`, then `syncPlan`. `pull` replaces the save in place (no reload); `conflict` waits for `hideTitle()` and asks with **Keep this device** as OK and "use the cloud copy" only via Settings. |
+| `DEFAULT_SAVE` x2 + boot `??=` | `cloud: { revision: 0, syncedAt: null, dirty: false }`; also in the `persist()` write-set. |
+| Settings › Account | `renderAccount()`: 13+ switch gating both methods, Continue with Google (redirect), email → 6-digit code, signed-in status + Sync now, conflict buttons, devices list (revoke one / all others), Download my data, Sign out, Delete cloud account, Privacy link. |
+| `src/privacy.html` | Plain-language privacy page, opened from the Account section; ships and is precached. Two publish-time placeholders: the date and the support address. |
+| Pack unlock (phase 3) | Story and cosmetic packs: code and art ship in the build, gated on `entitlements`. Puzzle packs: fetched from `/content/puzzle/:id` and stored through the existing `savePuzzle` IndexedDB path so they play offline afterwards. |
+
+**"Dirty" is derived, not just stored:** `cloudLocalDirty()` is the flag OR
+(revision 0 AND the save has any painted picture). A player who updates into
+this build and signs into an account that already has a cloud copy therefore
+gets the conflict question, never a silent replacement of months of local
+progress. Signing in from Settings runs the same plan: an empty device takes
+the cloud copy, a device with progress and an empty account uploads, both
+with progress asks.
+
+**Known small noise:** boot bookkeeping (day streak) persists once per open,
+so a signed-in device uploads one small copy ~10 s after every launch. If the
+app is killed inside that window, the next launch on that device may see a
+low-stakes conflict (a streak counter). Acceptable; a later refinement can
+hash `progress` alone.
 
 ## Hosting the game (decided)
 
@@ -264,10 +281,14 @@ be unable to hurt anyone who ignores it:
 
 ## Phasing
 
-1. **Server skeleton + save sync.** Auth, `/save*`, `/me`, `/me/export`,
-   `DELETE /me`, tests. Roughly a full session.
-2. **Client account UI + sync.** `cloud.js`, Settings section, `persist()` and
-   `boot()` hooks, CSP, save-shape key, regression test for the write-set.
+1. **Server skeleton + save sync.** Done: `Maridizzle/paintblob-cloud`,
+   deployed on Railway.
+2. **Client account UI + sync.** Built in this repo (see above). Before it
+   goes live: paste the Google client ID into `GOOGLE_CLIENT_ID`, add
+   `https://paintblob.netlify.app/` as an authorised redirect URI on the
+   Google client, fill the two placeholders in `privacy.html`, replace the
+   `POSTMARK_TOKEN` / `MAIL_FROM` placeholders on Railway once the domain
+   exists, publish the Google consent screen the same day.
 3. **DLC manifest.** `packs`, `entitlements`, `codes`, `/content/*`,
    `/redeem`, `/admin/grant`, `/admin/codes`, client gating, the Redeem code
    box, and puzzle-pack fetch.
