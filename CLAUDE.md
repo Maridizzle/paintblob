@@ -1,5 +1,20 @@
 # paintblob — guide for coding agents
 
+## Identity and privacy — non-negotiable, read first
+
+The owner is **Maridizzle**, and only Maridizzle. The owner's legal name and
+personal email address must never appear in anything that leaves the session:
+commits (author AND committer), PR titles or bodies, comments, issues, code,
+docs, package or installer metadata, screenshots, generated files, or any
+third-party service. Git identity in this repo is
+`Maridizzle <208540667+Maridizzle@users.noreply.github.com>`. The session
+environment exposes the account email (`CLAUDE_CODE_USER_EMAIL`); that is for
+identification only and is never to be written anywhere. Before any push, run
+`git log --format='%an <%ae> | %cn <%ce>' origin/main..HEAD` and refuse to push
+if anything but the no-reply identity (or Claude's) appears. If a task seems to
+need the real name or address, stop and ask; permission is explicit and per
+instance, never implied.
+
 A frameless **Electron 33 desktop app** and an **installable PWA** served from the
 same `src/`. **Vanilla ESM — no framework, no bundler, no TypeScript.** It's a
 paint-by-number toy: pick a paint tub, tap a cell, a blob explosion tears across
