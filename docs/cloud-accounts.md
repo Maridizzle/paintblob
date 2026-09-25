@@ -326,10 +326,15 @@ be unable to hurt anyone who ignores it:
    Google client (both done), replace the `POSTMARK_TOKEN` / `MAIL_FROM`
    placeholders on Railway once the domain exists, publish the Google consent
    screen the same day.
-3. **DLC manifest.** `packs` (with `adult`), `entitlements`, `codes`,
-   `/content/*`, `/redeem` (with the 18+ assertion for adult packs and
-   `adult_gate_at`), `/admin/grant`, `/admin/codes`, client gating, the
-   Redeem code box, the adult first-open confirm, and puzzle-pack fetch.
+3. **DLC manifest.** Built: server (`packs/` folder catalogue, `entitlements`,
+   `codes`, `/content/*`, `/redeem` with the 18+ assertion and
+   `adult_gate_at`, `/admin/*` plus the owner page at `/admin/`) and game
+   (Redeem row with the inline 18+ switch, `syncPacks()` downloading owned
+   pictures into the picker under their pack name, the private-pictures
+   stand-in row and `settings.adultPacksOk`). Before the first real pack:
+   set `ADMIN_KEY` on Railway, mint from `/admin/`, and delete
+   `packs/starter-test` once a real pack exists. Cosmetic and story pack
+   unlocks in the game are wired when the first such pack exists.
 
 Each phase is its own PR and is reviewed and approved before it is pushed.
 

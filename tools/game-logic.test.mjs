@@ -1440,8 +1440,8 @@ test('the story stones keep out of the free gallery until finished', () => {
   assert.match(game, /if \(isStoryPuzzle\(p\.id\) && !S\.save\.progress\[p\.id\]\?\.done\) continue;/,
     'renderPictures must skip an unfinished story stone');
   const nextBody = game.slice(game.indexOf('async function nextPuzzle'), game.indexOf('function useHint'));
-  assert.match(nextBody, /\.filter\(\(id\) => !isStoryPuzzle\(id\)\)/,
-    'nextPuzzle must skip story stones so free mode never walks into one');
+  assert.match(nextBody, /\.filter\(\(p\) => !isStoryPuzzle\(p\.id\) && !hiddenPack\(p\)\)/,
+    'nextPuzzle must skip story stones (and hidden pack pictures) so free mode never walks into one');
 });
 
 test('opening a free picture in story mode drops cleanly back to free mode', () => {
@@ -3964,4 +3964,48 @@ test('cloud sync: save-shape key in both DEFAULT_SAVE literals, boot backfill, p
   assert.match(privacy, /13 and older/);
   assert.match(privacy, /Delete cloud\s+account/);
   assert.match(readSource('src/platform.js'), /kvGet: \(key\)/, 'the web platform exposes the kv store the token lives in');
+});
+
+test('createCloud: manifest, puzzle fetch and redeem, including the 18+ 428', async () => {
+  const json = (status, obj) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json' } });
+  const seen = [];
+  const fetchImpl = async (url, init) => {
+    seen.push(`${init.method} ${new URL(url).pathname}`);
+    if (url.endsWith('/content/manifest')) return json(200, { packs: [{ id: 'p1', title: 'Pack One', adult: false, puzzles: [{ id: 'x1', title: 'X1' }] }] });
+    if (url.endsWith('/content/puzzle/x1')) return json(200, { id: 'x1', title: 'X1', cells: [], palette: [] });
+    if (url.endsWith('/redeem')) {
+      const body = JSON.parse(init.body);
+      if (body.code === 'adult' && !body.adultGate) return json(428, { error: 'adult_gate_required' });
+      if (body.code === 'bad') return json(404, { error: 'invalid_code' });
+      return json(200, { pack: { id: 'p1', title: 'Pack One', adult: body.code === 'adult' }, alreadyOwned: false });
+    }
+    return new Response('', { status: 404 });
+  };
+  const c = createCloud({ origin: 'https://api.test', fetchImpl, getToken: async () => 'tok', setToken: async () => {}, device: 't' });
+  const packs = await c.manifest();
+  assert.equal(packs[0].puzzles[0].id, 'x1');
+  assert.equal((await c.puzzle('x1')).title, 'X1');
+  await assert.rejects(() => c.redeem({ code: 'adult' }), (err) => err.code === 'adult_gate_required' && err.status === 428);
+  assert.equal((await c.redeem({ code: 'adult', adultGate: true })).pack.adult, true);
+  await assert.rejects(() => c.redeem({ code: 'bad' }), (err) => err.code === 'invalid_code');
+  assert.ok(seen.includes('POST /redeem') && seen.includes('GET /content/puzzle/x1'));
+});
+
+test('packs: adultPacksOk is a setting in both DEFAULT_SAVE literals with a boot backfill, and hidden pack pictures never auto-open', () => {
+  for (const f of ['src/platform.js', 'electron/main.cjs']) {
+    assert.match(readSource(f), /adultPacksOk: false/, `${f} DEFAULT_SAVE.settings is missing adultPacksOk`);
+  }
+  const game = readSource('src/game.js');
+  assert.match(game, /S\.save\.settings\.adultPacksOk \?\?= false/, 'boot must backfill adultPacksOk');
+  assert.match(game, /const hiddenPack = \(p\) => !!p\.adult && !S\.save\.settings\.adultPacksOk/);
+  // The boot default pick and free mode's Next both route around hidden pack pictures.
+  assert.match(game, /S\.manifest\.find\(\(p\) => !isStoryPuzzle\(p\.id\) && !hiddenPack\(p\) && !S\.save\.progress\[p\.id\]\?\.done\)/);
+  assert.match(game, /S\.manifest\.filter\(\(p\) => !isStoryPuzzle\(p\.id\) && !hiddenPack\(p\)\)\.map\(\(p\) => p\.id\)/);
+  // The list skips them and offers the one-time confirm instead.
+  assert.match(game, /if \(hiddenPack\(p\)\) continue;/);
+  assert.match(game, /title: 'Show private pictures\?'/);
+  // A pack picture is not removable from the list; only plain imports are.
+  assert.match(game, /if \(p\.imported && !p\.pack\) \{/);
+  // Redeem only ever sends the 18+ flag the player set on the inline switch.
+  assert.match(game, /cloud\.redeem\(\{ code, adultGate \}\)/);
 });

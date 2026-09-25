@@ -586,12 +586,66 @@ async function cloudBoot() {
   }
 }
 
-// Once the UI exists: say what cloudBoot did.
+// Once the UI exists: say what cloudBoot did, then fetch any pack pictures
+// this device is missing (in the background; the picker updates when done).
 function cloudAfterBoot() {
   if (!cloud) return;
   if (S.cloud.justSignedIn && S.cloud.user) toast({ icon: '☁️', name: 'Signed in', desc: S.cloud.user.email });
   if (S.cloud.pulledAtBoot) toast({ icon: '☁️', name: 'Synced from cloud', desc: 'Your latest progress from another device.' });
   if (S.cloud.note && !S.cloud.user) toast({ icon: '⚠️', name: 'Cloud account', desc: S.cloud.note });
+  if (S.cloud.user) syncPacks();
+}
+
+/* ------------------------------------------------------------------- packs */
+// A pack picture from an 18+ pack, on a device that has not said yes to seeing
+// them. Such pictures are absent from the list and never auto-open.
+const hiddenPack = (p) => !!p.adult && !S.save.settings.adultPacksOk;
+
+let packSync = null;
+// Downloads every owned pack picture this device lacks into the same store
+// imports use (platform.js savePuzzle), tagged with its pack. Quiet on
+// failure: the next boot tries again.
+async function syncPacks({ announce = true } = {}) {
+  if (!cloud || !S.cloud.user) return;
+  if (packSync) return packSync;
+  packSync = (async () => {
+    try {
+      const packs = await cloud.manifest();
+      const have = new Set((await api.listPuzzles()).map((p) => p.id));
+      let added = 0;
+      const newPacks = [];
+      for (const pack of packs) {
+        let fresh = 0;
+        for (const entry of pack.puzzles) {
+          if (have.has(entry.id)) continue;
+          const puzzle = await cloud.puzzle(entry.id);
+          await api.savePuzzle({
+            id: entry.id,
+            title: entry.title,
+            puzzle,
+            entry: { ...entry, added: Date.now(), pack: pack.id, packTitle: pack.title, adult: !!pack.adult },
+          });
+          have.add(entry.id);
+          added++;
+          fresh++;
+        }
+        if (fresh) newPacks.push(pack.title);
+      }
+      if (added) {
+        S.manifest = await api.listPuzzles();
+        if (announce) {
+          toast({
+            icon: '🎁',
+            name: newPacks.length === 1 ? `Pack added: ${newPacks[0]}` : `${newPacks.length} packs added`,
+            desc: `${added} new picture${added === 1 ? '' : 's'} in Pictures.`,
+          }, '', { sticky: true });
+        }
+        if (S.panel === 'pictures') await openPanel('pictures');
+      }
+    } catch { /* offline or signed out: quiet, next boot retries */ }
+    finally { packSync = null; }
+  })();
+  return packSync;
 }
 
 // After a sign-in made from Settings (code or link typed here): decide what the
@@ -603,6 +657,7 @@ async function cloudAfterSignIn() {
   if (plan === 'push' || (plan === 'in-sync' && cloudLocalDirty())) await syncCloud();
   else if (plan === 'pull') await resolveCloudConflict('cloud');
   else if (plan === 'conflict') S.cloud.conflict = S.cloud.user.saveRevision;
+  syncPacks();
 }
 
 function scheduleCloudSync() {
@@ -736,6 +791,7 @@ function renderAccount(body, rerender) {
       : err.code === 'expired_code' ? 'That code has expired; send a new one.'
       : err.code === 'too_many_attempts' ? 'Too many wrong codes; send a new one.'
       : err.code === 'invalid_email' ? 'That does not look like an email address.'
+      : err.code === 'invalid_code' ? 'That code is not valid, or it was already used.'
       : String(err.code || err.message || 'unknown'),
   });
 
@@ -857,12 +913,14 @@ function renderAccount(body, rerender) {
         rerender();
       });
       use.addEventListener('click', async () => {
+        closePanel(); // the confirm sits under the panel
         const sure = await confirmModal({
           title: 'Use the cloud copy?',
           body: 'This replaces everything on this device with the cloud copy. Anything painted here since the last sync is lost.',
           ok: 'Use cloud copy',
         });
         if (sure) await resolveCloudConflict('cloud');
+        else await openPanel('settings');
       });
       const acts = document.createElement('div');
       acts.className = 'cloud-field';
@@ -912,6 +970,82 @@ function renderAccount(body, rerender) {
       }
     }
 
+    // Packs: redeem a code, and see what this account owns. The 18+ switch
+    // appears only when the server says the code is for an adult pack.
+    const red = row();
+    const rw = document.createElement('div');
+    rw.className = 'grow';
+    rw.innerHTML = '<div class="label">Redeem a code</div><div class="sub">Got a pack code? Type it here.</div>';
+    const rf = document.createElement('div');
+    rf.className = 'cloud-field';
+    const rin = document.createElement('input');
+    rin.className = 'cloud-input code';
+    rin.placeholder = 'PB-XXXX-XXXX-XXXX';
+    rin.autocomplete = 'off';
+    rin.spellcheck = false;
+    rin.style.flexBasis = '220px';
+    rin.style.letterSpacing = '1px';
+    const rb = btn('Redeem', 'primary');
+    rf.append(rin, rb);
+    const gateWrap = document.createElement('div');
+    gateWrap.className = 'cloud-field hidden';
+    const gateSw = document.createElement('div');
+    gateSw.className = 'switch';
+    const gateTxt = document.createElement('span');
+    gateTxt.className = 'sub';
+    gateTxt.textContent = 'This is an 18+ pack. I am 18 or older.';
+    let adultGate = false;
+    gateWrap.append(gateSw, gateTxt);
+    gateWrap.addEventListener('click', () => { adultGate = !adultGate; gateSw.classList.toggle('on', adultGate); });
+    const redeemGo = async () => {
+      const code = rin.value.trim();
+      if (!code) { rin.focus(); return; }
+      rb.disabled = true;
+      try {
+        const out = await cloud.redeem({ code, adultGate });
+        toast({ icon: '🎁', name: out.alreadyOwned ? 'Already yours' : 'Pack unlocked', desc: out.pack.title });
+        rin.value = '';
+        gateWrap.classList.add('hidden');
+        await syncPacks({ announce: !out.alreadyOwned });
+        try { c.user = await cloud.me(); } catch { /* keep what we have */ }
+        rerender();
+      } catch (err) {
+        if (err.code === 'adult_gate_required') {
+          gateWrap.classList.remove('hidden');
+          toast({ icon: '🔞', name: 'One more thing', desc: 'This pack is 18+. Confirm below, then tap Redeem again.' });
+        } else {
+          fail(err, 'Could not redeem');
+        }
+      } finally { rb.disabled = false; }
+    };
+    rb.addEventListener('click', redeemGo);
+    rin.addEventListener('keydown', (e) => { if (e.key === 'Enter') redeemGo(); });
+    rw.append(rf, gateWrap);
+    red.append(rw);
+    body.append(red);
+
+    const packTitles = [...new Set(S.manifest.filter((p) => p.packTitle).map((p) => p.packTitle))];
+    if (packTitles.length) {
+      const pr = row();
+      pr.innerHTML = `<div class="grow"><div class="label">Your packs</div><div class="sub">${cloudEsc(packTitles.join(' · '))}</div></div>`;
+      body.append(pr);
+    }
+    if (S.manifest.some((p) => p.adult)) {
+      const priv = row('clickable');
+      const pt = document.createElement('div');
+      pt.className = 'grow';
+      pt.innerHTML = '<div class="label">🔞 Show private pictures</div><div class="sub">Pictures from 18+ packs appear in the Pictures list on this device</div>';
+      const psw = document.createElement('div');
+      psw.className = `switch ${S.save.settings.adultPacksOk ? 'on' : ''}`;
+      priv.append(pt, psw);
+      priv.addEventListener('click', () => {
+        S.save.settings.adultPacksOk = !S.save.settings.adultPacksOk;
+        psw.classList.toggle('on', S.save.settings.adultPacksOk);
+        persist();
+      });
+      body.append(priv);
+    }
+
     const exp = row('clickable');
     exp.innerHTML = '<div class="grow"><div class="label">Download my data</div>'
       + '<div class="sub">Everything the cloud holds about this account, as one file</div></div>'
@@ -934,12 +1068,13 @@ function renderAccount(body, rerender) {
     del.innerHTML = '<div class="grow"><div class="label">Delete cloud account</div>'
       + '<div class="sub">Erases the account and every cloud copy. This device keeps its own save.</div></div>';
     del.addEventListener('click', async () => {
+      closePanel(); // the confirm sits under the panel
       const sure = await confirmModal({
         title: 'Delete your cloud account?',
         body: 'The account, its cloud saves and its sign-ins are erased for good. The progress on this device stays.',
         ok: 'Delete account',
       });
-      if (!sure) return;
+      if (!sure) { await openPanel('settings'); return; }
       try {
         clearTimeout(cloudSyncTimer);
         cloudPending = false;
@@ -948,8 +1083,8 @@ function renderAccount(body, rerender) {
         S.save.cloud = { revision: 0, syncedAt: null, dirty: false };
         await api.writeSave({ cloud: S.save.cloud });
         toast({ icon: '☁️', name: 'Account deleted', desc: 'Nothing of it remains in the cloud.' });
-        rerender();
       } catch (err) { fail(err, 'Could not delete the account'); }
+      await openPanel('settings');
     });
     body.append(del);
   }
@@ -2519,8 +2654,9 @@ function finish() {
 async function nextPuzzle() {
   if (!S.manifest.length) return;
   // Free mode's "next" walks the gallery, so it skips story stones the way the
-  // gallery does — the board is the only way into one.
-  const order = S.manifest.map((p) => p.id).filter((id) => !isStoryPuzzle(id));
+  // gallery does — the board is the only way into one — and hidden 18+ pack
+  // pictures, which never auto-open.
+  const order = S.manifest.filter((p) => !isStoryPuzzle(p.id) && !hiddenPack(p)).map((p) => p.id);
   if (!order.length) return;
   const start = order.indexOf(S.puzzle?.id);
   const unfinished = order.find((id, i) =>
@@ -2865,12 +3001,37 @@ function renderPictures(body) {
   empty.textContent = 'No pictures match.';
   body.append(bar, list, empty);
 
+  // Pictures from an 18+ pack are absent from the list until this device has
+  // said yes once; one row stands in for them so the player knows they exist.
+  const privateHidden = S.manifest.filter(hiddenPack).length;
+  if (privateHidden) {
+    const priv = row('clickable');
+    priv.innerHTML = `<div class="grow"><div class="label">🔞 ${privateHidden} private picture${privateHidden === 1 ? '' : 's'} hidden</div>`
+      + '<div class="sub">From an 18+ pack you redeemed. Show them on this device?</div></div><div class="dev-go">Show</div>';
+    priv.addEventListener('click', async () => {
+      // The confirm lives under the panel, so the panel steps aside to ask.
+      closePanel();
+      const ok = await confirmModal({
+        title: 'Show private pictures?',
+        body: 'These are from an 18+ pack. They will appear in the Pictures list on this device until you switch them off in Settings › Cloud account.',
+        ok: 'Show them',
+      });
+      if (ok) {
+        S.save.settings.adultPacksOk = true;
+        persist();
+      }
+      await openPanel('pictures');
+    });
+    body.insertBefore(priv, list);
+  }
+
   for (const p of S.manifest) {
     // A story stone is not a free-play picture: it belongs to the board, and
     // showing it in the gallery would both spoil the chapter's order and let you
     // paint it out of story. It joins the gallery once you have finished it,
     // which is a small reward and lets you paint it again.
     if (isStoryPuzzle(p.id) && !S.save.progress[p.id]?.done) continue;
+    if (hiddenPack(p)) continue;
     const progress = S.save.progress[p.id];
     const done = progress?.done;
     const painted = progress?.filled?.length ?? 0;
@@ -2910,9 +3071,10 @@ function renderPictures(body) {
     text.className = 'grow';
     text.innerHTML = '<div class="label"></div><div class="sub"></div>';
     text.querySelector('.label').textContent = hidden ? 'Mystery picture' : p.title;
-    text.querySelector('.sub').textContent = done
+    // A pack picture names its pack, so a redeemed set reads as a set.
+    text.querySelector('.sub').textContent = (p.pack ? `${p.packTitle || 'Pack'} · ` : '') + (done
       ? `finished · ${p.cells} cells`
-      : `${painted}/${p.cells} cells · ${p.colours} colours`;
+      : `${painted}/${p.cells} cells · ${p.colours} colours`);
 
     el.append(thumb, sw, text);
     if (done) {
@@ -2921,7 +3083,9 @@ function renderPictures(body) {
       tick.textContent = '✓';
       el.append(tick);
     }
-    if (p.imported) {
+    // Your own imports can be removed; a pack picture cannot (it would only
+    // download again on the next sync), so it gets no ✕.
+    if (p.imported && !p.pack) {
       const remove = document.createElement('button');
       remove.className = 'icon danger';
       remove.title = `Remove ${hidden ? 'this mystery picture' : p.title}`;
@@ -2955,6 +3119,7 @@ function renderPictures(body) {
       label: (hidden ? 'Mystery picture' : p.title).toLowerCase(),
       title: p.title,
       imported: !!p.imported,
+      pack: p.pack ?? null,
       cells: p.cells,
       difficulty: p.difficulty ?? 'normal',
       themes: p.themes ?? [],
@@ -7063,6 +7228,9 @@ async function boot() {
   S.save.paints ??= {};                    // special-paint inventory (paints.js)
   S.save.stickers ??= {};                  // sticker-pack inventory (stickers.js)
   S.save.settings.companion ??= true;      // Pip the roaming companion, on by default (companion.js)
+  // Pictures from an 18+ pack stay hidden on this device until the player says
+  // otherwise (a per-device choice, so a shared screen never shows them unasked).
+  S.save.settings.adultPacksOk ??= false;
   S.save.stats.mutedCells ??= 0;
   S.save.stats.patientLandings ??= 0;
   S.save.stats.hints ??= 0;
@@ -7257,9 +7425,9 @@ async function boot() {
   // last one open happened to be a story stone — the story stones otherwise keep
   // out of the gallery's own defaulting.
   const preferred = S.save.settings.lastPuzzle;
-  const first = S.manifest.find((p) => p.id === preferred)
-    ?? S.manifest.find((p) => !isStoryPuzzle(p.id) && !S.save.progress[p.id]?.done)
-    ?? S.manifest.find((p) => !isStoryPuzzle(p.id))
+  const first = S.manifest.find((p) => p.id === preferred && !hiddenPack(p))
+    ?? S.manifest.find((p) => !isStoryPuzzle(p.id) && !hiddenPack(p) && !S.save.progress[p.id]?.done)
+    ?? S.manifest.find((p) => !isStoryPuzzle(p.id) && !hiddenPack(p))
     ?? S.manifest[0];
 
   await loadPuzzle(first.id);

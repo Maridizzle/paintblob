@@ -380,6 +380,20 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
   `cloud.js` (empty hides the button). `renderAccount()` is the Settings
   section. `privacy.html` ships beside the app. `check:web` asserts a
   signed-out run never calls the cloud origin.
+  - **Packs (DLC)**: the server's `/content/manifest` lists the packs an
+    account owns; `syncPacks()` (after boot and after a redeem) downloads any
+    missing pack picture through the same `api.savePuzzle` store imports use,
+    with `entry.pack` / `packTitle` / `adult` set, so they show in the picker
+    under the pack's name, with no ✕ (they would only re-download). **Redeem
+    a code** is a row in Settings › Account; a 428 `adult_gate_required` from
+    the server reveals an inline 18+ switch and the code is resent with it.
+    `settings.adultPacksOk` (both `DEFAULT_SAVE`s + boot backfill, a
+    per-device choice) gates 18+ pack pictures: `hiddenPack(p)` keeps them out
+    of the list, the boot default pick and free mode's Next until the player
+    accepts the one-time confirm (a stand-in row in the picker) or flips the
+    Settings switch. **Gotcha:** `confirmModal` renders under an open panel,
+    so any confirm launched from Settings or Pictures calls `closePanel()`
+    first and reopens the panel after.
 
 ## Release & branch workflow — READ THIS
 
