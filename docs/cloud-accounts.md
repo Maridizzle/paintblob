@@ -102,11 +102,11 @@ are the point.
 ### PostgreSQL: account tables
 
 ```
-users         id, email, google_sub (nullable), display_name, age_gate_at, created_at
+users         id, email, google_sub (nullable), display_name, age_gate_at, adult_gate_at (nullable), created_at
 sessions      token_hash, user_id, expires_at
 magic_codes   code_hash, email, expires_at, used_at
 entitlements  user_id, pack_id, source, granted_at     source: 'grant' | 'code' | 'steam' | 'stripe'
-packs         id, kind ('puzzle' | 'story' | 'cosmetic'), title, puzzle_ids
+packs         id, kind ('puzzle' | 'story' | 'cosmetic'), title, puzzle_ids, adult boolean
 codes         code_hash, pack_id, created_at, redeemed_by (nullable), redeemed_at
 saves         user_id, revision, body bytea, created_at  (prune to last N per user)
 ```
@@ -225,6 +225,43 @@ Steam arrives, Steam ownership is mirrored into `entitlements` with
 `source: 'steam'` and this flow is unchanged; codes stay useful for gifts,
 press keys and make-goods.
 
+### Private packs (adult, invitation-only)
+
+Some packs are for a hand-picked circle only, never the mainstream game. They
+ride the same machinery with four extra rules:
+
+1. **Puzzle-pack type only, served by the API.** Puzzle packs are fetched from
+   `/content/puzzle/:id` per entitled request and never ship in the build, so
+   private art is never in the Netlify bundle, the public repo, or on any
+   device that has not redeemed a code. Cosmetic and story packs ship inside
+   the build, so they can never carry private material.
+2. **`packs.adult = true`**, and the manifest omits adult packs the account is
+   not entitled to, so they do not exist in the UI for anyone else. An
+   entitled account sees them in the picker behind a one-time confirm on first
+   open, so nothing is a surprise in public.
+3. **An 18+ assertion at redeem time.** Redeeming a code for an adult pack
+   requires "I am 18 or older" in the same request, recorded on the user row
+   as `adult_gate_at` beside the existing 13+ `age_gate_at`. Without it the
+   redeem is refused and the code stays unused. Direct grants of adult packs
+   require the same flag to already be set on the account.
+4. **Codes are the only public door.** Adult packs are never sold in-app and
+   never surfaced to an account without an entitlement; the owner mints codes
+   and hands them out personally.
+
+Content lines, fixed: nothing that depicts or is styled to read as a minor,
+in any art style; nothing non-consensual. Illustrated rather than
+photographic, by choice.
+
+Owner checks before the first private code goes out: the API host's
+acceptable-use policy (the API serves the files; if the host's terms are
+restrictive, adult pack files move to a private bucket served by short-lived
+links, same route shape); and a short read with someone who knows
+adult-content law about distribution, even invitation-only. For reference,
+US federal record-keeping rules (18 U.S.C. § 2257,
+https://www.law.cornell.edu/uscode/text/18/2257) attach to depictions of
+actual people, which is one reason the illustrated choice matters. None of
+this document is legal advice.
+
 ## Rollout with live players
 
 The game has real players at paintblob.netlify.app, so adding cloud sync must
@@ -289,9 +326,10 @@ be unable to hurt anyone who ignores it:
    Google client (both done), replace the `POSTMARK_TOKEN` / `MAIL_FROM`
    placeholders on Railway once the domain exists, publish the Google consent
    screen the same day.
-3. **DLC manifest.** `packs`, `entitlements`, `codes`, `/content/*`,
-   `/redeem`, `/admin/grant`, `/admin/codes`, client gating, the Redeem code
-   box, and puzzle-pack fetch.
+3. **DLC manifest.** `packs` (with `adult`), `entitlements`, `codes`,
+   `/content/*`, `/redeem` (with the 18+ assertion for adult packs and
+   `adult_gate_at`), `/admin/grant`, `/admin/codes`, client gating, the
+   Redeem code box, the adult first-open confirm, and puzzle-pack fetch.
 
 Each phase is its own PR and is reviewed and approved before it is pushed.
 
