@@ -13,7 +13,7 @@ export const CLOUD_ORIGIN = 'https://paintblob-cloud-production.up.railway.app';
 export const APP_ORIGIN = 'https://paintblob.netlify.app';
 // The OAuth client ID (web application type) from Google Cloud. A public value.
 // Empty hides the Google button, so the build never offers a door that 404s.
-export const GOOGLE_CLIENT_ID = '';
+export const GOOGLE_CLIENT_ID = '874505740940-b48krg96v3gjbv5qg2dk0b1v8oltq8pp.apps.googleusercontent.com';
 export const SYNC_DEBOUNCE_MS = 10_000;
 export const TOKEN_KEY = 'cloudToken';
 

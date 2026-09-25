@@ -1204,8 +1204,10 @@ await page.screenshot({ path: path.join(OUT, 'low-stim.png') });
 /* ------------------------------------------------------------ cloud account */
 
 // Settings is still open from the low-stim block. Signed out, the Account
-// section shows the 13+ gate, the email sign-in and the privacy link, no
-// Google button (no client id is baked into this build) and nothing signed in.
+// section shows the 13+ gate, the email sign-in and the privacy link, nothing
+// signed in, and the Google button exactly when a client id is baked in.
+const googleWired = /GOOGLE_CLIENT_ID = '[^']+\.apps\.googleusercontent\.com'/.test(
+  fs.readFileSync(path.join(WEB, 'cloud.js'), 'utf8'));
 const acct = await page.evaluate(() => {
   const rows = [...document.querySelectorAll('#panelBody .row')];
   const find = (re) => rows.find((r) => re.test(r.textContent));
@@ -1222,7 +1224,8 @@ const acct = await page.evaluate(() => {
 });
 check('cloud: Settings shows the signed-out Account section',
   acct.head && acct.gate && acct.email && acct.privacy, JSON.stringify(acct));
-check('cloud: nothing signed in, and no Google button without a client id', !acct.signedIn && !acct.google);
+check('cloud: nothing signed in, and the Google button follows the client id',
+  !acct.signedIn && acct.google === googleWired, `google=${acct.google} wired=${googleWired}`);
 await page.screenshot({ path: path.join(OUT, 'account.png') });
 check('cloud: a signed-out session never calls the cloud', cloudHits.length === 0, cloudHits.join(' '));
 const builtIndex = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
