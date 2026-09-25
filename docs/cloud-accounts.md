@@ -63,8 +63,10 @@ POST   /save/restore/:rev       make an older revision the latest
 
 GET    /content/manifest        packs this account is entitled to
 GET    /content/puzzle/:id      puzzle JSON; 403 when not entitled
+POST   /redeem                  body { code } -> grants the code's pack to the caller
 
 POST   /admin/grant             owner-only (ADMIN_KEY env var): give user X pack Y
+POST   /admin/codes             owner-only: mint N redeem codes for pack Y
 ```
 
 ### Why a revision number on saves
@@ -92,8 +94,9 @@ are the point.
 users         id, email, google_sub (nullable), display_name, created_at
 sessions      token_hash, user_id, expires_at
 magic_codes   code_hash, email, expires_at, used_at
-entitlements  user_id, pack_id, source, granted_at     source: 'grant' | 'steam' | 'stripe'
+entitlements  user_id, pack_id, source, granted_at     source: 'grant' | 'code' | 'steam' | 'stripe'
 packs         id, kind ('puzzle' | 'story' | 'cosmetic'), title, puzzle_ids
+codes         code_hash, pack_id, created_at, redeemed_by (nullable), redeemed_at
 saves         user_id, revision, body bytea, created_at  (prune to last N per user)
 ```
 
@@ -156,6 +159,53 @@ three places: the game's CSP `connect-src` gains the API origin, the server's
 CORS allow-list names `https://paintblob.netlify.app`, and the Google OAuth
 client lists it as an authorised JavaScript origin.
 
+## Delivering a pack to one player
+
+Granting, from the owner's side, two ways:
+
+1. **Direct grant.** `POST /admin/grant` with the admin key, naming the
+   player's email and the pack. Writes an `entitlements` row.
+2. **Redeem code.** `POST /admin/codes` mints codes tied to a pack. The owner
+   hands a code to a player by any channel; the player types it into a
+   **Redeem code** box in Settings; `POST /redeem` marks it used and writes the
+   same `entitlements` row with `source: 'code'`. The owner never needs the
+   player's account id or sign-in method. Codes are stored hashed, single-use.
+
+Receiving, on the player's side: on sign-in and on each start while signed
+in, the game calls `/content/manifest`. Then by pack kind:
+
+- **Cosmetic and story packs** already shipped dormant inside the game build;
+  the manifest flag switches them on (garments appear in the Outfits shop, a
+  chapter door opens). No download.
+- **Puzzle packs** are fetched one puzzle at a time from
+  `/content/puzzle/:id` (entitlement checked per request) and stored through
+  the existing `savePuzzle` path into the IndexedDB `puzzles` store, beside
+  imported photos. After that they play offline and appear in the picker.
+
+A second device signs in, reads the same manifest, and re-downloads. When
+Steam arrives, Steam ownership is mirrored into `entitlements` with
+`source: 'steam'` and this flow is unchanged; codes stay useful for gifts,
+press keys and make-goods.
+
+## Rollout with live players
+
+The game has real players at paintblob.netlify.app, so adding cloud sync must
+be unable to hurt anyone who ignores it:
+
+- The local save stays the source of truth. Cloud is opt-in per player; a
+  signed-out game behaves exactly as today.
+- The "cloud copy is newer, apply it?" prompt defaults to **keep this
+  device**. Applying the cloud copy goes through the existing
+  `confirmModal` + `api.replaceSave` + reload path, never silently.
+- A failed or unreachable API is silent to the player (a small status in
+  Settings at most), never a blocking error over the board.
+- The CSP `connect-src` change and the Account section are tested on a
+  Netlify deploy preview before they reach the production URL.
+- The Google consent screen stays in Testing (owner's accounts only) until
+  the Account section ships, and is published the same day it does.
+- The privacy page and the 13+ decision are done before phase 2 goes live,
+  not after.
+
 ## Legal and privacy (do before real accounts exist)
 
 - Holding emails means holding personal data. A plain-language privacy policy
@@ -188,8 +238,9 @@ client lists it as an authorised JavaScript origin.
    `DELETE /me`, tests. Roughly a full session.
 2. **Client account UI + sync.** `cloud.js`, Settings section, `persist()` and
    `boot()` hooks, CSP, save-shape key, regression test for the write-set.
-3. **DLC manifest.** `packs`, `entitlements`, `/content/*`, `/admin/grant`,
-   client gating and puzzle-pack fetch.
+3. **DLC manifest.** `packs`, `entitlements`, `codes`, `/content/*`,
+   `/redeem`, `/admin/grant`, `/admin/codes`, client gating, the Redeem code
+   box, and puzzle-pack fetch.
 
 Each phase is its own PR and is reviewed and approved before it is pushed.
 
