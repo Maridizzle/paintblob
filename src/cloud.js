@@ -205,6 +205,14 @@ export function createCloud({ origin = CLOUD_ORIGIN, fetchImpl = (...a) => globa
     revokeSession: (id) => request('DELETE', `/me/sessions/${encodeURIComponent(id)}`),
     revokeOthers: () => request('DELETE', '/me/sessions').then((r) => r.data),
     exportAccount: () => request('GET', '/me/export').then((r) => JSON.stringify(r.data, null, 2)),
+
+    /** Packs this account owns: [{ id, title, blurb, adult, puzzles: [entries] }]. */
+    manifest: () => request('GET', '/content/manifest').then((r) => r.data.packs),
+    /** One pack picture, as mapify baked it. */
+    puzzle: (id) => request('GET', `/content/puzzle/${encodeURIComponent(id)}`).then((r) => r.data),
+    /** Redeem a pack code. Throws CloudError 'adult_gate_required' (428) when
+     *  the pack is 18+ and adultGate was not sent; the code is untouched. */
+    redeem: ({ code, adultGate = false }) => request('POST', '/redeem', { json: { code, adultGate } }).then((r) => r.data),
     async deleteAccount() {
       await request('DELETE', '/me');
       await setToken(null);
