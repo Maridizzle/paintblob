@@ -81,6 +81,10 @@ import {
   swap as swapNames, isSolved as swapSolved, placedCount as swapPlaced,
 } from '../src/swap.js';
 import { LIVING_EFFECTS } from '../src/render.js';
+import {
+  syncPlan, parseMagicParam, stripParams, googleAuthUrl, parseGoogleReturn, idTokenNonce,
+  gzipJson, gunzipJson, deviceLabel, agoLabel, createCloud, CLOUD_ORIGIN,
+} from '../src/cloud.js';
 import { Burst } from '../src/paint-fx.js';
 import {
   buildAvatarSVG, defaultAvatarCustomize, setVariant, VARIANTS, RACE_PROFILE, raceSkinPalette,
@@ -3852,4 +3856,112 @@ test('replay is wired into the board and the finished-picture UI', () => {
   assert.match(html, /id="replayPill"/, 'the replay pill exists');
   assert.match(html, /id="replayBar"/, 'the replay control bar exists');
   assert.match(html, /data-act="replay-speed"/, 'the speed chips are wired');
+});
+
+/* ------------------------------------------------------------------- cloud */
+
+test('syncPlan: the four outcomes of comparing device and cloud revisions', () => {
+  assert.equal(syncPlan({ localRevision: 3, localDirty: false, cloudRevision: 3 }), 'in-sync');
+  assert.equal(syncPlan({ localRevision: 3, localDirty: true, cloudRevision: 3 }), 'push');
+  assert.equal(syncPlan({ localRevision: 3, localDirty: false, cloudRevision: 5 }), 'pull');
+  assert.equal(syncPlan({ localRevision: 3, localDirty: true, cloudRevision: 5 }), 'conflict');
+  assert.equal(syncPlan({ localRevision: 5, localDirty: false, cloudRevision: 2 }), 'push',
+    'a cloud behind the device is overwritten, never trusted');
+  assert.equal(syncPlan({ localRevision: 0, localDirty: false, cloudRevision: 0 }), 'in-sync');
+});
+
+test('parseMagicParam / stripParams: the magic-link landing', () => {
+  assert.equal(parseMagicParam('?magic=abc-DEF_123'), 'abc-DEF_123');
+  assert.equal(parseMagicParam('?notour&magic=x%2By#frag'), 'x+y');
+  assert.equal(parseMagicParam('?dev'), null);
+  assert.equal(parseMagicParam(''), null);
+  assert.equal(stripParams('https://paintblob.netlify.app/?magic=abc', ['magic']), 'https://paintblob.netlify.app/');
+  assert.equal(stripParams('https://paintblob.netlify.app/?magic=abc&dev=1#h', ['magic']), 'https://paintblob.netlify.app/?dev=1#h');
+});
+
+test('googleAuthUrl / parseGoogleReturn / idTokenNonce: the redirect round trip', () => {
+  const url = googleAuthUrl({ clientId: 'cid.apps', redirectUri: 'https://paintblob.netlify.app/', nonce: 'n1', state: 's1' });
+  const u = new URL(url);
+  assert.equal(u.origin + u.pathname, 'https://accounts.google.com/o/oauth2/v2/auth');
+  assert.equal(u.searchParams.get('client_id'), 'cid.apps');
+  assert.equal(u.searchParams.get('response_type'), 'id_token');
+  assert.equal(u.searchParams.get('redirect_uri'), 'https://paintblob.netlify.app/');
+  assert.equal(u.searchParams.get('nonce'), 'n1');
+  assert.equal(u.searchParams.get('state'), 's1');
+  assert.match(u.searchParams.get('scope'), /openid/);
+  const payload = Buffer.from(JSON.stringify({ sub: '1', nonce: 'n1' })).toString('base64url');
+  const jwt = `eyJhbGciOiJSUzI1NiJ9.${payload}.sig`;
+  assert.deepEqual(parseGoogleReturn(`#id_token=${jwt}&state=s1`), { idToken: jwt, state: 's1' });
+  assert.equal(parseGoogleReturn('#foo=bar'), null);
+  assert.equal(parseGoogleReturn(''), null);
+  assert.equal(idTokenNonce(jwt), 'n1');
+  assert.equal(idTokenNonce('garbage'), null);
+});
+
+test('gzipJson / gunzipJson round-trip a save and produce real gzip', async () => {
+  const save = { settings: { a: 1 }, progress: { pic: { filled: [1, 2, 3] } }, avatar: {} };
+  const bytes = await gzipJson(save);
+  assert.equal(bytes[0], 0x1f);
+  assert.equal(bytes[1], 0x8b);
+  assert.deepEqual(await gunzipJson(bytes), save);
+});
+
+test('deviceLabel and agoLabel read well', () => {
+  assert.equal(deviceLabel('Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Mobile Safari/537.36'), 'Android · Chrome');
+  assert.equal(deviceLabel('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'), 'iPhone/iPad · Safari');
+  assert.equal(deviceLabel('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36 Edg/128.0'), 'Windows · Edge');
+  assert.equal(deviceLabel(''), 'Unknown device · browser');
+  const now = Date.parse('2026-09-25T12:00:00Z');
+  assert.equal(agoLabel(null, now), 'never');
+  assert.equal(agoLabel('2026-09-25T11:59:50Z', now), 'just now');
+  assert.equal(agoLabel('2026-09-25T11:50:00Z', now), '10 min ago');
+  assert.equal(agoLabel('2026-09-25T09:00:00Z', now), '3 h ago');
+  assert.equal(agoLabel('2026-09-22T12:00:00Z', now), '3 d ago');
+});
+
+test('createCloud: bearer header, gzip PUT with the base revision, 409 → conflict, 401 clears the token', async () => {
+  let token = 'tok';
+  const calls = [];
+  const json = (status, obj) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json' } });
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, init });
+    if (url.endsWith('/save') && init.method === 'PUT') {
+      if (init.headers['x-save-revision'] === '9') return json(409, { error: 'conflict', revision: 12 });
+      return json(200, { revision: 10, bytes: 5 });
+    }
+    if (url.endsWith('/me')) return json(401, { error: 'unauthenticated' });
+    return new Response('', { status: 404 });
+  };
+  const c = createCloud({ origin: 'https://api.test', fetchImpl, getToken: async () => token, setToken: async (t) => { token = t; }, device: 'test' });
+  const ok = await c.push({ settings: {}, progress: {}, avatar: {} }, 3);
+  assert.deepEqual(ok, { revision: 10 });
+  assert.equal(calls[0].url, 'https://api.test/save');
+  assert.equal(calls[0].init.headers.authorization, 'Bearer tok');
+  assert.equal(calls[0].init.headers['content-type'], 'application/gzip');
+  assert.equal(calls[0].init.headers['x-save-revision'], '3');
+  assert.equal(calls[0].init.body[0], 0x1f, 'body is gzip bytes');
+  assert.deepEqual(await c.push({}, 9), { conflict: true, revision: 12 });
+  await assert.rejects(() => c.me(), (err) => err.code === 'unauthenticated' && err.status === 401);
+  assert.equal(token, null, 'a 401 drops the stored token');
+  await assert.rejects(() => c.me(), (err) => err.code === 'signed_out');
+  assert.equal(await c.isSignedIn(), false);
+});
+
+test('cloud sync: save-shape key in both DEFAULT_SAVE literals, boot backfill, persist write-set, CSP, privacy page', () => {
+  for (const f of ['src/platform.js', 'electron/main.cjs']) {
+    assert.match(readSource(f), /cloud: \{ revision: 0, syncedAt: null, dirty: false \}/, `${f} DEFAULT_SAVE is missing cloud`);
+  }
+  const game = readSource('src/game.js');
+  assert.match(game, /S\.save\.cloud \?\?= \{ revision: 0, syncedAt: null, dirty: false \}/, 'boot must backfill cloud');
+  assert.match(game, /cloud: S\.save\.cloud,/, 'persist() must write the cloud key or a sync marker never reaches disk');
+  assert.match(game, /await cloudBoot\(\);/, 'the cloud runs before anything else reads the save');
+  assert.match(game, /if \(!cloud \|\| !S\.cloud\.user\) return;/, 'uploads are gated on a signed-in user');
+  assert.match(game, /ok: 'Keep this device'/, 'the conflict prompt defaults to keeping the device');
+  const html = readSource('src/index.html');
+  assert.ok(html.includes(`connect-src 'self' ${CLOUD_ORIGIN}`), 'CSP must allow the cloud origin');
+  assert.doesNotMatch(html, /script-src 'self' https/, 'no third-party script: Google sign-in is a plain redirect');
+  const privacy = readSource('src/privacy.html');
+  assert.match(privacy, /13 and older/);
+  assert.match(privacy, /Delete cloud\s+account/);
+  assert.match(readSource('src/platform.js'), /kvGet: \(key\)/, 'the web platform exposes the kv store the token lives in');
 });

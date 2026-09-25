@@ -63,6 +63,10 @@ import {
   defaultHouse, itemsFor, starterFor, buildRoomSVG, colourablesIn, colourKey,
   PET_NEEDS, defaultPetStats, applyPetDecay, carePet, petMood,
 } from './house.js';
+import {
+  createCloud, parseMagicParam, stripParams, parseGoogleReturn, googleAuthUrl, idTokenNonce,
+  randomToken, syncPlan, deviceLabel, agoLabel, GOOGLE_CLIENT_ID, SYNC_DEBOUNCE_MS, TOKEN_KEY,
+} from './cloud.js';
 
 let api;
 const $ = (id) => document.getElementById(id);
@@ -169,6 +173,13 @@ const S = {
   previewTimer: 0,
   roomProp: null,         // which thing in the room is selected — an id from colourablesIn()
   roomPart: null,         // which of that thing's parts is being recoloured, as a colour key
+  // Cloud account, runtime only (cloud.js). `user` is the signed-in account or
+  // null; `conflict` holds the cloud revision when both sides moved and the
+  // player has to choose; the rest is Settings › Account UI state.
+  cloud: {
+    user: null, conflict: null, note: '', busy: false, ageGate: false, pendingEmail: '',
+    devices: null, showDevices: false, justSignedIn: false, pulledAtBoot: false,
+  },
 };
 
 // Read-only handle for the smoke test (electron/main.cjs) so it can click a
@@ -210,6 +221,10 @@ function persist(immediate = false) {
       };
     }
     S.save.unlocked = [...achievements.unlocked];
+    // Cloud: any local change marks the save as having something the cloud
+    // lacks, written in the same flush so a crash between the two never loses
+    // the "changes waiting" fact. Signed in, an upload follows (debounced).
+    if (S.save.cloud) { S.save.cloud.dirty = true; cloudSeq++; }
     api?.writeSave({
       progress: S.save.progress,
       stats: S.save.stats,
@@ -223,7 +238,9 @@ function persist(immediate = false) {
       // handed, so anything omitted here is silently dropped on the next reload.
       paints: S.save.paints,
       stickers: S.save.stickers,
+      cloud: S.save.cloud,
     });
+    scheduleCloudSync();
   };
   if (immediate) flush();
   else saveTimer = setTimeout(flush, 900);
@@ -482,6 +499,467 @@ async function restoreBackup() {
   }
   const file = await api.loadBackup();
   if (file) await restoreFromFile(file);
+}
+
+/* ------------------------------------------------------------------- cloud */
+// Cloud account + save sync (cloud.js). Opt-in and PWA-only: the desktop
+// platform has no kv store, so `cloud` stays null there and none of this
+// renders. The local save is always the source of truth; the cloud gets a
+// copy, and only ever replaces the device's save when that is lossless or the
+// player says so.
+
+let cloud = null;
+let cloudSyncTimer = 0;
+let cloudPending = false;  // an upload is scheduled
+let cloudSeq = 0;          // bumps on every local change, so a push only clears `dirty` if nothing changed under it
+let cloudPushing = null;   // the in-flight push, if any
+let conflictPrompted = false;
+
+function initCloud() {
+  if (!api?.kvGet) { cloud = null; return; }
+  cloud = createCloud({
+    getToken: () => api.kvGet(TOKEN_KEY),
+    setToken: (t) => (t ? api.kvSet(TOKEN_KEY, t) : api.kvDel(TOKEN_KEY)),
+    device: deviceLabel(navigator.userAgent),
+  });
+}
+
+const cloudMarker = (revision) => ({ revision, syncedAt: new Date().toISOString(), dirty: false });
+const hasProgress = (save) => Object.keys(save.progress || {}).length > 0;
+// "This device holds something the cloud does not": the dirty flag, or a save
+// that has never synced at all but already has painted pictures (a player who
+// updated into this build, or who just made an account). That second case is
+// what stops a first sign-in from silently replacing months of local progress.
+const cloudLocalDirty = () => !!S.save.cloud.dirty || (S.save.cloud.revision === 0 && hasProgress(S.save));
+const cloudEsc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+
+// Runs FIRST in boot, right after the save is read and before anything uses
+// it, so a newer cloud copy can replace the local save in place (no reload)
+// when that is lossless. Never throws: a dead network just leaves a note.
+async function cloudBoot() {
+  if (!cloud) return;
+  // Back from Google's sign-in page: #id_token=…&state=… (cloud.js googleAuthUrl).
+  const g = parseGoogleReturn(location.hash);
+  if (g) {
+    let saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem('pb-google') || 'null'); } catch { saved = null; }
+    sessionStorage.removeItem('pb-google');
+    history.replaceState(null, '', location.pathname + location.search);
+    if (saved && saved.state === g.state && idTokenNonce(g.idToken) === saved.nonce) {
+      try { await cloud.auth.google(g.idToken); S.cloud.justSignedIn = true; }
+      catch (err) { S.cloud.note = `Google sign-in failed (${err.code}).`; }
+    } else {
+      S.cloud.note = 'Google sign-in did not match this device; try again.';
+    }
+  }
+  // A magic link opened on this device: ?magic=<token>.
+  const magic = parseMagicParam(location.search);
+  if (magic) {
+    history.replaceState(null, '', stripParams(location.href, ['magic']));
+    try { await cloud.auth.magicVerify({ token: magic }); S.cloud.justSignedIn = true; }
+    catch (err) {
+      S.cloud.note = err.code === 'expired_code'
+        ? 'That sign-in link has expired; request a new one.'
+        : 'That sign-in link is no longer valid.';
+    }
+  }
+  if (!(await cloud.isSignedIn())) return;
+  let me;
+  try { me = await cloud.me(); }
+  catch (err) { if (err.code === 'offline') S.cloud.note = 'Offline; will sync when back.'; return; }
+  S.cloud.user = me;
+  const plan = syncPlan({ localRevision: S.save.cloud.revision, localDirty: cloudLocalDirty(), cloudRevision: me.saveRevision });
+  if (plan === 'pull') {
+    try {
+      const got = await cloud.pull();
+      if (got) {
+        got.save.cloud = cloudMarker(got.revision);
+        await api.replaceSave(got.save);
+        S.save = await api.readSave();
+        S.cloud.pulledAtBoot = true;
+      }
+    } catch { S.cloud.note = 'Could not fetch the cloud copy.'; }
+  } else if (plan === 'push') {
+    scheduleCloudSync();
+  } else if (plan === 'conflict') {
+    S.cloud.conflict = me.saveRevision;
+  }
+}
+
+// Once the UI exists: say what cloudBoot did.
+function cloudAfterBoot() {
+  if (!cloud) return;
+  if (S.cloud.justSignedIn && S.cloud.user) toast({ icon: '☁️', name: 'Signed in', desc: S.cloud.user.email });
+  if (S.cloud.pulledAtBoot) toast({ icon: '☁️', name: 'Synced from cloud', desc: 'Your latest progress from another device.' });
+  if (S.cloud.note && !S.cloud.user) toast({ icon: '⚠️', name: 'Cloud account', desc: S.cloud.note });
+}
+
+// After a sign-in made from Settings (code or link typed here): decide what the
+// first sync does. A device with no pictures takes the cloud copy; a device
+// with progress and an empty account uploads; both with progress asks.
+async function cloudAfterSignIn() {
+  try { S.cloud.user = await cloud.me(); } catch { return; }
+  const plan = syncPlan({ localRevision: S.save.cloud.revision, localDirty: cloudLocalDirty(), cloudRevision: S.cloud.user.saveRevision });
+  if (plan === 'push' || (plan === 'in-sync' && cloudLocalDirty())) await syncCloud();
+  else if (plan === 'pull') await resolveCloudConflict('cloud');
+  else if (plan === 'conflict') S.cloud.conflict = S.cloud.user.saveRevision;
+}
+
+function scheduleCloudSync() {
+  if (!cloud || !S.cloud.user) return;
+  clearTimeout(cloudSyncTimer);
+  cloudPending = true;
+  cloudSyncTimer = setTimeout(() => syncCloud(), SYNC_DEBOUNCE_MS);
+}
+
+// Upload the whole save. `base` is the revision this device last synced from;
+// passing the cloud's current revision instead is how "keep this device"
+// overwrites a conflicting cloud copy on purpose.
+async function syncCloud({ base = S.save.cloud.revision } = {}) {
+  clearTimeout(cloudSyncTimer);
+  cloudPending = false;
+  if (!cloud || !S.cloud.user) return;
+  if (cloudPushing) { await cloudPushing; scheduleCloudSync(); return; }
+  const seq = cloudSeq;
+  S.cloud.busy = true;
+  syncCloudStatus();
+  cloudPushing = (async () => {
+    try {
+      const out = await cloud.push(S.save, base);
+      if (out.conflict) {
+        S.cloud.conflict = out.revision;
+        if (!conflictPrompted) {
+          conflictPrompted = true;
+          toast({ icon: '☁️', name: 'Cloud has newer progress', desc: 'Another device painted since. Choose in Settings › Account.' }, '', { sticky: true });
+        }
+      } else {
+        S.cloud.conflict = null;
+        S.save.cloud = cloudMarker(out.revision);
+        // Something changed while the upload was in flight: keep it dirty and go again.
+        if (seq !== cloudSeq) { S.save.cloud.dirty = true; scheduleCloudSync(); }
+        await api.writeSave({ cloud: S.save.cloud });
+        S.cloud.note = '';
+      }
+    } catch (err) {
+      if (err.code === 'signed_out' || err.status === 401) {
+        S.cloud.user = null;
+        S.cloud.note = 'Signed out; sign in again to keep syncing.';
+      } else {
+        S.cloud.note = err.code === 'offline' ? 'Offline; will sync when back.' : `Sync failed (${err.code}).`;
+      }
+    } finally {
+      S.cloud.busy = false;
+      cloudPushing = null;
+      syncCloudStatus();
+    }
+  })();
+  await cloudPushing;
+}
+
+// 'device': this device's save overwrites the cloud (the old cloud copy stays
+// in the server's history). 'cloud': the cloud copy replaces this device's
+// save, and the app reloads from it.
+async function resolveCloudConflict(choice) {
+  if (!cloud) return;
+  if (choice === 'device') {
+    if (S.cloud.conflict == null) return;
+    await syncCloud({ base: S.cloud.conflict });
+    if (S.cloud.conflict == null) toast({ icon: '☁️', name: 'Kept this device', desc: 'The cloud copy now matches it.' });
+  } else if (choice === 'cloud') {
+    try {
+      const got = await cloud.pull();
+      if (!got) return;
+      got.save.cloud = cloudMarker(got.revision);
+      await api.replaceSave(got.save);
+      location.reload();
+    } catch (err) {
+      toast({ icon: '⚠️', name: 'Could not fetch the cloud copy', desc: err.code === 'offline' ? 'You seem to be offline.' : err.code });
+    }
+  }
+}
+
+// The boot-time conflict question, asked once the title screen is out of the
+// way (the confirm lives inside #stage, under the title). OK keeps this device;
+// ✕ leaves it for Settings › Account, where both choices sit side by side.
+async function maybePromptCloudConflict() {
+  if (!cloud || S.cloud.conflict == null || conflictPrompted) return;
+  conflictPrompted = true;
+  const keep = await confirmModal({
+    title: 'Cloud has newer progress',
+    body: 'Another device painted since this one last synced. Keep this device’s progress? (The cloud copy is replaced, but kept in history.) To use the cloud copy instead, close this and open Settings › Account.',
+    ok: 'Keep this device',
+  });
+  if (keep) await resolveCloudConflict('device');
+}
+
+async function cloudSignOut() {
+  clearTimeout(cloudSyncTimer);
+  cloudPending = false;
+  await cloud.auth.logout();
+  Object.assign(S.cloud, { user: null, conflict: null, devices: null, showDevices: false, note: '' });
+}
+
+function cloudStatusText() {
+  if (S.cloud.busy) return 'Syncing…';
+  if (S.cloud.conflict != null) return 'Cloud has newer progress from another device';
+  if (S.cloud.note) return S.cloud.note;
+  const m = S.save.cloud;
+  if (cloudLocalDirty()) return `Changes waiting to sync · last synced ${agoLabel(m.syncedAt)}`;
+  return `Last synced ${agoLabel(m.syncedAt)}`;
+}
+function syncCloudStatus() {
+  const el = $('cloudStatus');
+  if (el) el.textContent = cloudStatusText();
+}
+
+// Leaving the tab (or the phone locking) is the moment a debounced upload is
+// most likely to be lost; send it now. The next open catches anything cut off.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && cloudPending) syncCloud();
+});
+
+/** Settings › Account. `rerender` rebuilds the whole Settings panel in place. */
+function renderAccount(body, rerender) {
+  if (!cloud) return;
+  const c = S.cloud;
+  const btn = (label, cls = 'cloud-btn') => {
+    const b = document.createElement('button');
+    b.className = cls;
+    b.textContent = label;
+    return b;
+  };
+  const fail = (err, what) => toast({
+    icon: '⚠️', name: what,
+    desc: err.code === 'offline' ? 'You seem to be offline.'
+      : err.code === 'rate_limited' ? 'Too many tries; wait a few minutes.'
+      : err.code === 'invalid_code' ? 'That code is not right.'
+      : err.code === 'expired_code' ? 'That code has expired; send a new one.'
+      : err.code === 'too_many_attempts' ? 'Too many wrong codes; send a new one.'
+      : err.code === 'invalid_email' ? 'That does not look like an email address.'
+      : String(err.code || err.message || 'unknown'),
+  });
+
+  const head = row();
+  head.innerHTML = '<div class="grow"><div class="label">☁️ Cloud account</div>'
+    + '<div class="sub">Optional. Back up your progress and pick it up on another device.</div></div>';
+  body.append(head);
+
+  if (!c.user) {
+    // The 13+ gate: both sign-in methods stay inert until it is on.
+    const gate = row('clickable');
+    const gateText = document.createElement('div');
+    gateText.className = 'grow';
+    gateText.innerHTML = '<div class="label">I am 13 or older</div><div class="sub">Required to make a cloud account</div>';
+    const gateSw = document.createElement('div');
+    gateSw.className = `switch ${c.ageGate ? 'on' : ''}`;
+    gate.append(gateText, gateSw);
+    gate.addEventListener('click', () => { c.ageGate = !c.ageGate; gateSw.classList.toggle('on', c.ageGate); });
+    body.append(gate);
+    const needGate = () => {
+      if (c.ageGate) return false;
+      toast({ icon: '☁️', name: 'One thing first', desc: 'Confirm you are 13 or older.' });
+      return true;
+    };
+
+    if (GOOGLE_CLIENT_ID) {
+      const g = row();
+      const gb = btn('Continue with Google', 'cloud-btn wide');
+      gb.addEventListener('click', () => {
+        if (needGate()) return;
+        const state = randomToken();
+        const nonce = randomToken();
+        sessionStorage.setItem('pb-google', JSON.stringify({ state, nonce }));
+        location.assign(googleAuthUrl({
+          clientId: GOOGLE_CLIENT_ID, redirectUri: `${location.origin}${location.pathname}`, nonce, state,
+        }));
+      });
+      g.append(gb);
+      body.append(g);
+    }
+
+    const em = row();
+    const emWrap = document.createElement('div');
+    emWrap.className = 'grow';
+    emWrap.innerHTML = c.pendingEmail
+      ? `<div class="label">Check your email</div><div class="sub">We sent a 6-digit code to ${cloudEsc(c.pendingEmail)}. Type it here, or tap the link in the email on the device you want signed in.</div>`
+      : '<div class="label">Sign in with email</div><div class="sub">No password. We email you a code.</div>';
+    const field = document.createElement('div');
+    field.className = 'cloud-field';
+    if (!c.pendingEmail) {
+      const input = document.createElement('input');
+      input.type = 'email';
+      input.placeholder = 'you@example.com';
+      input.autocomplete = 'email';
+      input.className = 'cloud-input';
+      const send = btn('Send code');
+      const go = async () => {
+        if (needGate()) return;
+        const email = input.value.trim();
+        if (!email) { input.focus(); return; }
+        send.disabled = true;
+        try { await cloud.auth.magicRequest(email); c.pendingEmail = email; rerender(); }
+        catch (err) { send.disabled = false; fail(err, 'Could not send the code'); }
+      };
+      send.addEventListener('click', go);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+      field.append(input, send);
+    } else {
+      const input = document.createElement('input');
+      input.inputMode = 'numeric';
+      input.autocomplete = 'one-time-code';
+      input.maxLength = 7;
+      input.placeholder = '123456';
+      input.className = 'cloud-input code';
+      const ok = btn('Sign in', 'primary');
+      const back = btn('Different email');
+      const go = async () => {
+        const code = input.value.replace(/\D/g, '');
+        if (code.length !== 6) { input.focus(); return; }
+        ok.disabled = true;
+        try {
+          c.user = await cloud.auth.magicVerify({ email: c.pendingEmail, code });
+          c.pendingEmail = '';
+          toast({ icon: '☁️', name: 'Signed in', desc: c.user.email });
+          await cloudAfterSignIn();
+          rerender();
+        } catch (err) { ok.disabled = false; fail(err, 'Could not sign in'); }
+      };
+      ok.addEventListener('click', go);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+      back.addEventListener('click', () => { c.pendingEmail = ''; rerender(); });
+      field.append(input, ok, back);
+      setTimeout(() => input.focus(), 0);
+    }
+    emWrap.append(field);
+    em.append(emWrap);
+    body.append(em);
+  } else {
+    const who = row();
+    who.innerHTML = `<div class="grow"><div class="label">Signed in as ${cloudEsc(c.user.email)}</div>`
+      + '<div class="sub" id="cloudStatus"></div></div>';
+    const syncBtn = btn('Sync now');
+    syncBtn.addEventListener('click', async () => { syncBtn.disabled = true; await syncCloud(); syncBtn.disabled = false; });
+    who.append(syncBtn);
+    body.append(who);
+    syncCloudStatus();
+
+    if (c.conflict != null) {
+      const conf = row();
+      const wrap = document.createElement('div');
+      wrap.className = 'grow';
+      wrap.innerHTML = '<div class="label">Which copy do you want?</div>'
+        + '<div class="sub">Keep this device (the cloud copy is replaced, but kept in history), or use the cloud copy (anything painted here since the last sync is lost).</div>';
+      const keep = btn('Keep this device', 'primary');
+      const use = btn('Use cloud copy');
+      keep.addEventListener('click', async () => {
+        keep.disabled = true; use.disabled = true;
+        await resolveCloudConflict('device');
+        rerender();
+      });
+      use.addEventListener('click', async () => {
+        const sure = await confirmModal({
+          title: 'Use the cloud copy?',
+          body: 'This replaces everything on this device with the cloud copy. Anything painted here since the last sync is lost.',
+          ok: 'Use cloud copy',
+        });
+        if (sure) await resolveCloudConflict('cloud');
+      });
+      const acts = document.createElement('div');
+      acts.className = 'cloud-field';
+      acts.append(keep, use);
+      wrap.append(acts);
+      conf.append(wrap);
+      body.append(conf);
+    }
+
+    const dev = row('clickable');
+    dev.innerHTML = '<div class="grow"><div class="label">Signed-in devices</div>'
+      + '<div class="sub">Where this account is signed in; sign any of them out</div></div>'
+      + `<div class="dev-go">${c.showDevices ? 'Hide' : 'Show'}</div>`;
+    dev.addEventListener('click', async () => {
+      c.showDevices = !c.showDevices;
+      if (c.showDevices) {
+        try { c.devices = await cloud.sessions(); }
+        catch (err) { c.showDevices = false; fail(err, 'Could not load devices'); return; }
+      }
+      rerender();
+    });
+    body.append(dev);
+    if (c.showDevices && c.devices) {
+      for (const d of c.devices) {
+        const r = row('cloud-device');
+        r.innerHTML = `<div class="grow"><div class="label">${cloudEsc(d.device || 'Unknown device')}${d.current ? ' · this device' : ''}</div>`
+          + `<div class="sub">Last used ${agoLabel(d.lastSeenAt)}</div></div>`;
+        if (!d.current) {
+          const out = btn('Sign out');
+          out.addEventListener('click', async () => {
+            try { await cloud.revokeSession(d.id); c.devices = await cloud.sessions(); rerender(); }
+            catch (err) { fail(err, 'Could not sign that device out'); }
+          });
+          r.append(out);
+        }
+        body.append(r);
+      }
+      if (c.devices.length > 1) {
+        const all = row('cloud-device');
+        const b = btn('Sign out all other devices');
+        b.addEventListener('click', async () => {
+          try { await cloud.revokeOthers(); c.devices = await cloud.sessions(); rerender(); }
+          catch (err) { fail(err, 'Could not sign them out'); }
+        });
+        all.append(b);
+        body.append(all);
+      }
+    }
+
+    const exp = row('clickable');
+    exp.innerHTML = '<div class="grow"><div class="label">Download my data</div>'
+      + '<div class="sub">Everything the cloud holds about this account, as one file</div></div>'
+      + '<div class="dev-go">Download</div>';
+    exp.addEventListener('click', async () => {
+      try {
+        const text = await cloud.exportAccount();
+        await api.saveBackup(text, 'paintblob-account-export.json');
+        toast({ icon: '☁️', name: 'Export ready', desc: 'Look in your downloads.' });
+      } catch (err) { fail(err, 'Could not export'); }
+    });
+    body.append(exp);
+
+    const out = row('clickable');
+    out.innerHTML = '<div class="grow"><div class="label">Sign out</div><div class="sub">Your progress stays on this device</div></div>';
+    out.addEventListener('click', async () => { await cloudSignOut(); rerender(); });
+    body.append(out);
+
+    const del = row('clickable');
+    del.innerHTML = '<div class="grow"><div class="label">Delete cloud account</div>'
+      + '<div class="sub">Erases the account and every cloud copy. This device keeps its own save.</div></div>';
+    del.addEventListener('click', async () => {
+      const sure = await confirmModal({
+        title: 'Delete your cloud account?',
+        body: 'The account, its cloud saves and its sign-ins are erased for good. The progress on this device stays.',
+        ok: 'Delete account',
+      });
+      if (!sure) return;
+      try {
+        clearTimeout(cloudSyncTimer);
+        cloudPending = false;
+        await cloud.deleteAccount();
+        Object.assign(c, { user: null, conflict: null, devices: null, showDevices: false, note: '' });
+        S.save.cloud = { revision: 0, syncedAt: null, dirty: false };
+        await api.writeSave({ cloud: S.save.cloud });
+        toast({ icon: '☁️', name: 'Account deleted', desc: 'Nothing of it remains in the cloud.' });
+        rerender();
+      } catch (err) { fail(err, 'Could not delete the account'); }
+    });
+    body.append(del);
+  }
+
+  const priv = row('clickable');
+  priv.innerHTML = '<div class="grow"><div class="label">Privacy &amp; your data</div>'
+    + '<div class="sub">What a cloud account stores, and what it never does</div></div>'
+    + '<div class="dev-go">Read</div>';
+  priv.addEventListener('click', () => window.open('privacy.html', '_blank', 'noopener'));
+  body.append(priv);
 }
 
 // A tiny in-page confirm — no native dialog, so it is safe on the desktop build
@@ -4315,6 +4793,10 @@ function renderSettings(body) {
   restore.addEventListener('click', restoreBackup);
   body.append(restore);
 
+  // Cloud account: sign in, sync, devices, export, delete (cloud.js). Renders
+  // nothing on the desktop build, which has no cloud.
+  renderAccount(body, () => { body.textContent = ''; renderSettings(body); });
+
   const reset = row('clickable');
   reset.innerHTML = '<div class="grow"><div class="label">Repaint this picture</div>' +
     '<div class="sub">Clears progress on the current picture only</div></div>';
@@ -5982,7 +6464,12 @@ function showTitle() {
   $('title').classList.remove('hidden');
 }
 
-function hideTitle() { $('title').classList.add('hidden'); }
+function hideTitle() {
+  $('title').classList.add('hidden');
+  // The confirm lives under the title screen, so a boot-time cloud conflict
+  // waits for this moment to ask.
+  maybePromptCloudConflict();
+}
 
 /* ------------------------------------------------------------- what's new */
 
@@ -6562,6 +7049,11 @@ async function boot() {
   document.documentElement.classList.add(api.isDesktop ? 'is-desktop' : 'is-web');
 
   S.save = await api.readSave();
+  // Cloud sync marker (cloud.js), then the cloud itself: FIRST, before any
+  // other line reads the save, so a newer cloud copy can replace it in place.
+  S.save.cloud ??= { revision: 0, syncedAt: null, dirty: false };
+  initCloud();
+  await cloudBoot();
   S.save.settings.speed ??= 1;
   // Ships translucent: the splat covers most of the picture at its peak, and
   // seeing the artwork through it is the point. The slider goes back to 100%.
@@ -6782,6 +7274,7 @@ async function boot() {
   // What's New splash over the top (gated inside: harnesses, low-stim and
   // brand-new players are handled there).
   maybeShowNews();
+  cloudAfterBoot();
 }
 
 boot();
