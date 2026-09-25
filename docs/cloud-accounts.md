@@ -173,7 +173,7 @@ The API is live at `https://paintblob-cloud-production.up.railway.app`.
 | `game.js` `boot()` | `cloudBoot()` runs right after `readSave`, before anything reads the save: handles the Google return hash and `?magic=`, then `syncPlan`. `pull` replaces the save in place (no reload); `conflict` waits for `hideTitle()` and asks with **Keep this device** as OK and "use the cloud copy" only via Settings. |
 | `DEFAULT_SAVE` x2 + boot `??=` | `cloud: { revision: 0, syncedAt: null, dirty: false }`; also in the `persist()` write-set. |
 | Settings › Account | `renderAccount()`: 13+ switch gating both methods, Continue with Google (redirect), email → 6-digit code, signed-in status + Sync now, conflict buttons, devices list (revoke one / all others), Download my data, Sign out, Delete cloud account, Privacy link. |
-| `src/privacy.html` | Plain-language privacy page, opened from the Account section; ships and is precached. Two publish-time placeholders: the date and the support address. |
+| `src/privacy.html` | Plain-language privacy page, opened from the Account section; ships and is precached. Support address: `paintblob-support@googlegroups.com`. |
 | Pack unlock (phase 3) | Story and cosmetic packs: code and art ship in the build, gated on `entitlements`. Puzzle packs: fetched from `/content/puzzle/:id` and stored through the existing `savePuzzle` IndexedDB path so they play offline afterwards. |
 
 **"Dirty" is derived, not just stored:** `cloudLocalDirty()` is the flag OR
@@ -286,9 +286,9 @@ be unable to hurt anyone who ignores it:
 2. **Client account UI + sync.** Built in this repo (see above). Before it
    goes live: paste the Google client ID into `GOOGLE_CLIENT_ID`, add
    `https://paintblob.netlify.app/` as an authorised redirect URI on the
-   Google client, fill the two placeholders in `privacy.html`, replace the
-   `POSTMARK_TOKEN` / `MAIL_FROM` placeholders on Railway once the domain
-   exists, publish the Google consent screen the same day.
+   Google client (both done), replace the `POSTMARK_TOKEN` / `MAIL_FROM`
+   placeholders on Railway once the domain exists, publish the Google consent
+   screen the same day.
 3. **DLC manifest.** `packs`, `entitlements`, `codes`, `/content/*`,
    `/redeem`, `/admin/grant`, `/admin/codes`, client gating, the Redeem code
    box, and puzzle-pack fetch.
