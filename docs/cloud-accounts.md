@@ -36,13 +36,24 @@ Two pieces:
 - **Decided:** a separate repo; cost of Railway is not a constraint.
 - **Decided:** both sign-in methods.
   - *Email magic link* is the baseline: works for anyone with an email
-    address (no password, no third-party account). Needs an email-sending
-    service account (**open:** which provider).
+    address (no password, no third-party account). Sent through **Postmark**
+    (**decided**), chosen for transactional-only deliverability and
+    configurable message retention, which is set as short as Postmark allows
+    so their logs hold magic links and player addresses for days, not months.
   - *Sign in with Google* sits beside it as the one-tap option. Requires the
-    player to have a Google account; nearly universal on Android.
-- Sessions are bearer tokens held in the PWA's existing IndexedDB `kv` store,
-  not cookies. Cross-origin cookies from an installed PWA are unreliable,
-  especially on iOS.
+    player to have a Google account; nearly universal on Android. The OAuth
+    client (web application type, origin `https://paintblob.netlify.app`) is
+    created; its client ID is a public value that goes into the Railway env
+    (`GOOGLE_CLIENT_ID`) and into `src/cloud.js`.
+- Magic-link codes: hashed at rest, single use, ~10 minute expiry, rate
+  limited per email address and per IP; the message body carries the link
+  and nothing personal.
+- **Sessions last 90 days, refreshed on use** (**decided**). Bearer tokens
+  held in the PWA's existing IndexedDB `kv` store, not cookies. Cross-origin
+  cookies from an installed PWA are unreliable, especially on iOS.
+- **A 13+ checkbox on sign-in** (**decided**): "I am 13 or older", required
+  before either sign-in method proceeds. Recorded on the user row as
+  `age_gate_at` so it is provable later.
 
 ## API
 
@@ -91,7 +102,7 @@ are the point.
 ### PostgreSQL: account tables
 
 ```
-users         id, email, google_sub (nullable), display_name, created_at
+users         id, email, google_sub (nullable), display_name, age_gate_at, created_at
 sessions      token_hash, user_id, expires_at
 magic_codes   code_hash, email, expires_at, used_at
 entitlements  user_id, pack_id, source, granted_at     source: 'grant' | 'code' | 'steam' | 'stripe'
@@ -131,11 +142,21 @@ The database *is* the players' backup, so it needs one of its own. A second
 live database that mirrors the first (a replica) only covers the server
 dying; a bug that deletes rows is copied to the replica within a second. A
 real backup is a snapshot frozen in time and kept somewhere else: a nightly
-`pg_dump` to S3-compatible object storage (Backblaze B2 or Cloudflare R2,
-both cheap), retained for ~30 days. Whether Railway's Postgres includes
-automatic backups on the chosen plan is to be verified against their current
-docs before relying on it. This is a launch requirement, not a nice-to-have:
-nobody is told "your progress is safe in the cloud" until it exists.
+`pg_dump` to **Backblaze B2** (**decided**), retained for ~30 days.
+
+- The dump is **encrypted on the Railway side before upload** (`age`), with
+  a key only the owner holds; B2 stores ciphertext only. The bucket is
+  private.
+- The Railway job uses a B2 application key restricted to that one bucket
+  and to write capability only (no read, no delete), so a compromised server
+  cannot read or destroy past backups. Object Lock on the bucket so a dump
+  cannot be deleted before its retention window ends, not even by the owner
+  key.
+- Whether Railway's Postgres includes automatic backups on the chosen plan is
+  to be verified against their current docs; it is a bonus, not the plan.
+
+This is a launch requirement, not a nice-to-have: nobody is told "your
+progress is safe in the cloud" until it exists.
 
 Deliberately not added: Redis, a queue, or a second database. At this scale
 they are complexity with no payoff.
@@ -225,12 +246,21 @@ be unable to hurt anyone who ignores it:
 
 ## Accounts and services to set up (owner tasks)
 
-1. Railway: project, service, Postgres plugin, `DATABASE_URL`, `ADMIN_KEY`,
-   `SESSION_SECRET` env vars.
-2. Google Cloud: an OAuth client ID (web application type) with
-   `https://paintblob.netlify.app` as an authorised JavaScript origin.
-3. An email-sending service account and its API key, for magic links.
-4. An S3-compatible object-storage bucket for nightly database dumps.
+1. Railway: project + Postgres (done). Service deploys from
+   `Maridizzle/paintblob-cloud`. Env vars: `DATABASE_URL` (injected),
+   `ADMIN_KEY`, `SESSION_SECRET`, `GOOGLE_CLIENT_ID`, `POSTMARK_TOKEN`,
+   `MAIL_FROM`, `B2_KEY_ID`, `B2_APP_KEY`, `B2_BUCKET`, `BACKUP_AGE_PUBKEY`.
+2. Google Cloud: OAuth client ID (done).
+3. **A domain**, registered as Maridizzle through a registrar with WHOIS
+   privacy included. Needed by Postmark (sending from a shared domain is
+   dev-only) and where the owner's anonymity lives.
+4. Postmark: account, a verified sender domain (DKIM + return-path DNS
+   records on the domain above), a server token, and message retention set
+   to the minimum offered.
+5. Backblaze B2: account, one private bucket with Object Lock, an
+   application key restricted to that bucket with write-only capability. The
+   `age` keypair for dump encryption: public key into Railway env, private
+   key kept offline by the owner and never in any repo or service.
 
 ## Phasing
 
@@ -246,7 +276,5 @@ Each phase is its own PR and is reviewed and approved before it is pushed.
 
 ## Open decisions
 
-- Email provider for magic links.
-- Object-storage provider for database dumps.
-- Session length (proposed: 90 days, refreshed on use).
-- A 13+ checkbox on sign-in (recommended as the simplest COPPA posture).
+None. Remaining owner tasks are listed above; the domain is the one that
+gates the others (Postmark needs it).
