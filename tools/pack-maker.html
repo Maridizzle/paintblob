@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>paintblob pack maker</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 64px; background: #0d0f14; color: #e8e6df;
+    font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    max-width: 720px; margin-inline: auto;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .muted { color: #9aa0ab; font-size: 13px; }
+  .card { background: #161a22; border: 1px solid #262c38; border-radius: 12px; padding: 16px; margin-top: 16px; }
+  label { display: block; font-size: 13px; color: #b9bec8; margin: 10px 0 4px; }
+  input[type=text], select {
+    width: 100%; padding: 9px 11px; border-radius: 8px; border: 1px solid #303747;
+    background: #0d0f14; color: #e8e6df; font: inherit;
+  }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .row > div { flex: 1 1 200px; }
+  #drop {
+    border: 2px dashed #3a4256; border-radius: 12px; padding: 28px 16px; text-align: center;
+    background: #12151c; cursor: pointer; transition: border-color .15s, background .15s;
+  }
+  #drop.hot { border-color: #7c9cff; background: #171d2b; }
+  #drop b { color: #cfd4de; }
+  .switchrow { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+  .switchrow input { width: 18px; height: 18px; }
+  button {
+    font: inherit; font-weight: 600; padding: 10px 16px; border-radius: 9px; border: 0;
+    background: #6b8afd; color: #0b0d12; cursor: pointer; margin-top: 16px;
+  }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.ghost { background: #232a37; color: #e8e6df; }
+  ul { margin: 8px 0 0; padding-left: 18px; }
+  li.ok { color: #8fe3a6; }
+  li.bad { color: #ff9d9d; }
+  .thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .thumbs img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid #2a303c; }
+  .warn { background: #241a12; border: 1px solid #5a3d21; color: #f0c9a0; border-radius: 10px; padding: 12px 14px; font-size: 13px; }
+  code { background: #0d0f14; padding: 1px 5px; border-radius: 5px; border: 1px solid #262c38; }
+  #status { margin-top: 12px; min-height: 20px; font-size: 13px; color: #b9bec8; }
+</style>
+</head>
+<body>
+  <h1>paintblob pack maker</h1>
+  <div class="muted">Everything happens on this machine, in this browser. Nothing is uploaded. Close the tab and it is gone.</div>
+
+  <div class="warn" style="margin-top:16px">
+    You are the one confirming every picture is of adults, consensual, and yours to use. This tool
+    only tiles pixels into a puzzle. It does not check what is in them.
+  </div>
+
+  <div class="card">
+    <div id="drop">
+      <b>Drop images here</b>, or click to choose.
+      <div class="muted" style="margin-top:6px">PNG, JPEG, WebP, GIF. Each becomes one picture in the pack.</div>
+      <input id="file" type="file" accept="image/*" multiple hidden>
+    </div>
+    <div class="thumbs" id="thumbs"></div>
+
+    <div class="row" style="margin-top:16px">
+      <div>
+        <label for="pid">Pack id (lowercase, dashes)</label>
+        <input id="pid" type="text" placeholder="dusk-collection" autocomplete="off" spellcheck="false">
+      </div>
+      <div>
+        <label for="ptitle">Display title</label>
+        <input id="ptitle" type="text" placeholder="Dusk Collection" autocomplete="off">
+      </div>
+    </div>
+    <label for="pblurb">Blurb (optional, shown to players)</label>
+    <input id="pblurb" type="text" autocomplete="off">
+    <div class="row" style="margin-top:6px">
+      <div>
+        <label for="detail">Detail</label>
+        <select id="detail"></select>
+      </div>
+    </div>
+    <div class="switchrow">
+      <input id="adult" type="checkbox">
+      <label for="adult" style="margin:0">Mark this pack 18+ (adult)</label>
+    </div>
+
+    <button id="build" disabled>Build pack</button>
+    <button id="download" class="ghost" disabled>Download .zip</button>
+    <div id="status"></div>
+    <ul id="results"></ul>
+  </div>
+
+  <div class="card muted">
+    <b style="color:#cfd4de">After you download:</b>
+    unzip it and drop the <code>&lt;pack-id&gt;/</code> folder into <code>paintblob-cloud/packs/</code>,
+    then commit and push that private repo. Railway redeploys and the pack is live.
+    Mint a code for it on <code>/admin/</code> and redeem it in the game.
+  </div>
+
+<script type="module">
+  import { importImages } from '../src/import.js';
+  import { DETAIL_PRESETS } from '../src/pipeline/build.js';
+  import { packFiles } from './lib/packfiles.mjs';
+  import { zipStore } from './lib/zipwrite.mjs';
+
+  const $ = (id) => document.getElementById(id);
+  const state = { files: [], zip: null };
+
+  // Detail options straight from the pipeline, so this never drifts from it.
+  for (const key of Object.keys(DETAIL_PRESETS)) {
+    const o = document.createElement('option');
+    o.value = key; o.textContent = key;
+    if (key === 'normal') o.selected = true;
+    $('detail').append(o);
+  }
+
+  function refresh() {
+    $('thumbs').innerHTML = '';
+    for (const f of state.files) {
+      const img = document.createElement('img');
+      img.src = URL.createObjectURL(f.blob);
+      img.title = f.name;
+      $('thumbs').append(img);
+    }
+    $('build').disabled = !(state.files.length && $('pid').value.trim() && $('ptitle').value.trim());
+    $('download').disabled = !state.zip;
+  }
+
+  function addFiles(list) {
+    for (const file of list) {
+      if (!file.type.startsWith('image/')) continue;
+      state.files.push({ name: file.name.replace(/\.[^.]+$/, ''), blob: file });
+    }
+    state.zip = null;
+    refresh();
+  }
+
+  $('drop').addEventListener('click', () => $('file').click());
+  $('file').addEventListener('change', (e) => addFiles(e.target.files));
+  ['dragover', 'dragenter'].forEach((t) => $('drop').addEventListener(t, (e) => { e.preventDefault(); $('drop').classList.add('hot'); }));
+  ['dragleave', 'drop'].forEach((t) => $('drop').addEventListener(t, (e) => { e.preventDefault(); $('drop').classList.remove('hot'); }));
+  $('drop').addEventListener('drop', (e) => addFiles(e.dataTransfer.files));
+  for (const id of ['pid', 'ptitle']) $(id).addEventListener('input', refresh);
+
+  // The one build path, shared by the button and the headless test hook: run the
+  // real import pipeline into a collector (no IndexedDB save), then assemble the
+  // pack files. Returns { files, added, failed }.
+  async function buildPack(files, meta, detail, onProgress) {
+    const collected = [];
+    const api = { savePuzzle: ({ id, title, puzzle }) => { collected.push({ id, title, puzzle }); return { id }; } };
+    const { added, failed } = await importImages(
+      files.map((f) => ({ name: f.name, blob: f.blob })),
+      { detail, taken: new Set(), api, onProgress },
+    );
+    const packFilesList = collected.length ? packFiles(meta.id, meta, collected) : [];
+    return { files: packFilesList, added, failed };
+  }
+
+  $('build').addEventListener('click', async () => {
+    $('build').disabled = true;
+    $('results').innerHTML = '';
+    state.zip = null;
+    const meta = {
+      id: $('pid').value.trim(),
+      title: $('ptitle').value.trim(),
+      blurb: $('pblurb').value,
+      adult: $('adult').checked,
+      difficulty: $('detail').value,
+    };
+    try {
+      const { files, added, failed } = await buildPack(
+        state.files, meta, $('detail').value,
+        (name, i, total) => { $('status').textContent = `Building ${i + 1} of ${total}: ${name}`; },
+      );
+      for (const a of added) {
+        const li = document.createElement('li'); li.className = 'ok';
+        li.textContent = `${a.title} — ${a.cells} cells, ${a.colours} colours`;
+        $('results').append(li);
+      }
+      for (const f of failed) {
+        const li = document.createElement('li'); li.className = 'bad';
+        li.textContent = `${f.name} — skipped: ${f.reason}`;
+        $('results').append(li);
+      }
+      if (added.length) {
+        state.zip = { name: `${meta.id}.zip`, bytes: zipStore(files) };
+        $('status').textContent = `Pack ready: ${added.length} picture${added.length === 1 ? '' : 's'}. Download it below.`;
+      } else {
+        $('status').textContent = 'Nothing was built. Check the images and try again.';
+      }
+    } catch (err) {
+      $('status').textContent = `Could not build: ${err.message}`;
+    }
+    refresh();
+  });
+
+  $('download').addEventListener('click', () => {
+    if (!state.zip) return;
+    const blob = new Blob([state.zip.bytes], { type: 'application/zip' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = state.zip.name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  });
+
+  // Headless smoke hook (tools/pack-maker.smoke): drive the exact build path with
+  // synthetic blobs, no drag events or downloads.
+  window.__packMaker = {
+    async buildFromBlobs(blobs, meta) {
+      const files = blobs.map((b, i) => ({ name: b.name || `pic-${i + 1}`, blob: b }));
+      const { files: packed, added, failed } = await buildPack(files, meta, meta.difficulty || 'normal');
+      const dec = new TextDecoder();
+      const puzzleFile = packed.find((f) => !f.name.endsWith('/pack.json'));
+      const sample = puzzleFile ? JSON.parse(dec.decode(puzzleFile.data)) : null;
+      return {
+        files: packed.map((f) => ({ name: f.name, size: f.data.length })),
+        added, failed,
+        sampleKeys: sample ? Object.keys(sample) : [],
+        sampleHasSource: !!sample?.sourceImage,
+        sampleCells: sample?.cells?.length ?? 0,
+      };
+    },
+  };
+</script>
+</body>
+</html>
