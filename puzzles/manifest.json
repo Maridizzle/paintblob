@@ -348,7 +348,7 @@
     "id": "dazzflow-03",
     "title": "DazzFlow+03",
     "cells": 500,
-    "colours": 31,
+    "colours": 30,
     "thumb": [
       "#3b2423",
       "#451007",
@@ -365,13 +365,13 @@
     "id": "dazzflow-04",
     "title": "DazzFlow+04",
     "cells": 500,
-    "colours": 32,
+    "colours": 27,
     "thumb": [
-      "#914f14",
-      "#79430e",
+      "#7e5a36",
       "#dbeee1",
       "#61b69e",
-      "#c3dfd7"
+      "#c3dfd7",
+      "#396767"
     ],
     "difficulty": "normal",
     "themes": [
@@ -382,13 +382,13 @@
     "id": "dazzflow-05",
     "title": "DazzFlow+05",
     "cells": 500,
-    "colours": 37,
+    "colours": 29,
     "thumb": [
       "#331512",
       "#c3a3a0",
-      "#bb311e",
-      "#d0432f",
-      "#88422a"
+      "#88422a",
+      "#98604b",
+      "#644230"
     ],
     "difficulty": "normal",
     "themes": [
@@ -399,13 +399,13 @@
     "id": "dazzflow-06",
     "title": "DazzFlow+06",
     "cells": 500,
-    "colours": 39,
+    "colours": 30,
     "thumb": [
-      "#cb2723",
-      "#844712",
-      "#985317",
       "#e4d8c6",
-      "#917037"
+      "#ede4d5",
+      "#978e70",
+      "#cec5a6",
+      "#d6d0b6"
     ],
     "difficulty": "normal",
     "themes": [
@@ -416,7 +416,7 @@
     "id": "dazzflow-07",
     "title": "DazzFlow+07",
     "cells": 500,
-    "colours": 33,
+    "colours": 28,
     "thumb": [
       "#c52621",
       "#df4230",
