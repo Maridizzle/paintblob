@@ -523,5 +523,47 @@
       "Elements",
       "Space"
     ]
+  },
+  "dazzflow-01": {
+    "difficulty": "normal",
+    "themes": [
+      "Flowers"
+    ]
+  },
+  "dazzflow-02": {
+    "difficulty": "normal",
+    "themes": [
+      "Flowers"
+    ]
+  },
+  "dazzflow-03": {
+    "difficulty": "normal",
+    "themes": [
+      "Flowers"
+    ]
+  },
+  "dazzflow-04": {
+    "difficulty": "normal",
+    "themes": [
+      "Flowers"
+    ]
+  },
+  "dazzflow-05": {
+    "difficulty": "normal",
+    "themes": [
+      "Flowers"
+    ]
+  },
+  "dazzflow-06": {
+    "difficulty": "normal",
+    "themes": [
+      "Flowers"
+    ]
+  },
+  "dazzflow-07": {
+    "difficulty": "normal",
+    "themes": [
+      "Flowers"
+    ]
   }
 }

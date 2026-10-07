@@ -311,6 +311,125 @@
     "blind": true
   },
   {
+    "id": "dazzflow-01",
+    "title": "DazzFlow+01",
+    "cells": 500,
+    "colours": 23,
+    "thumb": [
+      "#3d1810",
+      "#f28d49",
+      "#f8cc46",
+      "#524f0d",
+      "#8a841a"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Flowers"
+    ]
+  },
+  {
+    "id": "dazzflow-02",
+    "title": "DazzFlow+02",
+    "cells": 500,
+    "colours": 24,
+    "thumb": [
+      "#f7ebc0",
+      "#e2e3b3",
+      "#272814",
+      "#5a5e3d",
+      "#d1dbac"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Flowers"
+    ]
+  },
+  {
+    "id": "dazzflow-03",
+    "title": "DazzFlow+03",
+    "cells": 500,
+    "colours": 30,
+    "thumb": [
+      "#3b2423",
+      "#451007",
+      "#621c0d",
+      "#77240e",
+      "#9a2507"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Flowers"
+    ]
+  },
+  {
+    "id": "dazzflow-04",
+    "title": "DazzFlow+04",
+    "cells": 500,
+    "colours": 27,
+    "thumb": [
+      "#7e5a36",
+      "#dbeee1",
+      "#61b69e",
+      "#c3dfd7",
+      "#396767"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Flowers"
+    ]
+  },
+  {
+    "id": "dazzflow-05",
+    "title": "DazzFlow+05",
+    "cells": 500,
+    "colours": 29,
+    "thumb": [
+      "#331512",
+      "#c3a3a0",
+      "#88422a",
+      "#98604b",
+      "#644230"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Flowers"
+    ]
+  },
+  {
+    "id": "dazzflow-06",
+    "title": "DazzFlow+06",
+    "cells": 500,
+    "colours": 30,
+    "thumb": [
+      "#e4d8c6",
+      "#ede4d5",
+      "#978e70",
+      "#cec5a6",
+      "#d6d0b6"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Flowers"
+    ]
+  },
+  {
+    "id": "dazzflow-07",
+    "title": "DazzFlow+07",
+    "cells": 500,
+    "colours": 28,
+    "thumb": [
+      "#c52621",
+      "#df4230",
+      "#f16034",
+      "#9c4617",
+      "#c0621c"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Flowers"
+    ]
+  },
+  {
     "id": "desert-milky-way",
     "title": "Desert Milky Way",
     "cells": 500,
