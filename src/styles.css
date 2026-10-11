@@ -612,6 +612,44 @@
   --stamp-hot: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='70' height='70' viewBox='0 0 70 70' fill='none' stroke='%232ec482' stroke-width='1.3'%3E%3Ccircle cx='35' cy='35' r='20'/%3E%3Ccircle cx='35' cy='35' r='11'/%3E%3Ccircle cx='35' cy='35' r='4' fill='%23d08a4f' stroke='none'/%3E%3Cpath d='M35 6v9M35 55v9M6 35h9M55 35h9' stroke-width='0.8' opacity='0.6'/%3E%3C/svg%3E");
 }
 
+/* ------------------------------------------------------------- dark mode */
+
+/* Dark mode is its own axis, NOT a theme: `settings.dark` stamps data-dark on
+   <html> (applyTheme), independent of data-theme, so it layers over whichever
+   theme or story chapter is showing and a theme pick never blocks it. These
+   blocks come AFTER every theme block on purpose — equal specificity, so the
+   later rule wins. Only neutrals are touched; each theme keeps its accents. */
+
+/* The unpainted picture goes black with a wireframe in the theme's own accent.
+   Painted cells keep their true colours. (Patina already blacks its own canvas
+   in copper, so it is left alone.) Custom properties resolve var() at computed
+   time, which is what Board.syncTheme() reads. */
+:root[data-dark]:not([data-theme="patina"]) {
+  --canvas-paper: #040405;
+  --canvas-blank: #0b0b0e;
+  --canvas-blank-edge: rgba(var(--accent-rgb), 0.45);
+  --canvas-number: rgba(var(--accent-rgb), 0.72);
+  --canvas-number-active: rgba(var(--accent2-rgb), 0.95);
+}
+
+/* Fae is the one light theme, so it also needs dark surfaces and type; every
+   other theme already has dark surfaces. Gold edges and the rose accents stay. */
+:root[data-dark][data-theme="fae"] {
+  --chip-rgb: 30, 18, 26;
+  --sheen-rgb: 255, 214, 236;
+  --shade-rgb: 4, 0, 3;
+  --void: #120a10;
+  --ink: #1a0f17;
+  --vinyl: #150c12;
+  --card: rgba(30, 18, 26, 0.94);
+  --card-solid: #26151f;
+  --band: rgba(255, 200, 230, 0.05);
+  --paper: #160d13;
+  --paper-ink: #f6e6ee;
+  --text: #f6e6ee;
+  --muted: #b894a8;
+}
+
 
 
 

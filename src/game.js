@@ -4801,14 +4801,14 @@ function renderSettings(body) {
   themeRow.append(themeText, themeSeg);
   body.append(themeRow);
 
-  // Dark mode: its own axis, not a theme. On = the patina dark look as the base;
-  // a story chapter still shows its own theme (see applyTheme). Kept separate
-  // from the picker so choosing dark never pins over the story's look.
+  // Dark mode: its own axis, not a theme. It layers a black picture and darker
+  // surfaces over whichever theme is showing (story chapters too); the theme
+  // picker above never affects it and it never affects the picker.
   const darkRow = row();
   const darkText = document.createElement('div');
   darkText.className = 'grow';
   darkText.innerHTML = '<div class="label">Dark mode</div>'
-    + '<div class="sub">A black, copper-lit look. Story chapters keep their own colours.</div>';
+    + '<div class="sub">A black picture and darker surfaces, on top of any theme. It never changes your theme.</div>';
   const darkSw = document.createElement('div');
   darkSw.className = `switch ${settings.dark ? 'on' : ''}`;
   darkRow.append(darkText, darkSw);
@@ -4989,19 +4989,20 @@ function applyTheme() {
   const s = S.save.settings;
   const id = s.lowStim
     ? DEFAULT_THEME
-    // In a story chapter (and not pinned), the chapter's own look wins — dark
-    // mode deliberately does NOT override it, so Chapter Two keeps its cobalt.
+    // In a story chapter (and not pinned), the chapter's own look wins. Dark mode
+    // is NOT part of this: it never picks, changes or blocks a theme.
     : (S.inStory && !s.themePinned)
       ? chapterTheme(getChapter(S.save.story.chapter), S.save)
-      // Out of story: a pinned theme wins; otherwise dark mode's patina is the
-      // base, falling back to the plain default look.
-      : s.themePinned
-        ? s.theme
-        : s.dark ? 'patina' : DEFAULT_THEME;
+      : s.themePinned ? s.theme : DEFAULT_THEME;
   document.documentElement.dataset.theme = themeOr(id);
+  // Dark mode is its own axis: a separate attribute the stylesheet layers over
+  // WHATEVER theme is showing (story chapters included). Low-stim keeps its own
+  // flat black ground, so it ignores the switch.
+  document.documentElement.toggleAttribute('data-dark', !!s.dark && !s.lowStim);
   // The canvas can't read CSS custom properties, so hand the board the theme's
   // paper/blank/edge/number colours and repaint the base layer — this is what
-  // turns the unpainted picture black under Patina and back to paper elsewhere.
+  // turns the unpainted picture black under dark mode (and Patina) and back to
+  // paper elsewhere.
   board.syncTheme();
   board.dirty = true;
   ensureFrame();

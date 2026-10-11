@@ -175,16 +175,17 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
   the player picks any theme) makes their choice win in story too, instead of the
   chapter theme.
   - **Dark mode is its own axis, not a theme.** `settings.dark` + a **Dark mode**
-    toggle in Settings (separate from the theme chips) applies `patina` as the
-    app's base look WITHOUT pinning, so `applyTheme` keeps handing a story chapter
-    its own theme (cobalt in Ch2, etc.) while dark mode dresses everything else.
-    Patina is BOTH a pickable theme chip (choose it and it pins, winning
-    everywhere including story) AND what the Dark mode toggle applies as a base
-    without pinning (a story chapter then keeps its own theme). Resolution order in
-    `applyTheme`: low-stim → default; in-story && !pinned → chapter theme; else
-    pinned ? chosen theme : dark ? patina : default. There is no patina migration:
-    a patina pick is a real theme now, so it must survive reload untouched.
-  - **Patina blacks the canvas.** The unpainted picture (paper, blank cells,
+    toggle in Settings (separate from the theme chips). `applyTheme` resolves the
+    theme WITHOUT looking at it (low-stim → default; in-story && !pinned → chapter
+    theme; else pinned ? chosen theme : default) and then stamps a separate
+    `data-dark` attribute on `<html>` (off in low-stim). The `:root[data-dark]`
+    blocks sit AFTER every theme block in `styles.css` (equal specificity, later
+    wins) and touch neutrals only: the unpainted canvas goes black with a wireframe
+    in the theme's own accent (Patina keeps its own copper canvas), and Fae, the one
+    light theme, also gets dark surfaces and type. So dark layers over any theme or
+    story chapter, a theme pick never blocks it, and it never pins. Patina is just
+    an ordinary pickable theme; there is no patina migration.
+  - **Patina (and dark mode) black the canvas.** The unpainted picture (paper, blank cells,
     outlines, numbers) is the ONE place CSS reaches the `<canvas>`: render.js
     holds light-mode fallback constants, exposes `--canvas-paper` /
     `--canvas-blank` / `--canvas-blank-edge` / `--canvas-number` /
@@ -192,7 +193,7 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
     context can't resolve `var(--…)`). `applyTheme()` calls it and repaints, so
     Patina turns the unpainted space black with a copper wireframe while painted
     cells keep their true photo colour. Every other theme inherits the light
-    defaults, so only Patina changes the picture.
+    defaults, so only Patina and dark mode change the picture.
 - **Fill styles** — `fill-fx.js` + `settings.fill` (a picker in Settings, shown
   even in low-stim since it is a fill *control*). The tap→fill animation is the
   player's choice: `blob` (the classic full-picture explosion, `paint-fx.js`'s

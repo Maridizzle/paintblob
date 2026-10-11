@@ -1061,10 +1061,15 @@ test('dark mode is its own axis, separate from the theme picker', () => {
   }
   const game = readSource('src/game.js');
   assert.match(game, /settings\.dark \?\?= false/, 'boot() must backfill settings.dark');
-  // applyTheme uses dark as the out-of-story base and never overrides the story
-  // chapter theme with it.
-  assert.match(game, /s\.dark \? 'patina' : DEFAULT_THEME/,
-    'applyTheme must use dark mode as the base look, not override the chapter theme');
+  // Dark mode never picks, changes or blocks a theme: applyTheme resolves the
+  // theme without looking at it, and layers it as a separate attribute.
+  const apply = game.slice(game.indexOf('function applyTheme()'), game.indexOf('board.syncTheme();'));
+  assert.doesNotMatch(apply, /s\.dark \?/, 'the theme must not be chosen by dark mode');
+  assert.doesNotMatch(apply, /'patina'/, 'dark mode must not be the patina theme any more');
+  assert.match(apply, /toggleAttribute\('data-dark'/, 'dark mode must be its own data-dark attribute');
+  const css = readSource('src/styles.css');
+  assert.ok(css.indexOf(':root[data-dark]:not([data-theme="patina"])') > css.lastIndexOf(':root[data-theme="patina"] {'),
+    'the data-dark rules must come after every theme block so they win the cascade');
   // Patina is a pickable theme again: the picker must NOT skip it (a stray
   // continue would hide the green-border look people choose here), and a patina
   // pick must survive reload, so boot() must NOT re-run the old migration that
