@@ -3,7 +3,7 @@ import { Burst, audioCue } from './paint-fx.js';
 import { CellFill, Puff, FILL_STYLES, DEFAULT_FILL } from './fill-fx.js';
 import { Sfx } from './audio.js';
 import { ACHIEVEMENTS, Achievements, StreakTracker } from './achievements.js';
-import { HINT_FILLS, hintFillById, hintFillCharge, pickFillCells, canAffordFill } from './hintfills.js';
+import { HINT_FILLS, hintFillById, hintFillCharge, pickFillCells, canAffordFill, openCellCount } from './hintfills.js';
 import { renderShareCard, shareCanvas, shareUrl, needsOwnLabel, canShowPicture } from './share.js';
 import { prepareAllShapes, matchedShapeIds, orderAchievements, SHAPE_ACHIEVEMENTS } from './shapes.js';
 import { accruePassiveHint, grantHints, spendHint, pickHintTarget } from './hints.js';
@@ -118,7 +118,7 @@ const S = {
   panel: null,
   importing: false,
   hintsThisPuzzle: 0,
-  freeFilled: false,   // a free batch fill (an ability or a hint fill) was used on this picture
+  freeFills: 0,        // free batch fills (abilities or hint fills) used on this picture, undone ones taken off
   shapes: {},          // per-picture shape cells for the Creativist achievements (shapes.js)
   lastCellAt: null,    // when the picture was down to its last unpainted cell (Last Cell Standing)
   comeback: false,     // this launch followed 30+ days away (Come Back Kid)
@@ -224,7 +224,9 @@ function persist(immediate = false) {
         // When the first cell was painted (null until then), for Slow Burn.
         startedAt: S.save.progress[S.puzzle.id]?.startedAt ?? (S.filled.size ? Date.now() : null),
         // A free batch fill was used here, so the fill ORDER no longer says much (order achievements skip it).
-        assisted: S.freeFilled,
+        assisted: S.freeFills,
+        // Hints used on this picture, so reopening it cannot reset the Unassisted check.
+        hintsUsed: S.hintsThisPuzzle,
         // Special paints laid on this picture (cellId → paintId). A plain object
         // so it serialises; {} when none, which is the common case. Loaded back
         // into board.fx on the next open (see loadPuzzle).
@@ -2030,7 +2032,7 @@ async function loadPuzzle(id) {
   S.cells = prepareCells(puzzle);
   S.filled = new Set(saved.filled);
   S.shapes = prepareAllShapes(S.cells, puzzle.width, puzzle.height);
-  S.freeFilled = !!saved.assisted;
+  S.freeFills = Number(saved.assisted) || 0;   // older saves stored a plain true
   S.lastCellAt = (S.cells.length > 1 && S.filled.size === S.cells.length - 1) ? Date.now() : null;
   S.elapsedMs = (saved.seconds || 0) * 1000;
   S.finished = S.filled.size === S.cells.length;
@@ -2059,7 +2061,7 @@ async function loadPuzzle(id) {
   stopBoss(); // tear down any fight from the picture we are leaving
   S.selected = -1;
   S.revealFrom = S.finished ? 0 : -1;
-  S.hintsThisPuzzle = 0;
+  S.hintsThisPuzzle = Number(saved.hintsUsed) || 0;
   S.pending.clear();
 
   S.remaining = puzzle.palette.map(() => 0);
@@ -2704,8 +2706,9 @@ function undoLast() {
     syncHints();
   }
 
-  // A hint fill took hints; taking it back gives them back (and the picture is no
-  // longer "assisted" by that use).
+  // Taking a free batch back means it no longer counts against the picture.
+  if (step.freeBatch) S.freeFills = Math.max(0, S.freeFills - 1);
+  // A hint fill took hints; taking it back gives them back.
   if (step.hintsSpent) {
     stats.hints = (stats.hints ?? 0) + step.hintsSpent;
     stats.hintsUsed = Math.max(0, (stats.hintsUsed ?? 0) - step.hintsSpent);
@@ -2756,7 +2759,7 @@ function autoFillHalfOfHeldColour() {
   );
   const n = Math.ceil(candidates.length / 2);
   const colour = S.selected;
-  if (n) S.freeFilled = true;
+  if (n) S.freeFills++;
   for (let i = 0; i < n; i++) {
     const cell = candidates[i];
     S.filled.add(cell.id);
@@ -2770,7 +2773,7 @@ function autoFillHalfOfHeldColour() {
       cells: candidates.slice(0, n).map((c) => c.id),
       // Every one of them is free: none was counted in stats.cells above.
       free: n,
-      colour, points: 0, muted: false, hint: false,
+      colour, points: 0, muted: false, hint: false, freeBatch: true,
     });
   }
   if (n && S.remaining[S.selected] === 0) {
@@ -2793,7 +2796,7 @@ function autoFillHalfOfHeldColour() {
  */
 function fillCellsFree(cells, extra = {}) {
   if (!cells.length || S.finished) return 0;
-  S.freeFilled = true;
+  S.freeFills++;
   const emptied = new Set();
   for (const cell of cells) {
     S.filled.add(cell.id);
@@ -2804,7 +2807,7 @@ function fillCellsFree(cells, extra = {}) {
   S.history.push({
     cells: cells.map((c) => c.id),
     free: cells.length, // none was counted in stats.cells, so none comes back
-    colour: S.selected, points: 0, muted: false, hint: false,
+    colour: S.selected, points: 0, muted: false, hint: false, freeBatch: true,
     ...extra,
   });
   if (emptied.size) achievements.award('tub-empty');
@@ -2960,7 +2963,7 @@ function noteFinishAchievements(bossFight = null) {
   if (S.lastCellAt && Date.now() - S.lastCellAt >= 10 * 60_000) ach('last-cell');
   checkTripleThreat();
 
-  if (!S.freeFilled) {
+  if (!S.freeFills) {
     const order = [...S.filled];
     for (const id of orderAchievements(order, S.cells, S.puzzle.width, S.puzzle.height)) ach(id);
   }
@@ -3164,6 +3167,7 @@ function renderHintsPanel(body) {
         ? `only ${picked.length} of this colour left · ${charge}✦`
         : picked.length
           ? `${def.cost}✦ for ${def.cells} cell${def.cells === 1 ? '' : 's'}`
+          : openCellCount(S.cells, S.filled, S.pending) <= 1 ? 'the last cell is yours to paint'
           : 'nothing of this colour left';
     el.append(text);
     const go = document.createElement('button');

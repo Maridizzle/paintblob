@@ -10,6 +10,8 @@
 //     fill must never become a way to turn hints into coins.
 //   - It is one undo step, and undo hands the hints back.
 //   - A frozen cell (a boss's lock) or one with a blob in flight is never taken.
+//   - It never takes the last open cell, so the player always gets the final tap
+//     and a fill can never be the move that finishes (and locks) the picture.
 //
 // Pure (no DOM) so it runs in node tests; game.js owns the panel and the paint.
 
@@ -37,22 +39,37 @@ export function hintFillCharge(def, available) {
   return Math.max(1, Math.ceil((def.cost * available) / def.cells));
 }
 
+/** Cells still open to paint (not filled, none in flight), across every colour. */
+export function openCellCount(cells, filled, pending) {
+  let n = 0;
+  for (const c of cells) if (!filled.has(c.id) && !pending.has(c.id)) n++;
+  return n;
+}
+
 /**
  * The cells a fill would take: the biggest unfilled cells of `colour`, biggest
  * first (ties by id so it is stable), skipping any in flight or locked.
+ *
+ * A fill never takes the picture's LAST open cell (`reserve`, one by default),
+ * so the player always gets the final tap. That also means a fill can never
+ * finish the picture, which locks Undo, so a fill is always one the player can
+ * take back for a refund.
  * @param {{id:number, colour:number, area:number}[]} cells
  * @param {Set<number>} filled
  * @param {Set<number>} pending   cells with a blob already in flight
  * @param {number} colour         the held colour (an index into the palette)
  * @param {number} n              how many to take
  * @param {(id:number)=>boolean} [isLocked]  a boss freeze, say
+ * @param {number} [reserve]      open cells that must be left over
  */
-export function pickFillCells(cells, filled, pending, colour, n, isLocked = () => false) {
+export function pickFillCells(cells, filled, pending, colour, n, isLocked = () => false, reserve = 1) {
   if (!(colour >= 0) || !(n > 0)) return [];
+  const cap = Math.min(n, openCellCount(cells, filled, pending) - reserve);
+  if (cap <= 0) return [];
   return cells
     .filter((c) => c.colour === colour && !filled.has(c.id) && !pending.has(c.id) && !isLocked(c.id))
     .sort((a, b) => b.area - a.area || a.id - b.id)
-    .slice(0, n);
+    .slice(0, cap);
 }
 
 /** Can the player afford what is actually on the table? */

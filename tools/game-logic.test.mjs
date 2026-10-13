@@ -4,7 +4,7 @@
 // here without a browser.
 
 import test from 'node:test';
-import { HINT_FILLS, hintFillById, hintFillCharge, pickFillCells, canAffordFill } from '../src/hintfills.js';
+import { HINT_FILLS, hintFillById, hintFillCharge, pickFillCells, canAffordFill, openCellCount } from '../src/hintfills.js';
 import { shareUrl, shareUrlLabel, needsOwnLabel, canShowPicture, wrapLines, fitInside, renderShareCard, shareCanvas, OWN_LABEL, AWARD_RIBBON, PICTURE_RIBBON, CARD_W, CARD_H } from '../src/share.js';
 import { TIER_POINTS, SHAREABLE } from '../src/achievements.js';
 import { prepareShape, shapeMatches, prepareAllShapes, matchedShapeIds, orderAchievements, orderCorrelation, SHAPE_ACHIEVEMENTS, MIN_SHAPE_CELLS } from '../src/shapes.js';
@@ -4357,4 +4357,25 @@ test('canAffordFill needs a real charge and enough hints', () => {
   assert.equal(canAffordFill({ hints: 49 }, 50), false);
   assert.equal(canAffordFill({}, 10), false);
   assert.equal(canAffordFill({ hints: 99 }, 0), false);
+});
+
+test('a hint fill never takes the last open cell, so it can never finish the picture', () => {
+  const cells = [0, 1, 2, 3].map((id) => ({ id, colour: 1, area: 10 - id }));
+  assert.equal(openCellCount(cells, new Set(), new Set()), 4);
+  // Asking for more than is open still leaves one.
+  assert.deepEqual(pickFillCells(cells, new Set(), new Set(), 1, 25).map((c) => c.id), [0, 1, 2]);
+  // With one open cell left there is nothing to take at all.
+  assert.deepEqual(pickFillCells(cells, new Set([0, 1, 2]), new Set(), 1, 5), []);
+  // A cell in flight is not "open", so it cannot be the one that is left over.
+  assert.deepEqual(pickFillCells(cells, new Set([0, 1]), new Set([2]), 1, 5), []);
+});
+
+test('the reserve counts open cells of every colour, not just the held one', () => {
+  const cells = [
+    { id: 0, colour: 1, area: 9 }, { id: 1, colour: 1, area: 8 }, { id: 2, colour: 2, area: 7 },
+  ];
+  // Two colour-1 cells, one other-colour cell open: both colour-1 cells can go.
+  assert.deepEqual(pickFillCells(cells, new Set(), new Set(), 1, 5).map((c) => c.id), [0, 1]);
+  // Reserve 0 restores the old behaviour for a caller that wants it.
+  assert.deepEqual(pickFillCells(cells.slice(0, 2), new Set(), new Set(), 1, 5, () => false, 0).map((c) => c.id), [0, 1]);
 });
