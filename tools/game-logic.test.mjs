@@ -4,6 +4,9 @@
 // here without a browser.
 
 import test from 'node:test';
+import { shareUrl, shareUrlLabel, needsOwnLabel, canShowPicture, wrapLines, fitInside, renderShareCard, shareCanvas, OWN_LABEL, AWARD_RIBBON, PICTURE_RIBBON, CARD_W, CARD_H } from '../src/share.js';
+import { TIER_POINTS, SHAREABLE } from '../src/achievements.js';
+import { prepareShape, shapeMatches, prepareAllShapes, matchedShapeIds, orderAchievements, orderCorrelation, SHAPE_ACHIEVEMENTS, MIN_SHAPE_CELLS } from '../src/shapes.js';
 import { GLIDE_SPEEDS, DEFAULT_GLIDE_SPEED, glideSpeed, easeVelocity, targetVelocity, sanitisePadPos } from '../src/glide.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -4042,4 +4045,266 @@ test('glide: saved pad positions are clamped, junk becomes null', () => {
   assert.equal(sanitisePadPos(null), null);
   assert.equal(sanitisePadPos({ x: 'a', y: 1 }), null);
   assert.deepEqual(sanitisePadPos({ x: -3, y: 9 }), { x: 0, y: 1 });
+});
+
+/* ----------------------------------------------- second-wave achievements */
+
+test('tiered achievements pay points by tier and no hints', () => {
+  const tiered = ACHIEVEMENTS.filter((a) => a.tier);
+  assert.equal(tiered.length, 108);
+  for (const a of tiered) {
+    assert.equal(a.points, TIER_POINTS[a.tier], a.id);
+    assert.equal(a.hint, 0, a.id);
+    assert.ok(a.event || (a.track && a.goal > 0), `${a.id} needs an event or a counter`);
+  }
+  assert.deepEqual(TIER_POINTS, { small: 25, mid: 150, big: 500 });
+});
+
+test('exactly 15 shareable awards, all of them big or one of the original five', () => {
+  assert.equal(SHAREABLE.length, 15);
+  for (const a of SHAREABLE) {
+    assert.ok(a.tier === 'big' || ['blob-25000', 'blob-100000', 'pic-100', 'time-100h', 'completionist'].includes(a.id), a.id);
+  }
+});
+
+test('the original achievements keep paying hints and pay no points', () => {
+  const original = ACHIEVEMENTS.filter((a) => !a.tier);
+  assert.equal(original.length, 48);
+  for (const a of original) assert.equal(a.points, undefined, a.id);
+});
+
+test('every shape achievement id in shapes.js exists in the catalogue', () => {
+  for (const id of [...Object.keys(SHAPE_ACHIEVEMENTS), 'shape-line', 'order-in', 'order-out', 'order-sweep',
+    'order-curtain', 'order-small', 'order-big', 'order-border', 'order-half', 'order-colour', 'last-cell']) {
+    assert.ok(IDS.has(id), id);
+  }
+});
+
+/** A W x H grid of unit cells, one anchor each, with a colour per row band. */
+function grid(W, H, colourOf = () => 0) {
+  const cells = [];
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const id = y * W + x;
+      cells.push({ id, colour: colourOf(x, y), area: 1, anchor: { x: x + 0.5, y: y + 0.5 },
+        bounds: { x0: x, y0: y, x1: x + 1, y1: y + 1 } });
+    }
+  }
+  return cells;
+}
+
+test('filling exactly a heart in the middle fires Lovestruck, and nothing else does', () => {
+  const W = 120, H = 80, cells = grid(W, H);
+  const prepared = prepareAllShapes(cells, W, H);
+  const heart = prepared.heart;
+  assert.ok(heart.inIds.size >= MIN_SHAPE_CELLS);
+  const filled = new Set(heart.inIds);
+  const ids = matchedShapeIds(prepared, filled);
+  assert.ok(ids.includes('shape-heart'));
+  assert.ok(!ids.includes('shape-disc'));
+  assert.ok(!ids.includes('shape-star'));
+});
+
+test('a heart with the rest of the picture filled in is not a heart', () => {
+  const W = 120, H = 80, cells = grid(W, H);
+  const prepared = prepareAllShapes(cells, W, H);
+  const filled = new Set(cells.map((c) => c.id));
+  assert.ok(!matchedShapeIds(prepared, filled).includes('shape-heart'));
+});
+
+test('a half-finished heart does not count, and a few stray cells are forgiven', () => {
+  const W = 120, H = 80, cells = grid(W, H);
+  const heart = prepareShape('heart', cells, W, H);
+  const part = new Set([...heart.inIds].slice(0, Math.floor(heart.inIds.size * 0.5)));
+  assert.equal(shapeMatches(heart, part), false);
+  const nearly = new Set(heart.inIds);
+  for (let i = 0; i < 5; i++) nearly.add(i); // five stray cells on the top row
+  assert.equal(shapeMatches(heart, nearly), true);
+});
+
+test('a picture too coarse to hold a shape yields no shape', () => {
+  assert.equal(prepareShape('heart', grid(6, 4), 6, 4), null);
+});
+
+test('a clean horizontal line fires Straight and Narrow', () => {
+  const W = 120, H = 80, cells = grid(W, H);
+  const prepared = prepareAllShapes(cells, W, H);
+  const row = cells.filter((c) => Math.abs(c.anchor.y - H / 2) <= 0.03 * H).map((c) => c.id);
+  assert.ok(matchedShapeIds(prepared, new Set(row)).includes('shape-line'));
+});
+
+test('orderCorrelation is +1 for a perfect sweep and -1 for the reverse', () => {
+  const ids = [0, 1, 2, 3, 4, 5, 6, 7];
+  assert.ok(Math.abs(orderCorrelation(ids, (i) => i) - 1) < 1e-9);
+  assert.ok(Math.abs(orderCorrelation(ids, (i) => -i) + 1) < 1e-9);
+});
+
+test('a left-to-right pass earns Sweep, a top-to-bottom pass earns Curtain', () => {
+  const W = 12, H = 10, cells = grid(W, H);
+  const byX = [...cells].sort((a, b) => a.anchor.x - b.anchor.x || a.anchor.y - b.anchor.y).map((c) => c.id);
+  const e = orderAchievements(byX, cells, W, H);
+  assert.ok(e.includes('order-sweep') && !e.includes('order-curtain'));
+  const byY = [...cells].sort((a, b) => a.anchor.y - b.anchor.y || a.anchor.x - b.anchor.x).map((c) => c.id);
+  const f = orderAchievements(byY, cells, W, H);
+  assert.ok(f.includes('order-curtain') && !f.includes('order-sweep'));
+});
+
+test('working outside in earns Outside In, and the reverse earns Inside Out', () => {
+  const W = 12, H = 10, cells = grid(W, H);
+  const d = (c) => Math.hypot(c.anchor.x - W / 2, c.anchor.y - H / 2);
+  const out = [...cells].sort((a, b) => d(b) - d(a)).map((c) => c.id);
+  assert.ok(orderAchievements(out, cells, W, H).includes('order-in'));
+  const inn = [...out].reverse();
+  assert.ok(orderAchievements(inn, cells, W, H).includes('order-out'));
+});
+
+test('edge cells first earns Borderline; the left half first earns Half and Half', () => {
+  const W = 12, H = 10, cells = grid(W, H);
+  const edge = cells.filter((c) => c.bounds.x0 === 0 || c.bounds.y0 === 0 || c.bounds.x1 === W || c.bounds.y1 === H);
+  const rest = cells.filter((c) => !edge.includes(c));
+  const ids = [...edge, ...rest].map((c) => c.id);
+  assert.ok(orderAchievements(ids, cells, W, H).includes('order-border'));
+  const left = cells.filter((c) => c.anchor.x < W / 2);
+  const right = cells.filter((c) => c.anchor.x >= W / 2);
+  assert.ok(orderAchievements([...left, ...right].map((c) => c.id), cells, W, H).includes('order-half'));
+});
+
+test('smallest-first and biggest-first read the first 20 fills', () => {
+  const W = 12, H = 10;
+  const cells = grid(W, H).map((c, i) => ({ ...c, area: i + 1 }));
+  const asc = cells.map((c) => c.id);
+  assert.ok(orderAchievements(asc, cells, W, H).includes('order-small'));
+  assert.ok(orderAchievements([...asc].reverse(), cells, W, H).includes('order-big'));
+});
+
+test('One at a Time needs each colour finished before the next, with 3+ colours', () => {
+  const W = 12, H = 10;
+  const cells = grid(W, H, (x) => Math.floor(x / 4));
+  const tidy = [...cells].sort((a, b) => a.colour - b.colour).map((c) => c.id);
+  assert.ok(orderAchievements(tidy, cells, W, H).includes('order-colour'));
+  const messy = [...tidy.slice(0, 5), ...tidy.slice(-5), ...tidy.slice(5, -5)];
+  assert.ok(!orderAchievements(messy, cells, W, H).includes('order-colour'));
+});
+
+test('order rules ignore a picture under 100 cells (colour order aside)', () => {
+  const W = 8, H = 8, cells = grid(W, H);
+  const ids = cells.map((c) => c.id);
+  const e = orderAchievements(ids, cells, W, H);
+  assert.ok(!e.includes('order-sweep') && !e.includes('order-curtain'));
+});
+
+/* ------------------------------------------------------------- share cards */
+
+/** A canvas that records what is drawn, so the card's rules can be asserted. */
+function fakeCanvas() {
+  const calls = [];
+  const noop = () => {};
+  const ctx = new Proxy({}, {
+    get(_, name) {
+      if (name === 'measureText') return (s) => ({ width: String(s).length * 20 });
+      if (name === 'createLinearGradient') return () => ({ addColorStop: noop });
+      if (name === 'fillText') return (text, x, y) => calls.push({ op: 'text', text, x, y });
+      if (name === 'drawImage') return (img, x, y, w, h) => calls.push({ op: 'image', x, y, w, h });
+      return noop;
+    },
+    set() { return true; },
+  });
+  return { calls, make: () => ({ width: 0, height: 0, getContext: () => ctx }) };
+}
+const textsOf = (calls) => calls.filter((c) => c.op === 'text').map((c) => c.text);
+
+test('share links are tagged by kind and shown without scheme or query', () => {
+  assert.match(shareUrl('award'), /^https:\/\/paintblob\.netlify\.app\/\?ref=award$/);
+  assert.match(shareUrl('picture'), /\?ref=picture$/);
+  assert.equal(shareUrlLabel(), 'paintblob.netlify.app');
+});
+
+test('only a picture the player added themselves needs the OWN banner', () => {
+  assert.equal(needsOwnLabel({ imported: true }), true);
+  assert.equal(needsOwnLabel({ imported: true, pack: 'p1' }), false);
+  assert.equal(needsOwnLabel({}), false);
+  assert.equal(needsOwnLabel(undefined), false);
+});
+
+test('18+ pack pictures never appear on a card', () => {
+  assert.equal(canShowPicture({ adult: true, pack: 'p' }), false);
+  assert.equal(canShowPicture({ adult: false, pack: 'p' }), true);
+  assert.equal(canShowPicture({}), true);
+});
+
+test('wrapLines wraps on width and ends an overlong run with an ellipsis', () => {
+  const m = (s) => s.length * 10;
+  assert.deepEqual(wrapLines(m, 'aaa bbb ccc', 70), ['aaa bbb', 'ccc']);
+  const long = wrapLines(m, 'one two three four five six seven eight', 60, 2);
+  assert.equal(long.length, 2);
+  assert.ok(long[1].endsWith('…'));
+});
+
+test('fitInside keeps the picture in proportion', () => {
+  assert.deepEqual(fitInside(200, 100, 100, 100), { w: 100, h: 50 });
+  assert.deepEqual(fitInside(100, 200, 100, 100), { w: 50, h: 100 });
+});
+
+test('an own-picture card carries the banner, drawn last, and no title', () => {
+  const f = fakeCanvas();
+  renderShareCard({ kind: 'picture', title: '', picture: { width: 400, height: 300 }, own: true, makeCanvas: f.make });
+  const texts = textsOf(f.calls);
+  assert.ok(texts.includes(OWN_LABEL));
+  assert.equal(texts[texts.length - 1], OWN_LABEL, 'the banner is the last thing drawn');
+  assert.ok(texts.includes(PICTURE_RIBBON));
+  assert.ok(f.calls.some((c) => c.op === 'image'));
+});
+
+test('a bundled-picture card has no OWN banner but does name the picture', () => {
+  const f = fakeCanvas();
+  renderShareCard({ kind: 'picture', title: 'Airship Harvest', picture: { width: 400, height: 300 }, own: false, makeCanvas: f.make });
+  const texts = textsOf(f.calls);
+  assert.ok(!texts.includes(OWN_LABEL));
+  assert.ok(texts.some((t) => t.includes('Airship') || t.includes('Harvest')));
+});
+
+test('an award card shows the ribbon, the points and the link, and works with no picture', () => {
+  const f = fakeCanvas();
+  renderShareCard({ kind: 'award', icon: '💖', title: 'Lovestruck', subtitle: 'Fill a heart in the middle.',
+    points: 500, dateText: 'October 13, 2026', picture: null, own: false, makeCanvas: f.make });
+  const texts = textsOf(f.calls);
+  assert.ok(texts.includes(AWARD_RIBBON));
+  assert.ok(texts.includes('+500 points'));
+  assert.ok(texts.includes('paintblob.netlify.app'));
+  assert.ok(!f.calls.some((c) => c.op === 'image'));
+  assert.equal(CARD_W, 1080);
+  assert.equal(CARD_H, 1350);
+});
+
+function fakeShareCanvas() {
+  return { toBlob: (cb) => cb(new Blob(['x'], { type: 'image/png' })), toDataURL: () => 'data:image/png;base64,AA==' };
+}
+
+test('shareCanvas uses the share sheet when files can be shared', async () => {
+  let shared = null;
+  const nav = { canShare: () => true, share: async (d) => { shared = d; } };
+  const out = await shareCanvas(fakeShareCanvas(), { title: 't', text: 'x', url: 'u', filename: 'a.png', save: async () => { throw new Error('no'); }, nav });
+  assert.equal(out, 'shared');
+  assert.equal(shared.files[0].name, 'a.png');
+});
+
+test('cancelling the share sheet is not an error and does not fall back to a download', async () => {
+  let saved = false;
+  const nav = { canShare: () => true, share: async () => { const e = new Error('x'); e.name = 'AbortError'; throw e; } };
+  const out = await shareCanvas(fakeShareCanvas(), { filename: 'a.png', save: async () => { saved = true; return {}; }, nav });
+  assert.equal(out, 'cancelled');
+  assert.equal(saved, false);
+});
+
+test('without file sharing the card is saved instead', async () => {
+  let savedAs = null;
+  const out = await shareCanvas(fakeShareCanvas(), { filename: 'a.png', save: async (_u, n) => { savedAs = n; return {}; }, nav: { canShare: () => false, share: async () => {} } });
+  assert.equal(out, 'saved');
+  assert.equal(savedAs, 'a.png');
+  assert.equal(await shareCanvas(fakeShareCanvas(), { filename: 'b.png', save: async () => ({}), nav: undefined }), 'saved');
+});
+
+test('a failed save reports an error rather than pretending it shared', async () => {
+  assert.equal(await shareCanvas(fakeShareCanvas(), { filename: 'a.png', save: async () => ({ error: 'nope' }), nav: undefined }), 'error');
+  assert.equal(await shareCanvas(fakeShareCanvas(), { filename: 'a.png', save: async () => { throw new Error('x'); }, nav: undefined }), 'error');
 });

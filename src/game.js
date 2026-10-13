@@ -1,8 +1,10 @@
-import { Board } from './render.js';
+import { Board, MAX_ZOOM } from './render.js';
 import { Burst, audioCue } from './paint-fx.js';
 import { CellFill, Puff, FILL_STYLES, DEFAULT_FILL } from './fill-fx.js';
 import { Sfx } from './audio.js';
 import { ACHIEVEMENTS, Achievements, StreakTracker } from './achievements.js';
+import { renderShareCard, shareCanvas, shareUrl, needsOwnLabel, canShowPicture } from './share.js';
+import { prepareAllShapes, matchedShapeIds, orderAchievements, SHAPE_ACHIEVEMENTS } from './shapes.js';
 import { accruePassiveHint, grantHints, spendHint, pickHintTarget } from './hints.js';
 import { prepareCells, cellAt, cellNear } from './geometry.js';
 import { importImages, imagesFromDrop } from './import.js';
@@ -52,7 +54,7 @@ import { Tour } from './tour.js';
 import {
   getChapter, chapterOr, defaultStory, nodeState, isStoryPuzzle, isBossPuzzle,
   onEnterScene, beforeStoneScene, pendingBoardScene, sceneKey, sceneSeen,
-  bossKitFor, chapterUnlocked, chapterTheme, chapterReleased, isChapter, DEFAULT_CHAPTER,
+  bossKitFor, chapterUnlocked, chapterTheme, chapterReleased, isChapter, DEFAULT_CHAPTER, CHAPTERS,
 } from './story.js';
 import {
   regenCount, pickWipeTargets, pickLockTargets, chooseAttack, difficultyMult,
@@ -115,6 +117,10 @@ const S = {
   panel: null,
   importing: false,
   hintsThisPuzzle: 0,
+  shapes: {},          // per-picture shape cells for the Creativist achievements (shapes.js)
+  lastCellAt: null,    // when the picture was down to its last unpainted cell (Last Cell Standing)
+  comeback: false,     // this launch followed 30+ days away (Come Back Kid)
+  catchUp: null,       // during boot, achievements already earned by past play, summarised in ONE toast
   pending: new Set(), // cells with a burst already in flight, claimed but not yet filled
   // What undo gives back, newest last. Per-sitting rather than saved: an
   // unbounded array of every cell ever painted does not belong in a save file,
@@ -189,6 +195,7 @@ const S = {
 window.__paintblobTest = {
   board,
   state: S,
+  share: { award: (id) => shareAward(id), picture: () => shareFinishedPicture() },
   // Drive the companion in a harness without waiting 30 minutes: scamper now, say
   // a line, or compliment a colour by tub index. Normal play never touches this.
   pip: {
@@ -212,6 +219,8 @@ function persist(immediate = false) {
         // The cell count this progress was taken at, so a later re-bake of the
         // picture can tell the ids no longer line up and start it fresh.
         cells: S.cells.length,
+        // When the first cell was painted (null until then), for Slow Burn.
+        startedAt: S.save.progress[S.puzzle.id]?.startedAt ?? (S.filled.size ? Date.now() : null),
         // Special paints laid on this picture (cellId → paintId). A plain object
         // so it serialises; {} when none, which is the common case. Loaded back
         // into board.fx on the next open (see loadPuzzle).
@@ -257,7 +266,7 @@ function persist(immediate = false) {
  *   it waits for a click rather than fading on its own timer like an
  *   ordinary status toast does.
  */
-function toast(def, reward = '', { sticky = false } = {}) {
+function toast(def, reward = '', { sticky = false, action = null } = {}) {
   const el = document.createElement('div');
   el.className = sticky ? 'toast sticky' : 'toast';
   el.innerHTML = `<span class="glyph"></span><span><span class="name"></span><br><span class="desc"></span></span>`;
@@ -272,6 +281,15 @@ function toast(def, reward = '', { sticky = false } = {}) {
   };
   if (sticky) el.addEventListener('click', dismiss, { once: true });
   else setTimeout(dismiss, 3800);
+  if (action) {
+    // A button on the toast (the Share button on a big award). It runs inside the
+    // tap itself, which is what the share sheet needs to open.
+    const b = document.createElement('button');
+    b.className = 'toast-action';
+    b.textContent = action.label;
+    b.addEventListener('click', (e) => { e.stopPropagation(); action.fn(); dismiss(); });
+    el.append(b);
+  }
 
   // Stop the corner filling up during a burst of unlocks.
   const all = $('toasts').children;
@@ -353,6 +371,7 @@ function syncZoom() {
   pill.classList.toggle('hidden', pct <= 100);
   pill.textContent = `${pct}%`;
   $('board').classList.toggle('zoomed', pct > 100);
+  if (board.zoom >= MAX_ZOOM - 0.01) ach('zoom-max');
   syncPanPad();
 }
 
@@ -398,6 +417,10 @@ function glideTick(now) {
   const t = targetVelocity(glide.held, speed);
   glide.vx = easeVelocity(glide.vx, t.x, dt);
   glide.vy = easeVelocity(glide.vy, t.y, dt);
+  if (glide.held.size) {
+    glide.acc = (glide.acc ?? 0) + dt;
+    if (glide.acc >= 1000) { const whole = Math.floor(glide.acc / 1000); glide.acc -= whole * 1000; bumpStat('glideSeconds', whole); achSync(); }
+  }
   if (glide.vx || glide.vy) {
     // The view moves toward the arrow, so the picture slides the other way.
     board.panBy(-glide.vx * dt / 1000, -glide.vy * dt / 1000);
@@ -456,7 +479,7 @@ function wirePanPad() {
     if (!drag) return;
     grip.releasePointerCapture?.(e.pointerId);
     pad.classList.remove('dragging');
-    if (drag.fx !== undefined) { S.save.settings.arrowPos = { x: drag.fx, y: drag.fy }; persist(); }
+    if (drag.fx !== undefined) { S.save.settings.arrowPos = { x: drag.fx, y: drag.fy }; ach('pad-moved'); persist(); }
     drag = null;
   };
   grip.addEventListener('pointerup', endDrag);
@@ -477,6 +500,9 @@ function syncCompare() {
   // — any finished picture can be saved as art. It stays reachable when you
   // re-open a completed picture, so "every finished picture" truly gets it.
   $('savePill')?.classList.toggle('hidden', !S.finished);
+  const shareable = S.finished && canShowPicture(currentEntry());
+  $('sharePill')?.classList.toggle('hidden', !shareable);
+  $('finishShare')?.classList.toggle('hidden', !shareable);
   // The Replay pill rides the same finished state — every finished picture can
   // replay its own paint order, re-opened ones included.
   $('replayPill')?.classList.toggle('hidden', !S.finished);
@@ -491,11 +517,89 @@ const fileSafe = (s) =>
  *  picture's native resolution (the art you made, not the reference photo). On
  *  web it is a browser download; on desktop it lands in Downloads and we say
  *  where. */
+/* ------------------------------------------------------------------- sharing */
+// A card (share.js) is drawn on the spot and handed to the share sheet, or saved
+// where the player can post it. Sharing needs the player's own tap, so nothing
+// slow happens between the tap and the sheet.
+
+const currentEntry = () => S.manifest.find((p) => p.id === S.puzzle?.id);
+
+/** Ask before putting a player-supplied picture on a public card. */
+async function confirmOwnPicture() {
+  closePanel();   // confirmModal renders under an open panel
+  return confirmModal({
+    title: 'Share your own picture?',
+    body: `This picture was added by you, so the card will say "Painted my OWN picture".`,
+    ok: 'Share it',
+  });
+}
+
+async function deliverCard(canvas, { kind, title, text, filename }) {
+  const out = await shareCanvas(canvas, {
+    title, text, url: shareUrl(kind), filename,
+    save: (dataUrl, name) => api.saveImage(dataUrl, name),
+  });
+  if (out === 'cancelled') return;
+  if (out === 'error') { toast({ icon: '⚠️', name: 'Could not share', desc: 'Try Save image instead.' }); return; }
+  if (out === 'saved') toast({ icon: '📣', name: 'Card saved', desc: 'Look in your downloads and post it anywhere.' });
+  bumpStat('shares');
+  ach(kind === 'award' ? 'share-award' : 'share-1');
+  achSync();
+}
+
+async function shareFinishedPicture() {
+  if (!S.finished || !S.puzzle || !board.puzzle) return;
+  const entry = currentEntry();
+  if (!canShowPicture(entry)) { toast({ icon: '🔞', name: 'Not shareable', desc: 'Pictures from 18+ packs stay off share cards.' }); return; }
+  const own = needsOwnLabel(entry);
+  if (own && !(await confirmOwnPicture())) return;
+  const card = renderShareCard({
+    kind: 'picture',
+    title: own ? '' : S.puzzle.title,            // an imported file's name can be personal
+    picture: board.snapshot(),
+    own,
+    dateText: new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }),
+  });
+  await deliverCard(card, {
+    kind: 'picture',
+    title: 'My paintblob picture',
+    text: own ? 'Painted my OWN picture, in paintblob.' : `I painted ${S.puzzle.title} in paintblob.`,
+    filename: `${own ? 'my-picture' : fileSafe(S.puzzle.title)}-card.png`,
+  });
+}
+
+async function shareAward(id) {
+  const def = ACHIEVEMENTS.find((a) => a.id === id);
+  if (!def || !achievements.has(id)) return;
+  const entry = currentEntry();
+  // The picture goes on the card only if it is the one the award was earned on
+  // and still on the board, and is allowed to be shown at all.
+  const wantsPicture = S.puzzle && S.save.stats.awardPic?.[id] === S.puzzle.id && canShowPicture(entry);
+  const own = wantsPicture && needsOwnLabel(entry);
+  if (own && !(await confirmOwnPicture())) return;
+  const card = renderShareCard({
+    kind: 'award',
+    icon: def.icon, title: def.name, subtitle: def.desc, points: def.points ?? 0,
+    dateText: new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }),
+    picture: wantsPicture ? board.snapshot() : null,
+    own,
+  });
+  await deliverCard(card, {
+    kind: 'award',
+    title: `${def.name} on paintblob`,
+    text: `I earned "${def.name}" in paintblob: ${def.desc}`,
+    filename: `${fileSafe(def.name)}-award.png`,
+  });
+}
+
 async function saveImage() {
   if (!S.puzzle || !board.puzzle || !S.finished) return;
   const dataUrl = board.snapshot().toDataURL('image/png');
   const res = await api.saveImage(dataUrl, `${fileSafe(S.puzzle.title)}.png`);
   if (res?.error) { toast({ icon: '⚠️', name: 'Could not save', desc: res.error }); return; }
+  ach('save-1');
+  bumpStat('imagesSaved');
+  achSync();
   toast(res?.savedTo
     ? { icon: '🖼', name: 'Image saved', desc: res.savedTo }
     : { icon: '🖼', name: 'Image saved', desc: 'Look in your downloads.' }, '', { sticky: !!res?.savedTo });
@@ -518,9 +622,13 @@ function startReplay() {
   if (board.showSource) { board.showSource = false; syncCompare(); } // the painting, not the photo
   const { mult } = replaySpeed(replaySpeedId);
   board.startReplay(ids, { durationMs: replayDurationMs(ids.length, mult), onDone: syncReplayBar });
+  ach('replay-1');
+  if (replaySpeedId === 'warp') ach('replay-warp');
+  { const r = (S.save.stats.replays ??= {}); r[S.puzzle.id] = (r[S.puzzle.id] ?? 0) + 1; if (r[S.puzzle.id] >= 3) ach('replay-3'); }
   // The control bar owns the bottom now — tuck the corner pills away so they
   // don't stack under it; closeReplay brings them back via syncCompare.
   $('savePill')?.classList.add('hidden');
+  $('sharePill')?.classList.add('hidden');
   $('replayPill')?.classList.add('hidden');
   $('replayBar')?.classList.remove('hidden');
   syncReplayBar();
@@ -567,6 +675,7 @@ async function downloadBackup() {
   const stamp = new Date().toISOString().slice(0, 10);
   const res = await api.saveBackup(JSON.stringify(S.save, null, 2), `paintblob-backup-${stamp}.json`);
   if (res?.error) { toast({ icon: '⚠️', name: 'Could not save', desc: res.error }); return; }
+  ach('backup');
   toast(res?.savedTo
     ? { icon: '💾', name: 'Backup saved', desc: res.savedTo }
     : { icon: '💾', name: 'Backup saved', desc: 'Look in your downloads — keep it safe.' }, '', { sticky: !!res?.savedTo });
@@ -597,6 +706,7 @@ async function restoreFromFile(file) {
   });
   if (!ok) return;
   await api.replaceSave(data);
+  try { sessionStorage.setItem('pb.restored', '1'); } catch { /* private window: no award, no harm */ }
   location.reload();
 }
 
@@ -763,6 +873,7 @@ async function syncPacks({ announce = true } = {}) {
 // with progress and an empty account uploads; both with progress asks.
 async function cloudAfterSignIn() {
   try { S.cloud.user = await cloud.me(); } catch { return; }
+  ach('cloud');
   const plan = syncPlan({ localRevision: S.save.cloud.revision, localDirty: cloudLocalDirty(), cloudRevision: S.cloud.user.saveRevision });
   if (plan === 'push' || (plan === 'in-sync' && cloudLocalDirty())) await syncCloud();
   else if (plan === 'pull') await resolveCloudConflict('cloud');
@@ -1113,6 +1224,7 @@ function renderAccount(body, rerender) {
       rb.disabled = true;
       try {
         const out = await cloud.redeem({ code, adultGate });
+        ach('redeem');
         toast({ icon: '🎁', name: out.alreadyOwned ? 'Already yours' : 'Pack unlocked', desc: out.pack.title });
         rin.value = '';
         gateWrap.classList.add('hidden');
@@ -1234,7 +1346,7 @@ function selectTub(i, fromUser = false) {
 
   if (fromUser && S.selected >= 0 && S.selected !== i) {
     S.save.stats.colourSwitches++;
-    achievements.sync(S.save.stats);
+    achSync();
   }
   S.selected = i;
   S.paint = null; // picking a numbered tub puts any special paint back on the shelf
@@ -1367,6 +1479,11 @@ function placeSticker(point) {
     motion: 'none',
   };
   board.stickers.push(s);
+  bumpStat('stickersPlaced');
+  ach('sticker-1');
+  noteOnce('stickerKindsList', inhand.glyph);
+  if (S.finished) ach('sticker-finish');
+  achSync();
   selectSticker(s);
   sfx.play('splat');
   persist();
@@ -1757,7 +1874,7 @@ function companionColorComment(colourIndex) {
   if (Date.now() - S.companion.lastSaid < COMMENT_GAP_MS) return;   // the gap already keeps him from nattering
   if (Math.random() > 0.8) return;                                  // most fresh picks earn a word, a few don't
   const hex = board.hexOf(colourIndex);
-  if (hex) pipSay(colorComment(hex));
+  if (hex) { pipSay(colorComment(hex)); bumpStat('pipColourComments'); achSync(); }
 }
 
 /** Between roams, an occasional in-place fidget — a bounce, a wiggle, a shake of
@@ -1825,11 +1942,15 @@ function wireCompanionDrag() {
       const stage = $('stage');
       const face = lastX + 36 < stage.clientWidth / 2 ? 1 : -1;
       S.companion.spot = { x: lastX, y: lastY, face };
+      ach('pip-moved');
       placeCompanion(false);
       scheduleRoam();
     } else {
       // A tap, not a drag — a friendly poke. He says something on the spot.
       scheduleRoam();
+      ach('pip-1');
+      bumpStat('pipTaps');
+      achSync();
       pipSay(ambientComment({ filledFrac: S.cells.length ? S.filled.size / S.cells.length : 0 }), { force: true });
     }
   };
@@ -1904,6 +2025,8 @@ async function loadPuzzle(id) {
   S.puzzle = puzzle;
   S.cells = prepareCells(puzzle);
   S.filled = new Set(saved.filled);
+  S.shapes = prepareAllShapes(S.cells, puzzle.width, puzzle.height);
+  S.lastCellAt = (S.cells.length > 1 && S.filled.size === S.cells.length - 1) ? Date.now() : null;
   S.elapsedMs = (saved.seconds || 0) * 1000;
   S.finished = S.filled.size === S.cells.length;
   S.bursts = [];
@@ -2360,12 +2483,14 @@ function commitFill(burst) {
       S.remaining[bonus.colour]--;
       board.markFilled(bonus.id);
       if (bonus.colour === cell.colour) twin = bonus; else extra = bonus;
+      bumpStat('perkCharges');
       if (--S.perk.charges <= 0) S.perk = null;
       syncPerk();
     }
   }
 
   S.save.stats.cells++;
+  noteFillAchievements();
   const muted = !sfx.enabled;
   if (muted) S.save.stats.mutedCells = (S.save.stats.mutedCells || 0) + 1;
   const hinted = accruePassiveHint(S.save.stats);
@@ -2395,7 +2520,7 @@ function commitFill(burst) {
   // Best fill-streak is a lifetime high-water mark of the current combo, so undo
   // (which never lowers a record) leaves it untouched.
   if (streaks.combo > S.save.stats.bestStreak) S.save.stats.bestStreak = streaks.combo;
-  achievements.sync(S.save.stats);
+  achSync();
 
   if (S.remaining[cell.colour] === 0) {
     achievements.award('tub-empty');
@@ -2463,6 +2588,9 @@ function applyPaint(cell) {
     board.markFilled(cell.id);
   }
   board.fx.set(cell.id, paintId);
+  bumpStat({ rainbow: 'rainbowCells', shimmer: 'shimmerCells', multi: 'oilCells' }[paintId] ?? 'paintCells');
+  checkTripleThreat();
+  achSync();
 
   // A paint step is its own kind (see undoLast): undo refunds the supply and
   // restores the previous look, unfilling the cell only if the paint filled it.
@@ -2701,10 +2829,167 @@ function explodeHeldColour() {
   return fillCellsFree(pool.slice(0, n));
 }
 
+/* -------------------------------------------------- second-wave achievements */
+// Event achievements fire straight through ach(); counter ones live on save.stats
+// and are re-read by achSync(), which first refreshes the few that are DERIVED
+// from other state (garments owned, story stones, fill styles, ...). Every
+// payout is points by tier (see achievements.js), never hints.
+
+const ach = (id) => achievements?.award(id);
+
+function bumpStat(key, n = 1) {
+  const st = S.save.stats;
+  st[key] = (st[key] ?? 0) + n;
+  return st[key];
+}
+
+/** Add a value to a list-valued stat once. @returns {boolean} true when it was new */
+function noteOnce(key, value) {
+  const list = (S.save.stats[key] ??= []);
+  if (list.includes(value)) return false;
+  list.push(value);
+  return true;
+}
+
+function refreshDerivedStats() {
+  const st = S.save.stats;
+  const owned = S.save.avatar?.unlocked ?? [];
+  st.garmentsOwned = owned.filter((id) => WARDROBE_ITEMS.find((i) => i.id === id)?.source !== 'starter').length;
+  st.storyStones = CHAPTERS.flatMap((c) => c.nodes)
+    .filter((n) => n.kind === 'stone' && S.save.progress?.[n.puzzle]?.done).length;
+  st.themesTried = (st.themesTriedList ?? []).length;
+  st.fillStylesTried = Object.values(st.fillStyleCells ?? {}).filter((n) => n >= 10).length;
+  st.stickerKinds = (st.stickerKindsList ?? []).length;
+  st.collectionsFinished = (st.collectionsList ?? []).length;
+  if (THEMES.every((t) => themeUnlocked(t.id, S.save))) ach('themes-all');
+}
+
+/** Re-evaluate every counter achievement. Use this instead of achievements.sync. */
+function achSync() {
+  refreshDerivedStats();
+  achievements.sync(S.save.stats);
+}
+
+// Weeks run Monday to Sunday: day 0 is a Thursday (1970-01-01), so Monday is day 4.
+function weekAndDay(date) {
+  const days = Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000);
+  return { week: Math.floor((days + 3) / 7), dow: date.getDay() };
+}
+
+const SESSION_GAP_MS = 10 * 60_000;
+const SESSION_GOAL_MS = 2 * 3_600_000;
+let sessionStart = 0;
+let lastFillAt = 0;
+
+/** Everything a single committed fill can earn beyond the core ladder. */
+function noteFillAchievements(now = Date.now()) {
+  const st = S.save.stats;
+
+  // Which fill styles have been used (10 cells in each of the five).
+  const style = S.save.settings.fill ?? DEFAULT_FILL;
+  const byStyle = (st.fillStyleCells ??= {});
+  byStyle[style] = (byStyle[style] ?? 0) + 1;
+
+  // Pip switched off by the player, then painting on regardless.
+  if (S.save.settings.companion === false) bumpStat('soloCells');
+
+  // Weekend, midnight and the long sitting.
+  const d = new Date(now);
+  const { week, dow } = weekAndDay(d);
+  if (dow === 6 || dow === 0) {
+    const w = (st.weekendSeen ??= {});
+    w[week] = (w[week] ?? 0) | (dow === 6 ? 1 : 2);
+    if (w[week] === 3) ach('weekend');
+    for (const k of Object.keys(w)) if (Number(k) < week - 2) delete w[k]; // keep it small
+  }
+  if (lastFillAt && now - lastFillAt <= SESSION_GAP_MS) {
+    if (new Date(lastFillAt).getDate() !== d.getDate()) ach('midnight');
+  } else {
+    sessionStart = now;
+  }
+  if (now - sessionStart >= SESSION_GOAL_MS) ach('session-2h');
+  lastFillAt = now;
+
+  // Down to the last unpainted cell: start the Last Cell Standing clock.
+  if (S.cells.length > 1 && S.filled.size === S.cells.length - 1 && !S.lastCellAt) S.lastCellAt = now;
+
+  // The Creativist shapes: judged on which cells are filled, not how many.
+  if (S.filled.size >= 12) {
+    for (const id of matchedShapeIds(S.shapes, S.filled)) ach(id);
+  }
+}
+
+/** What finishing a picture earns beyond flawless / speedrun / etc. */
+function noteFinishAchievements(bossFight = null) {
+  const n = S.cells.length;
+  if (bossFight) {
+    if (S.puzzle.id === 'wrong-colour-day') ach('story-boss');
+    if (S.hintsThisPuzzle === 0) ach('boss-nohint');
+    if (S.elapsedMs < 10 * 60_000) ach('boss-fast');
+    if (bossFight.freezes >= 5) ach('boss-frozen');
+  }
+  const entry = S.manifest.find((p) => p.id === S.puzzle.id);
+  if (n >= 500) ach('pic-500');
+  if (n >= 1000) ach('pic-1000');
+  if (n >= 100 && S.elapsedMs < 5 * 60_000) ach('pic-fast-100');
+
+  const started = S.save.progress[S.puzzle.id]?.startedAt;
+  if (started && Date.now() - started >= 7 * 86_400_000) ach('pic-slow-burn');
+
+  if (entry?.imported && !entry.pack) ach('own-finish');
+  if (!S.inStory) bumpStat('freeFinished');
+  for (const theme of entry?.themes ?? []) noteOnce('collectionsList', theme);
+  if (S.companion.on) ach('pip-audience');
+  if (S.lastCellAt && Date.now() - S.lastCellAt >= 10 * 60_000) ach('last-cell');
+  checkTripleThreat();
+
+  const order = [...S.filled];
+  for (const id of orderAchievements(order, S.cells, S.puzzle.width, S.puzzle.height)) ach(id);
+}
+
+/** A bonus round ended: count a win, or break the streak on a miss. */
+function noteBonus(kind, won) {
+  const st = S.save.stats;
+  if (!won) { st.bonusWinStreak = 0; return; }
+  bumpStat('bonusWins');
+  st.bonusWinStreak = (st.bonusWinStreak ?? 0) + 1;
+  if (st.bonusWinStreak >= 3) ach('bonus-streak-3');
+  ach(`bonus-${kind}`);
+  noteOnce('bonusKindsWon', kind);
+  if (['overtime', 'shade', 'mixer', 'drips', 'recall', 'swap'].every((k) => st.bonusKindsWon.includes(k))) ach('bonus-all');
+  achSync();
+}
+
+/** The wardrobe achievements that depend on the whole outfit being worn. */
+function checkOutfitAchievements() {
+  const c = S.save.avatar.customize;
+  const has = (slot) => !!c[slot]?.itemId;
+  const body = has('dress') || (has('shirt') && has('bottoms'));
+  if (body && ['headwear', 'eyewear', 'neckwear', 'outerwear', 'socks', 'shoes'].every(has)) ach('head-to-toe');
+  // The Atelier line is one piece per slot but the dress.
+  const atelier = SLOT_ORDER.filter((slot) => slot !== 'dress').every((slot) =>
+    WARDROBE_ITEMS.find((i) => i.id === c[slot]?.itemId)?.line === 'atelier');
+  if (atelier) ach('atelier');
+}
+
+/** Appearance picks that also earn a first-time achievement. */
+function setVariantAch(customize, key, v) {
+  setVariant(customize, key, v);
+  if (key === 'hair') ach('new-do');
+  if (key === 'facialhair' && v !== 'none') ach('whiskers');
+}
+
+/** All three special paints used on this picture. */
+function checkTripleThreat() {
+  const used = new Set(board.fx.values());
+  if (used.has('rainbow') && used.has('shimmer') && used.has('multi')) ach('paint-all-three');
+}
+
 function finish() {
   S.finished = true;
   S.revealFrom = performance.now();
   $('board').classList.add('done');
+  const bossFight = S.boss ? { freezes: S.boss.freezes ?? 0 } : null; // read before stopBoss clears it
   stopBoss(); // the boss dies the instant the last cell lands — no more regen, no spells
   syncDevPill(); // hide the instant-complete pill on a finished picture
   syncUndo();
@@ -2716,7 +3001,8 @@ function finish() {
   if (S.hintsThisPuzzle === 0) achievements.award('unassisted');
   if (S.cells.length >= 100) achievements.award('fine-print');
   if (S.cells.length < 12) achievements.award('minimalist');
-  achievements.sync(S.save.stats);
+  noteFinishAchievements(bossFight);
+  achSync();
 
   // Beating a boss earns the chapter's reward look. The unlock itself is
   // automatic — themeUnlocked reads progress, which the persist() below writes —
@@ -2784,7 +3070,7 @@ function useHint() {
   S.hintsThisPuzzle++;
   board.showHint(target.id, performance.now());
   sfx.play('hint');
-  achievements.sync(S.save.stats);
+  achSync();
   syncHints();
   persist();
   ensureFrame();
@@ -2818,7 +3104,7 @@ function frame(now) {
       const whole = Math.floor(secondsCarry);
       secondsCarry -= whole;
       S.save.stats.seconds += whole;
-      achievements.sync(S.save.stats);
+      achSync();
     }
   }
 
@@ -2835,7 +3121,7 @@ function frame(now) {
     }
     if (burst.done && S.idleSinceBurst) {
       S.save.stats.patientLandings = (S.save.stats.patientLandings ?? 0) + 1;
-      achievements.sync(S.save.stats);
+      achSync();
     }
   }
 
@@ -3543,7 +3829,7 @@ async function runImport(files, body) {
       desc: `${p.cells} cells · ${p.colours} colours`,
     });
   }
-  if (result.added.length) achievements.sync(S.save.stats);
+  if (result.added.length) achSync();
   for (const f of result.failed) {
     toast({
       icon: '⚠️',
@@ -3601,8 +3887,16 @@ function renderTrophies(body) {
 
     const reward = document.createElement('span');
     reward.className = 'reward';
-    reward.textContent = `+${a.hint ?? 1}✦`;
+    reward.textContent = a.points ? `+${a.points}` : `+${a.hint ?? 1}✦`;
     el.append(reward);
+    if (a.share && a.earned) {
+      const sb = document.createElement('button');
+      sb.className = 'share-btn';
+      sb.textContent = '📣 Share';
+      sb.title = 'Share this award';
+      sb.addEventListener('click', (e) => { e.stopPropagation(); shareAward(a.id); });
+      el.append(sb);
+    }
 
     body.append(el);
   }
@@ -3887,9 +4181,9 @@ function renderAvatarCustomize(section, stage) {
     (v) => setVariant(customize, 'style', v), true);
   pick('Race', VARIANTS.race, () => customize.race, (v) => setVariant(customize, 'race', v), true);
   pick('Gender', VARIANTS.gender, () => customize.gender, (v) => setVariant(customize, 'gender', v));
-  pick('Hair', VARIANTS.hairStyle, () => customize.hair.style, (v) => setVariant(customize, 'hair', v), true);
+  pick('Hair', VARIANTS.hairStyle, () => customize.hair.style, (v) => setVariantAch(customize, 'hair', v), true);
   pick('Facial hair', VARIANTS.facialHair, () => customize.facialhair?.style ?? 'none',
-    (v) => setVariant(customize, 'facialhair', v), true, (v) => FACIAL_HAIR_LABEL[v] ?? v);
+    (v) => setVariantAch(customize, 'facialhair', v), true, (v) => FACIAL_HAIR_LABEL[v] ?? v);
   pick('Eyes', VARIANTS.eyesStyle, () => customize.eyes.style, (v) => setVariant(customize, 'eyes', v));
   pick('Face', VARIANTS.faceShape, () => customize.face.shape, (v) => setVariant(customize, 'face', v));
 
@@ -3931,7 +4225,7 @@ function renderAvatarCustomize(section, stage) {
 
   const target = S.avatarSlot && customize[S.avatarSlot];
   if (target && 'colour' in target) {
-    const set = (hex) => { target.colour = hex; redraw(); };
+    const set = (hex) => { target.colour = hex; bumpStat('recolours'); achSync(); redraw(); };
     // Skin gets its race's own tones offered first — green is a long way
     // from anything a landscape's palette will hand you — but the paint
     // from the current picture stays right below it, unchanged.
@@ -3999,12 +4293,17 @@ function renderAvatarOutfits(section, stage) {
         el.title = `Tap to take off the ${item.name.toLowerCase()}`;
         el.addEventListener('click', () => {
           customize[item.slot].itemId = null;
+          bumpStat('outfitChanges');
+          achSync();
           redraw();
         });
       }
     } else if (has) {
       el.addEventListener('click', () => {
         customize[item.slot].itemId = item.id;
+        bumpStat('outfitChanges');
+        checkOutfitAchievements();
+        achSync();
         redraw();
       });
     } else if (item.source === 'store') {
@@ -4018,6 +4317,7 @@ function renderAvatarOutfits(section, stage) {
           return;
         }
         S.save.avatar.unlocked.push(item.id);
+        achSync();
         toast({ icon: '👕', name: `Unlocked ${item.name}`, desc: 'Equip it from Outfits.' });
         redraw();
       });
@@ -4119,7 +4419,7 @@ function renderAvatarRoom(section) {
         lock.textContent = '🔒';
         el.append(lock);
       } else if (has) {
-        el.addEventListener('click', () => { onPick(opt); redraw(); });
+        el.addEventListener('click', () => { onPick(opt); bumpStat('roomChanges'); achSync(); redraw(); });
       } else if (opt.source === 'store') {
         el.append(buyable(opt, icon));
       }
@@ -4327,6 +4627,8 @@ function renderRoomColours(section, house, redraw) {
   if (S.roomPart) {
     section.append(swatchRow(paintPalette(), (hex) => {
       house.colours[S.roomPart] = hex;
+      bumpStat('roomChanges');
+      achSync();
       redraw();
     }));
   }
@@ -4778,6 +5080,7 @@ function renderPaintsShop(body) {
       e.stopPropagation();
       if (!spendPoints(S.save.stats, p.price)) { sfx.play('nope'); return; }
       grantPaint(S.save, p.id, p.pack);
+      ach('paint-first');
       toast({ icon: p.mark, name: `${p.pack} ${p.label} paints`, desc: 'Pick it from the tray by the tubs.' });
       redraw();
     });
@@ -4850,6 +5153,7 @@ function renderSettings(body) {
   lowStimRow.append(lowStimText, lowStimSw);
   lowStimRow.addEventListener('click', () => {
     settings.lowStim = !settings.lowStim;
+    if (settings.lowStim) ach('low-stim-on');
     lowStimSw.classList.toggle('on', settings.lowStim);
     applyLowStim();
     applyTheme();
@@ -4891,6 +5195,8 @@ function renderSettings(body) {
     if (unlocked) {
       b.addEventListener('click', () => {
         settings.theme = t.id;
+        noteOnce('themesTriedList', t.id);
+        achSync();
         // Picking a theme is taking control: from now on it wins even in the
         // story, so the chapter no longer overrides it.
         settings.themePinned = true;
@@ -4924,6 +5230,7 @@ function renderSettings(body) {
   darkRow.append(darkText, darkSw);
   darkRow.addEventListener('click', () => {
     settings.dark = !settings.dark;
+    if (settings.dark) ach('dark-mode');
     darkSw.classList.toggle('on', settings.dark);
     applyTheme();
     persist();
@@ -5190,7 +5497,7 @@ function maybeOfferBonus() {
   if (S.finished || bonusRoundOpen()) return;
   const filled = S.filled.size;
   if (S.bonusOffer) {
-    if (filled - S.bonusShownAt >= BONUS_LINGER) { hideBonusChip(); armNextBonus(); }
+    if (filled - S.bonusShownAt >= BONUS_LINGER) { hideBonusChip(); armNextBonus(); bumpStat('bonusDismissed'); achSync(); }
     return;
   }
   if (filled < S.nextBonusAt) return;
@@ -5296,6 +5603,7 @@ function endOvertime(won) {
   sfx.play(won ? 'achievement' : 'nope');
   setTimeout(() => {
     closeOvertime();
+    noteBonus('overtime', won);
     if (won) awardOvertime();
   }, won ? 1400 : 2600);
 }
@@ -5519,6 +5827,7 @@ function endShadeMatch() {
   sfx.play(reached > 0 ? 'achievement' : 'nope');
   setTimeout(() => {
     closeShadeMatch();
+    noteBonus('shade', reached > 0);
     if (reached > 0) awardShadeMatch(reached);
   }, reached > 0 ? 1700 : 2200);
 }
@@ -5703,7 +6012,7 @@ function endMixer(won) {
   const secLeft = Math.ceil(Math.max(0, S.mixer.endsAt - Date.now()) / 1000);
   showMixResult(card, won);
   sfx.play(won ? 'achievement' : 'nope');
-  setTimeout(() => { closeMixer(); if (won) awardMixer(secLeft); }, won ? 1600 : 2200);
+  setTimeout(() => { closeMixer(); noteBonus('mixer', won); if (won) awardMixer(secLeft); }, won ? 1600 : 2200);
 }
 
 // Points for a match, worth more the more clock you left on it — a quick eye
@@ -5940,7 +6249,7 @@ function endDrips() {
   card?.classList.add(reached > 0 ? 'won' : 'lost');
   showDripResult(card, reached);
   sfx.play(reached > 0 ? 'achievement' : 'nope');
-  setTimeout(() => { closeDrips(); if (reached > 0) awardDrips(reached); }, reached > 0 ? 1600 : 2200);
+  setTimeout(() => { closeDrips(); noteBonus('drips', reached > 0); if (reached > 0) awardDrips(reached); }, reached > 0 ? 1600 : 2200);
 }
 
 function awardDrips(reached) {
@@ -6123,7 +6432,7 @@ function endRecall(reached) {
   card?.classList.add(reached > 0 ? 'won' : 'lost');
   showRecallResult(card, reached);
   sfx.play(reached > 0 ? 'achievement' : 'nope');
-  setTimeout(() => { closeRecall(); if (reached > 0) awardRecall(reached); }, reached > 0 ? 1600 : 2200);
+  setTimeout(() => { closeRecall(); noteBonus('recall', reached > 0); if (reached > 0) awardRecall(reached); }, reached > 0 ? 1600 : 2200);
 }
 
 function awardRecall(reached) {
@@ -6286,6 +6595,7 @@ function endSwap(won) {
   sfx.play(won ? 'achievement' : 'nope');
   setTimeout(() => {
     closeSwap();
+    noteBonus('swap', won);
     if (won) awardSwap();
   }, won ? 1500 : 2600);
 }
@@ -6613,6 +6923,7 @@ function attritionAttack() {
     board.dirty = true;
     toast({ icon: '✕', name: 'X freezes the board', desc: `${locked.length} cells crossed out — they thaw in a moment.` });
   }
+  S.boss.freezes = (S.boss.freezes ?? 0) + 1;
   sfx.play('nope');
   syncTubs();
   ensureFrame();
@@ -6634,6 +6945,7 @@ function hoarderAttack() {
     .map((c) => c.id);
   board.bossLocks = { cells: new Set(held), end: now + S.boss.cellLockMs };
   board.dirty = true;
+  S.boss.freezes = (S.boss.freezes ?? 0) + 1;
   nextTub(); // step off the colour it just grabbed
   toast({ icon: '✕', name: 'The Hoarder grabs a colour', desc: 'It took the one in your hand — pick up another and paint on.' });
   sfx.play('nope');
@@ -6854,6 +7166,7 @@ function enterFree() {
 
 // Story mode: the chapter's look, its opening the first time, then the board.
 async function enterStory() {
+  ach('story-start');
   S.inStory = true;
   S.save.story.mode = 'story';
   hideTitle();
@@ -6877,8 +7190,12 @@ function playSceneOnce(chapter, scene, finishLabel = 'Continue') {
       return;
     }
     S.save.story.seen[sceneKey(chapter.id, scene.id)] = true;
+    if (chapter.id === 1 && chapter.scenes.every((sc) => sceneSeen(S.save.story, 1, sc.id))) ach('story-scenes');
     persist(true);
-    playScene(scene, finishLabel, resolve);
+    playScene(scene, finishLabel, () => {
+      if (scene.id === 'epilogue') ach('story-epilogue');
+      resolve();
+    });
   });
 }
 
@@ -7181,6 +7498,7 @@ document.addEventListener('click', async (e) => {
       else await nextPuzzle();
       break;
     case 'finish-dismiss': $('finish').classList.add('hidden'); break;
+    case 'share-picture': shareFinishedPicture(); break;   // a finished picture as a share card
     case 'save-image': saveImage(); break;             // save the finished picture as a PNG
     case 'replay': startReplay(); break;               // watch it fill in, in paint order
     case 'replay-speed': setReplaySpeed(button.dataset.id); break;
@@ -7493,6 +7811,10 @@ async function boot() {
   // Counts distinct calendar days the app has been opened on, not a strict
   // login streak — missing a day should not cost you a ladder you were on.
   const today = new Date().toDateString();
+  if (S.save.stats.lastVisitDay && S.save.stats.lastVisitDay !== today) {
+    const gapDays = (Date.now() - Date.parse(S.save.stats.lastVisitDay)) / 86_400_000;
+    if (gapDays >= 30) S.comeback = true;   // awarded once achievements exist, just below
+  }
   if (S.save.stats.lastVisitDay !== today) {
     // Consecutive-day streak: if the last visit was yesterday the ladder grows,
     // otherwise it starts over at today. A save from before this shipped has no
@@ -7513,19 +7835,48 @@ async function boot() {
   achievements = new Achievements(S.save.unlocked);
   achievements.onUnlock((def) => {
     const reward = def.hint ?? 1;
-    grantHints(S.save.stats, reward);
-    syncHints();
+    if (reward) { grantHints(S.save.stats, reward); syncHints(); }
     if (def.outfit && !S.save.avatar.unlocked.includes(def.outfit)) {
       S.save.avatar.unlocked.push(def.outfit);
       syncAvatarWidget();
     }
-    toast(def, `+${reward}✦`, { sticky: true });
+    // Boot catch-up: play from before an update can clear many achievements at
+    // once. Collect them, pay once, and say so in a single toast (see below).
+    if (S.catchUp) {
+      S.catchUp.defs.push(def);
+      S.catchUp.points += def.points ?? 0;
+      return;
+    }
+    if (def.points) bankPoints(def.points);   // second-wave awards pay points by tier
+    // A Shareable Award remembers the picture it was earned on, so its card can
+    // show that picture while it is still the one on the board.
+    if (def.share && S.puzzle) (S.save.stats.awardPic ??= {})[def.id] = S.puzzle.id;
+    toast(def, def.points ? `+${def.points} points` : `+${reward}✦`,
+      { sticky: true, action: def.share ? { label: '📣 Share', fn: () => shareAward(def.id) } : null });
     // Sound is muted under low-stim (applyLowStim), so the fanfare is silent
     // there while the unlock toast and the outfit it earns still land.
     sfx.play('achievement');
     persist();
   });
-  achievements.sync(S.save.stats);
+  S.catchUp = { defs: [], points: 0 };
+  if (S.comeback) ach('comeback');
+  try {
+    if (sessionStorage.getItem('pb.restored')) { sessionStorage.removeItem('pb.restored'); ach('restore'); }
+  } catch { /* storage blocked */ }
+  achSync();
+  {
+    const cu = S.catchUp;
+    S.catchUp = null;
+    if (cu.defs.length) {
+      if (cu.points) bankPoints(cu.points);
+      toast(cu.defs.length === 1
+        ? { ...cu.defs[0] }
+        : { icon: '🏆', name: `${cu.defs.length} achievements earned`, desc: 'From your painting so far. Open achievements to see them.' },
+      cu.points ? `+${cu.points} points` : '', { sticky: true });
+      sfx.play('achievement');
+      persist();
+    }
+  }
 
   // sync() only fires onUnlock for a threshold NEWLY crossed this boot — a
   // player who already earned blob-1000/pic-10 in a past session, before

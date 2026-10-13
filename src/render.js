@@ -63,7 +63,7 @@ const HINT_PING_EVERY = 2200;  // the white ring re-pings this often across the 
 
 // How far past fit-to-window the player can zoom. High enough that even the
 // smallest Insane-detail sliver can be pushed back over the number threshold.
-const MAX_ZOOM = 6;
+export const MAX_ZOOM = 6;
 
 // One element of a finished picture brought to life while the photo is on
 // screen. The window is deliberately short and self-closing: it plays, it
