@@ -872,7 +872,7 @@ button {
 #board.done { cursor: default; }
 
 /* Shown only once zoomed past fit-to-window; doubles as the reset button. */
-.zoom-pill, .compare-pill, .save-pill, .replay-pill {
+.zoom-pill, .compare-pill, .save-pill, .replay-pill, .share-pill {
   position: absolute;
   z-index: 15;
   -webkit-app-region: no-drag;
@@ -886,7 +886,7 @@ button {
   box-shadow: 0 4px 14px rgba(var(--shade-rgb), 0.4);
   transition: background 120ms, transform 120ms, border-color 120ms;
 }
-.zoom-pill:hover, .compare-pill:hover, .save-pill:hover, .replay-pill:hover {
+.zoom-pill:hover, .compare-pill:hover, .save-pill:hover, .replay-pill:hover, .share-pill:hover {
   background: rgba(var(--accent-rgb), 0.14);
   border-color: rgba(var(--accent-rgb), 0.34);
   transform: translateY(-1px);
@@ -944,6 +944,8 @@ button {
    no other bottom chrome (no bonus chip, boss HUD or perk pill up), so this sits
    alone. Shown for any finished picture; see syncCompare(). */
 .save-pill { bottom: 12px; right: 12px; }
+.share-pill { bottom: 12px; left: 50%; transform: translateX(-50%); }
+.share-pill:hover { transform: translateX(-50%) translateY(-1px); }
 /* Its opposite bottom corner — Replay left, Save right, no collision. */
 .replay-pill { bottom: 12px; left: 12px; }
 
@@ -3406,3 +3408,18 @@ html.low-stim #app::after,
 html.low-stim .panel::before {
   display: none;
 }
+
+/* Share buttons: on a big award's toast, and on its row in the achievements list. */
+.toast-action, .share-btn {
+  margin-left: 10px;
+  padding: 5px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--edge);
+  background: rgba(var(--accent-rgb), 0.16);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.toast-action:hover, .share-btn:hover { background: rgba(var(--accent-rgb), 0.3); }
+.toast.sticky .toast-action { align-self: center; }
