@@ -65,6 +65,15 @@
       <canvas id="board"></canvas>
 
       <button id="zoomPill" class="zoom-pill hidden" data-act="zoom-reset" title="Reset zoom">100%</button>
+      <!-- Glide pad (glide.js): hold an arrow to slide the zoomed picture around.
+           Drag the grip to move the whole pad off the picture. -->
+      <div id="panPad" class="pan-pad hidden" role="group" aria-label="Move the picture">
+        <div class="pan-grip" id="panGrip" title="Drag to move this pad">⠿</div>
+        <button class="pan-btn pan-up" data-pan="up" aria-label="Move up">▲</button>
+        <button class="pan-btn pan-left" data-pan="left" aria-label="Move left">◀</button>
+        <button class="pan-btn pan-right" data-pan="right" aria-label="Move right">▶</button>
+        <button class="pan-btn pan-down" data-pan="down" aria-label="Move down">▼</button>
+      </div>
       <button id="comparePill" class="compare-pill hidden" data-act="toggle-source"
         title="Compare against the original picture"></button>
       <!-- Save the finished picture as an image. Shown for ANY finished picture

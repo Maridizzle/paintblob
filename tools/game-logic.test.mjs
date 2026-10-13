@@ -4,6 +4,7 @@
 // here without a browser.
 
 import test from 'node:test';
+import { GLIDE_SPEEDS, DEFAULT_GLIDE_SPEED, glideSpeed, easeVelocity, targetVelocity, sanitisePadPos } from '../src/glide.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -4013,4 +4014,32 @@ test('packs: adultPacksOk is a setting in both DEFAULT_SAVE literals with a boot
   assert.match(game, /if \(p\.imported && !p\.pack\) \{/);
   // Redeem only ever sends the 18+ flag the player set on the inline switch.
   assert.match(game, /cloud\.redeem\(\{ code, adultGate \}\)/);
+});
+
+test('glide: speeds ascend and unknown ids fall back to the default', () => {
+  const px = GLIDE_SPEEDS.map((s) => s.pxPerSec);
+  assert.deepEqual(px, [...px].sort((a, b) => a - b));
+  assert.equal(glideSpeed('nope').id, DEFAULT_GLIDE_SPEED);
+});
+
+test('glide: velocity eases in and out, never overshoots, and settles exactly', () => {
+  let v = 0;
+  for (let i = 0; i < 6; i++) { const n = easeVelocity(v, 200, 16); assert.ok(n > v && n < 200); v = n; }
+  for (let i = 0; i < 200; i++) v = easeVelocity(v, 200, 16);
+  assert.equal(v, 200);
+  for (let i = 0; i < 200; i++) v = easeVelocity(v, 0, 16);
+  assert.equal(v, 0);
+});
+
+test('glide: opposite arrows cancel, diagonals combine', () => {
+  assert.deepEqual(targetVelocity(['left', 'right'], 'slow'), { x: 0, y: 0 });
+  const d = targetVelocity(['up', 'right'], 'medium');
+  assert.equal(d.x, glideSpeed('medium').pxPerSec);
+  assert.equal(d.y, -glideSpeed('medium').pxPerSec);
+});
+
+test('glide: saved pad positions are clamped, junk becomes null', () => {
+  assert.equal(sanitisePadPos(null), null);
+  assert.equal(sanitisePadPos({ x: 'a', y: 1 }), null);
+  assert.deepEqual(sanitisePadPos({ x: -3, y: 9 }), { x: 0, y: 1 });
 });

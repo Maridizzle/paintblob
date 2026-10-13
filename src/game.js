@@ -45,6 +45,7 @@ import {
   FIDGET_EVERY_MS,
 } from './companion.js';
 import { outlineSVG, outlineWeight } from './thumbnail.js';
+import { GLIDE_SPEEDS, DEFAULT_GLIDE_SPEED, targetVelocity, easeVelocity, sanitisePadPos } from './glide.js';
 import { REPLAY_SPEEDS, replaySpeed, replayDurationMs, DEFAULT_REPLAY_SPEED } from './replay.js';
 import { computePlayStats } from './playstats.js';
 import { Tour } from './tour.js';
@@ -352,6 +353,115 @@ function syncZoom() {
   pill.classList.toggle('hidden', pct <= 100);
   pill.textContent = `${pct}%`;
   $('board').classList.toggle('zoomed', pct > 100);
+  syncPanPad();
+}
+
+/* ----------------------------------------------------------- glide arrow pad */
+// Hold an arrow and the zoomed picture glides that way (glide.js has the maths).
+// The pad lives over the stage, so its grip drags it clear of the picture; the
+// spot is saved as fractions of the stage in settings.arrowPos.
+const glide = { held: new Set(), vx: 0, vy: 0, last: 0, raf: 0, wired: false };
+
+function placePanPad() {
+  const pad = $('panPad'), stage = $('stage');
+  if (!pad || !stage) return;
+  const pos = sanitisePadPos(S.save?.settings?.arrowPos);
+  if (!pos) { pad.style.left = pad.style.top = ''; pad.style.right = pad.style.bottom = ''; return; }
+  const maxX = Math.max(0, stage.clientWidth - pad.offsetWidth);
+  const maxY = Math.max(0, stage.clientHeight - pad.offsetHeight);
+  pad.style.right = pad.style.bottom = 'auto';
+  pad.style.left = `${Math.round(pos.x * maxX)}px`;
+  pad.style.top = `${Math.round(pos.y * maxY)}px`;
+}
+
+function syncPanPad() {
+  const pad = $('panPad');
+  if (!pad) return;
+  wirePanPad();
+  const show = !!S.save?.settings?.arrows && board.zoom > 1;
+  pad.classList.toggle('hidden', !show);
+  if (show) placePanPad(); else stopGlide();
+}
+
+function stopGlide() {
+  glide.held.clear();
+  glide.vx = glide.vy = 0;
+  cancelAnimationFrame(glide.raf);
+  glide.raf = 0;
+  document.querySelectorAll('.pan-btn.held').forEach((b) => b.classList.remove('held'));
+}
+
+function glideTick(now) {
+  const dt = Math.min(64, now - (glide.last || now));
+  glide.last = now;
+  const speed = S.save?.settings?.glide ?? DEFAULT_GLIDE_SPEED;
+  const t = targetVelocity(glide.held, speed);
+  glide.vx = easeVelocity(glide.vx, t.x, dt);
+  glide.vy = easeVelocity(glide.vy, t.y, dt);
+  if (glide.vx || glide.vy) {
+    // The view moves toward the arrow, so the picture slides the other way.
+    board.panBy(-glide.vx * dt / 1000, -glide.vy * dt / 1000);
+    ensureFrame();
+  }
+  if (glide.held.size || glide.vx || glide.vy) glide.raf = requestAnimationFrame(glideTick);
+  else { glide.raf = 0; glide.last = 0; }
+}
+
+function wirePanPad() {
+  if (glide.wired) return;
+  const pad = $('panPad'), grip = $('panGrip'), stage = $('stage');
+  if (!pad || !grip || !stage) return;
+  glide.wired = true;
+
+  const press = (name, btn) => {
+    glide.held.add(name);
+    btn.classList.add('held');
+    if (!glide.raf) { glide.last = 0; glide.raf = requestAnimationFrame(glideTick); }
+  };
+  const release = (name, btn) => { glide.held.delete(name); btn.classList.remove('held'); };
+  for (const btn of pad.querySelectorAll('.pan-btn')) {
+    const name = btn.dataset.pan;
+    btn.addEventListener('pointerdown', (e) => {
+      btn.setPointerCapture?.(e.pointerId);
+      e.preventDefault();
+      press(name, btn);
+    });
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+      btn.addEventListener(ev, () => release(name, btn));
+    }
+  }
+
+  // Drag the pad by its grip.
+  let drag = null;
+  grip.addEventListener('pointerdown', (e) => {
+    const r = pad.getBoundingClientRect(), sr = stage.getBoundingClientRect();
+    drag = { offX: e.clientX - r.left, offY: e.clientY - r.top, sr };
+    pad.classList.add('dragging');
+    grip.setPointerCapture?.(e.pointerId);
+    e.preventDefault();
+  });
+  grip.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const maxX = Math.max(0, stage.clientWidth - pad.offsetWidth);
+    const maxY = Math.max(0, stage.clientHeight - pad.offsetHeight);
+    const x = Math.min(maxX, Math.max(0, e.clientX - drag.sr.left - drag.offX));
+    const y = Math.min(maxY, Math.max(0, e.clientY - drag.sr.top - drag.offY));
+    pad.style.right = pad.style.bottom = 'auto';
+    pad.style.left = `${Math.round(x)}px`;
+    pad.style.top = `${Math.round(y)}px`;
+    drag.fx = maxX ? x / maxX : 0;
+    drag.fy = maxY ? y / maxY : 0;
+  });
+  const endDrag = (e) => {
+    if (!drag) return;
+    grip.releasePointerCapture?.(e.pointerId);
+    pad.classList.remove('dragging');
+    if (drag.fx !== undefined) { S.save.settings.arrowPos = { x: drag.fx, y: drag.fy }; persist(); }
+    drag = null;
+  };
+  grip.addEventListener('pointerup', endDrag);
+  grip.addEventListener('pointercancel', endDrag);
+  window.addEventListener('resize', placePanPad);
 }
 
 /** The compare-to-photo pill only ever appears once a picture is finished —
@@ -4866,6 +4976,30 @@ function renderSettings(body) {
   fillRow.append(fillText, fillSeg);
   body.append(fillRow);
 
+  // Glide arrows: an on-screen d-pad that slides a zoomed picture around, plus
+  // how fast it goes. Both are controls, so they stay available in low-stim.
+  toggle('🧭 Arrow pad', 'arrows', () => syncPanPad());
+  const glideRow = row();
+  const glideText = document.createElement('div');
+  glideText.className = 'grow';
+  glideText.innerHTML = '<div class="label">Arrow glide speed</div>'
+    + '<div class="sub">How fast the picture slides while you hold an arrow</div>';
+  const glideSeg = document.createElement('div');
+  glideSeg.className = 'segmented wrap';
+  for (const g of GLIDE_SPEEDS) {
+    const chip = document.createElement('button');
+    chip.textContent = g.label;
+    chip.classList.toggle('on', (settings.glide ?? DEFAULT_GLIDE_SPEED) === g.id);
+    chip.addEventListener('click', () => {
+      settings.glide = g.id;
+      [...glideSeg.children].forEach((c) => c.classList.toggle('on', c === chip));
+      persist();
+    });
+    glideSeg.append(chip);
+  }
+  glideRow.append(glideText, glideSeg);
+  body.append(glideRow);
+
   // The blob's own tuning follows — it applies only when Blob is the chosen
   // style. Shown always (like the fill picker) so even low-stim can calm it
   // further: slower, sparser, fainter.
@@ -7228,6 +7362,9 @@ async function boot() {
   S.save.settings.newsSeen ??= 0;          // highest What's-New rev read (news.js)
   S.save.paints ??= {};                    // special-paint inventory (paints.js)
   S.save.stickers ??= {};                  // sticker-pack inventory (stickers.js)
+  S.save.settings.arrows ??= true;         // glide arrow pad, on by default (glide.js)
+  S.save.settings.glide ??= DEFAULT_GLIDE_SPEED;
+  S.save.settings.arrowPos ??= null;       // where the player dragged the pad (fractions of the stage)
   S.save.settings.companion ??= true;      // Pip the roaming companion, on by default (companion.js)
   // Pictures from an 18+ pack stay hidden on this device until the player says
   // otherwise (a per-device choice, so a shared screen never shows them unasked).
