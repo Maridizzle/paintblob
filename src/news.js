@@ -102,6 +102,30 @@ export const NEWS = [
   // the next batch. Add the next round of entries below this line, continuing at
   // `rev: 15`. Adding any entry bumps NEWS_MAX_REV, which re-shows the splash for
   // returning players, so add them as a batch, not one at a time.
+  {
+    rev: 15,
+    icon: '🧭',
+    title: 'Arrow pad for zoomed pictures',
+    blurb: 'Zoomed in? Hold an arrow to glide the picture around smoothly, with no more grabbing and dragging every couple of inches. Drag the little grip to move the pad off your picture, and set its speed or turn it off in Settings.',
+  },
+  {
+    rev: 16,
+    icon: '🏆',
+    title: '108 new achievements',
+    blurb: 'Painting streaks, bonus rounds, story and bosses, outfits, paints, stickers, Pip, and a whole Creativist group that notices what you paint: fill a heart, a star or a straight line in the middle of a picture, or work from the outside in. They pay points, so your hints stay yours.',
+  },
+  {
+    rev: 17,
+    icon: '📣',
+    title: 'Share your awards and pictures',
+    blurb: 'The biggest achievements are Shareable Awards, and your finished pictures can be shared too (pictures from 18+ packs are left out). Tap Share on an award or a finished picture to post it as a card with a link, or save the card to post anywhere. A picture you added yourself is labelled "Painted my OWN picture".',
+  },
+  {
+    rev: 18,
+    icon: '✨',
+    title: 'Give your hints something to do',
+    blurb: 'Spend a stack of hints to have the biggest empty cells of your colour painted for you: 10 hints fills 1 cell, up to 100 hints for 25. No points and no streak, and Undo gives the hints back. Tap the hint count, or press and hold the hint button.',
+  },
 ];
 
 /** The highest rev in the catalogue — what "caught up" means. */
