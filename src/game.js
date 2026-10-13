@@ -3,6 +3,7 @@ import { Burst, audioCue } from './paint-fx.js';
 import { CellFill, Puff, FILL_STYLES, DEFAULT_FILL } from './fill-fx.js';
 import { Sfx } from './audio.js';
 import { ACHIEVEMENTS, Achievements, StreakTracker } from './achievements.js';
+import { HINT_FILLS, hintFillById, hintFillCharge, pickFillCells, canAffordFill } from './hintfills.js';
 import { renderShareCard, shareCanvas, shareUrl, needsOwnLabel, canShowPicture } from './share.js';
 import { prepareAllShapes, matchedShapeIds, orderAchievements, SHAPE_ACHIEVEMENTS } from './shapes.js';
 import { accruePassiveHint, grantHints, spendHint, pickHintTarget } from './hints.js';
@@ -117,6 +118,7 @@ const S = {
   panel: null,
   importing: false,
   hintsThisPuzzle: 0,
+  freeFilled: false,   // a free batch fill (an ability or a hint fill) was used on this picture
   shapes: {},          // per-picture shape cells for the Creativist achievements (shapes.js)
   lastCellAt: null,    // when the picture was down to its last unpainted cell (Last Cell Standing)
   comeback: false,     // this launch followed 30+ days away (Come Back Kid)
@@ -221,6 +223,8 @@ function persist(immediate = false) {
         cells: S.cells.length,
         // When the first cell was painted (null until then), for Slow Burn.
         startedAt: S.save.progress[S.puzzle.id]?.startedAt ?? (S.filled.size ? Date.now() : null),
+        // A free batch fill was used here, so the fill ORDER no longer says much (order achievements skip it).
+        assisted: S.freeFilled,
         // Special paints laid on this picture (cellId → paintId). A plain object
         // so it serialises; {} when none, which is the common case. Loaded back
         // into board.fx on the next open (see loadPuzzle).
@@ -2026,6 +2030,7 @@ async function loadPuzzle(id) {
   S.cells = prepareCells(puzzle);
   S.filled = new Set(saved.filled);
   S.shapes = prepareAllShapes(S.cells, puzzle.width, puzzle.height);
+  S.freeFilled = !!saved.assisted;
   S.lastCellAt = (S.cells.length > 1 && S.filled.size === S.cells.length - 1) ? Date.now() : null;
   S.elapsedMs = (saved.seconds || 0) * 1000;
   S.finished = S.filled.size === S.cells.length;
@@ -2699,6 +2704,15 @@ function undoLast() {
     syncHints();
   }
 
+  // A hint fill took hints; taking it back gives them back (and the picture is no
+  // longer "assisted" by that use).
+  if (step.hintsSpent) {
+    stats.hints = (stats.hints ?? 0) + step.hintsSpent;
+    stats.hintsUsed = Math.max(0, (stats.hintsUsed ?? 0) - step.hintsSpent);
+    S.hintsThisPuzzle = Math.max(0, S.hintsThisPuzzle - 1);
+    syncHints();
+  }
+
   // You are left holding the colour you just took back, which is nearly always
   // the one you were about to use again — and the fill may have emptied that
   // tub and moved the selection on by itself.
@@ -2742,6 +2756,7 @@ function autoFillHalfOfHeldColour() {
   );
   const n = Math.ceil(candidates.length / 2);
   const colour = S.selected;
+  if (n) S.freeFilled = true;
   for (let i = 0; i < n; i++) {
     const cell = candidates[i];
     S.filled.add(cell.id);
@@ -2776,8 +2791,9 @@ function autoFillHalfOfHeldColour() {
  * Explode abilities, which fill across several colours / a chosen third, so
  * unlike half-fill it watches every colour it touches for a tub emptying.
  */
-function fillCellsFree(cells) {
+function fillCellsFree(cells, extra = {}) {
   if (!cells.length || S.finished) return 0;
+  S.freeFilled = true;
   const emptied = new Set();
   for (const cell of cells) {
     S.filled.add(cell.id);
@@ -2789,6 +2805,7 @@ function fillCellsFree(cells) {
     cells: cells.map((c) => c.id),
     free: cells.length, // none was counted in stats.cells, so none comes back
     colour: S.selected, points: 0, muted: false, hint: false,
+    ...extra,
   });
   if (emptied.size) achievements.award('tub-empty');
   if (emptied.has(S.selected)) nextTub();
@@ -2943,8 +2960,10 @@ function noteFinishAchievements(bossFight = null) {
   if (S.lastCellAt && Date.now() - S.lastCellAt >= 10 * 60_000) ach('last-cell');
   checkTripleThreat();
 
-  const order = [...S.filled];
-  for (const id of orderAchievements(order, S.cells, S.puzzle.width, S.puzzle.height)) ach(id);
+  if (!S.freeFilled) {
+    const order = [...S.filled];
+    for (const id of orderAchievements(order, S.cells, S.puzzle.width, S.puzzle.height)) ach(id);
+  }
 }
 
 /** A bonus round ended: count a win, or break the streak on a miss. */
@@ -3076,6 +3095,91 @@ function useHint() {
   ensureFrame();
 }
 
+/* ---------------------------------------------------------------- hint fills */
+// Spend a stack of hints to paint the next biggest cells of the colour in hand
+// (hintfills.js has the rules). One undo step; undo gives the hints back.
+
+/** Why a hint fill is unavailable right now, or '' when it is fine. */
+function hintFillsBlocked() {
+  if (!S.puzzle) return 'Open a picture first.';
+  if (S.finished) return 'This picture is finished.';
+  if (bossActive()) return 'Fills are switched off during a boss fight.';
+  if (bonusRoundOpen() || S.swap) return 'Fills are switched off during a bonus round.';
+  if (S.selected < 0) return 'Pick a colour first.';
+  return '';
+}
+
+function useHintFill(id) {
+  const def = hintFillById(id);
+  if (!def || hintFillsBlocked()) { sfx.play('nope'); return 0; }
+  const picked = pickFillCells(S.cells, S.filled, S.pending, S.selected, def.cells, cellLocked);
+  const charge = hintFillCharge(def, picked.length);
+  const stats = S.save.stats;
+  if (!picked.length || !canAffordFill(stats, charge)) { sfx.play('nope'); return 0; }
+  stats.hints -= charge;
+  stats.hintsUsed = (stats.hintsUsed ?? 0) + charge;
+  S.hintsThisPuzzle++;
+  const n = fillCellsFree(picked, { hintsSpent: charge });
+  sfx.play('pick', 3);
+  toast({ icon: def.icon, name: def.label, desc: `${n} cell${n === 1 ? '' : 's'} filled for ${charge}✦` });
+  achSync();
+  syncHints();
+  return n;
+}
+
+function renderHintsPanel(body) {
+  const stats = S.save.stats;
+  const note = document.createElement('div');
+  note.className = 'dev-note';
+  note.textContent = 'Spend hints to have the biggest empty cells of the colour in your hand painted for you. No points and no streak, and Undo gives the hints back. A single hint (tap the ✦) still just flashes a cell.';
+  body.append(note);
+
+  const head = document.createElement('div');
+  head.className = 'empty';
+  head.style.padding = '2px 4px 8px';
+  head.textContent = `${(stats.hints ?? 0).toLocaleString()}✦ in hand`;
+  body.append(head);
+
+  const blocked = hintFillsBlocked();
+  if (blocked) {
+    const why = document.createElement('div');
+    why.className = 'empty';
+    why.style.padding = '0 4px 8px';
+    why.textContent = blocked;
+    body.append(why);
+  }
+
+  for (const def of HINT_FILLS) {
+    const picked = blocked ? [] : pickFillCells(S.cells, S.filled, S.pending, S.selected, def.cells, cellLocked);
+    const charge = hintFillCharge(def, picked.length);
+    const afford = !blocked && picked.length > 0 && canAffordFill(stats, charge);
+    const el = row();
+    const text = document.createElement('div');
+    text.className = 'grow';
+    text.innerHTML = '<div class="label"></div><div class="sub"></div>';
+    text.querySelector('.label').textContent = `${def.icon} ${def.label}`;
+    text.querySelector('.sub').textContent = blocked
+      ? `${def.cost}✦ for ${def.cells} cell${def.cells === 1 ? '' : 's'}`
+      : picked.length && picked.length < def.cells
+        ? `only ${picked.length} of this colour left · ${charge}✦`
+        : picked.length
+          ? `${def.cost}✦ for ${def.cells} cell${def.cells === 1 ? '' : 's'}`
+          : 'nothing of this colour left';
+    el.append(text);
+    const go = document.createElement('button');
+    go.className = 'primary buy';
+    go.disabled = !afford;
+    go.textContent = afford ? `Fill · ${charge}✦` : `${charge || def.cost}✦`;
+    go.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (useHintFill(def.id)) closePanel();   // get out of the way so the fill can be seen
+    });
+    el.append(go);
+    body.append(el);
+  }
+  band(body);
+}
+
 /* --------------------------------------------------------------------- loop */
 
 let frameHandle = null;
@@ -3185,6 +3289,7 @@ async function openPanel(kind) {
     : kind === 'dev' ? 'Developer'
     : kind === 'paints' ? 'Special paints'
     : kind === 'stickers' ? 'Stickers'
+    : kind === 'hints' ? 'Hints'
     : 'Settings';
   $('panel').classList.remove('hidden');
   // The panel sits at a lower z-index than #stage's floating pills so a
@@ -3212,6 +3317,8 @@ async function openPanel(kind) {
     renderPaintsShop(body);
   } else if (kind === 'stickers') {
     renderStickerShop(body);
+  } else if (kind === 'hints') {
+    renderHintsPanel(body);
   } else {
     renderSettings(body);
   }
@@ -7419,6 +7526,25 @@ function syncStoryPill() {
 
 /* ------------------------------------------------------------------ chrome */
 
+// Long press (or right-click) on the hint button opens the hint fills. The press
+// that opens it must not also fire a hint when the finger lifts.
+let hintPressFired = false;
+(() => {
+  const btn = document.querySelector('[data-act="hint"]');
+  if (!btn) return;
+  let timer = 0;
+  btn.addEventListener('pointerdown', () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      hintPressFired = true;
+      setTimeout(() => { hintPressFired = false; }, 900);
+      openPanel('hints');
+    }, 550);
+  });
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) btn.addEventListener(ev, () => clearTimeout(timer));
+  btn.addEventListener('contextmenu', (e) => { e.preventDefault(); openPanel('hints'); });
+})();
+
 document.addEventListener('click', async (e) => {
   const button = e.target.closest('[data-act]');
   const act = button?.dataset.act;
@@ -7432,7 +7558,11 @@ document.addEventListener('click', async (e) => {
       achievements.award('free-spirit');
       break;
     }
-    case 'hint': useHint(); break;
+    case 'hint':
+      // The number opens the fills; a long press (below) does too. A plain tap is the old hint.
+      if (hintPressFired) { hintPressFired = false; break; }
+      if (e.target.closest('.badge')) openPanel('hints'); else useHint();
+      break;
     case 'undo': undoLast(); break;
     case 'paint-select': {                              // put a special paint in hand
       const chip = e.target.closest('[data-paint]');
