@@ -31,7 +31,7 @@ import {
   PAINTS, isPaint, paintDef, paintCount, ownedPaints, grantPaint, spendPaint, fxStops,
 } from '../src/paints.js';
 import {
-  NEWS, NEWS_MAX_REV, hasUnseenNews, unseenNews, markNewsSeen,
+  NEWS, NEWS_MAX_REV, hasUnseenNews, unseenNews, markNewsSeen, unreadMarks,
 } from '../src/news.js';
 import {
   STICKER_PACKS, isPack, packDef, packOf, stickerCount, ownedPacks,
@@ -4378,4 +4378,25 @@ test('the reserve counts open cells of every colour, not just the held one', () 
   assert.deepEqual(pickFillCells(cells, new Set(), new Set(), 1, 5).map((c) => c.id), [0, 1]);
   // Reserve 0 restores the old behaviour for a caller that wants it.
   assert.deepEqual(pickFillCells(cells.slice(0, 2), new Set(), new Set(), 1, 5, () => false, 0).map((c) => c.id), [0, 1]);
+});
+
+test('unreadMarks tags the unread entries and points at the first, for a returning reader', () => {
+  const m = unreadMarks({ settings: { newsSeen: NEWS_MAX_REV - 2 } });
+  assert.deepEqual([...m.revs].sort((a, b) => a - b), [NEWS_MAX_REV - 1, NEWS_MAX_REV]);
+  assert.equal(m.scrollRev, NEWS_MAX_REV - 1);
+});
+
+test('unreadMarks singles nothing out on a first look or a full re-read', () => {
+  for (const save of [{ settings: { newsSeen: 0 } }, { settings: {} }, { settings: { newsSeen: NEWS_MAX_REV } }]) {
+    const m = unreadMarks(save);
+    assert.equal(m.revs.size, 0);
+    assert.equal(m.scrollRev, null);
+  }
+});
+
+test('unreadMarks must be read before markNewsSeen clears the unread set', () => {
+  const save = { settings: { newsSeen: NEWS_MAX_REV - 1 } };
+  assert.equal(unreadMarks(save).scrollRev, NEWS_MAX_REV);
+  markNewsSeen(save);
+  assert.equal(unreadMarks(save).scrollRev, null);
 });
