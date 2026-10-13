@@ -118,7 +118,7 @@ export const NEWS = [
     rev: 17,
     icon: '📣',
     title: 'Share your awards and pictures',
-    blurb: 'The biggest achievements are Shareable Awards, and every finished picture can be shared too. Tap Share on an award or a finished picture to post it as a card with a link, or save the card to post anywhere. A picture you added yourself is labelled "Painted my OWN picture".',
+    blurb: 'The biggest achievements are Shareable Awards, and your finished pictures can be shared too (pictures from 18+ packs are left out). Tap Share on an award or a finished picture to post it as a card with a link, or save the card to post anywhere. A picture you added yourself is labelled "Painted my OWN picture".',
   },
   {
     rev: 18,
