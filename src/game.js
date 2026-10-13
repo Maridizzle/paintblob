@@ -37,7 +37,7 @@ import { perkTarget, PERKS } from './perks.js';
 import {
   PAINTS, isPaint, paintDef, paintCount, ownedPaints, grantPaint, spendPaint,
 } from './paints.js';
-import { NEWS, hasUnseenNews, markNewsSeen } from './news.js';
+import { NEWS, hasUnseenNews, markNewsSeen, unreadMarks } from './news.js';
 import {
   STICKER_PACKS, isPack, packDef, packOf, stickerCount, ownedPacks,
   grantStickers, spendSticker, STYLES as STICKER_STYLES, MOTIONS as STICKER_MOTIONS,
@@ -7198,17 +7198,24 @@ function hideTitle() {
 
 /** Fills the What's New splash from the catalogue (news.js). A plain, static
  *  list — no animation — so it reads calmly even in low-stim. */
-function renderNews() {
+function renderNews(marks = { revs: new Set(), scrollRev: null }) {
   const list = $('newsList');
   list.textContent = '';
   for (const item of NEWS) {
     const el = document.createElement('div');
-    el.className = 'news-item';
+    el.className = marks.revs.has(item.rev) ? 'news-item is-new' : 'news-item';
+    el.dataset.rev = String(item.rev);
     el.innerHTML = '<span class="news-icon"></span>'
       + '<span class="news-text"><span class="news-title"></span>'
       + '<span class="news-blurb"></span></span>';
     el.querySelector('.news-icon').textContent = item.icon;
     el.querySelector('.news-title').textContent = item.title;
+    if (marks.revs.has(item.rev)) {
+      const tag = document.createElement('span');
+      tag.className = 'news-new';
+      tag.textContent = 'NEW';
+      el.querySelector('.news-title').append(tag);
+    }
     el.querySelector('.news-blurb').textContent = item.blurb;
     list.append(el);
   }
@@ -7217,8 +7224,14 @@ function renderNews() {
 /** Open the What's New splash and mark everything read — so the title badge
  *  clears and it won't auto-open again until an update adds a newer entry. */
 function openNews() {
-  renderNews();
+  const marks = unreadMarks(S.save);   // worked out before everything is marked read
+  renderNews(marks);
   $('news').classList.remove('hidden');
+  // Open on the first unread entry, so a returning player lands on what changed.
+  const list = $('newsList');
+  list.scrollTop = 0;
+  const first = marks.scrollRev == null ? null : list.querySelector(`[data-rev="${marks.scrollRev}"]`);
+  if (first) list.scrollTop += first.getBoundingClientRect().top - list.getBoundingClientRect().top - 6;
   markNewsSeen(S.save);
   persist();
   syncNewsBadge();

@@ -1730,6 +1730,20 @@ button {
 .news-text { display: flex; flex-direction: column; gap: 2px; }
 .news-title { font-size: 13.5px; font-weight: 700; color: var(--text); }
 .news-blurb { font-size: 12px; line-height: 1.4; color: var(--muted); }
+/* Unread entries, for a returning reader: a small tag, and the blurb at full strength. */
+.news-new {
+  display: inline-block;
+  margin-left: 7px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  vertical-align: middle;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.news-item.is-new .news-blurb { color: var(--text); }
 
 /* The title-screen "What's new" link — quiet underlined text, a hot dot when
    there is something unread. */

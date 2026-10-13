@@ -145,6 +145,22 @@ export function unseenNews(save) {
   return NEWS.filter((n) => n.rev > seen);
 }
 
+/**
+ * Which entries to tag NEW, and where to scroll the splash to, for a reader who
+ * has read SOME of the list: the unread ones are tagged and the card opens on the
+ * first of them, so a returning player lands on what changed instead of on
+ * entries they read months ago. When everything is unread (a first look) or
+ * nothing is (a re-read from Settings) there is nothing to single out, so the
+ * result is empty and the card opens at the top as before.
+ * Call it BEFORE markNewsSeen, which is what clears the unread set.
+ * @returns {{ revs: Set<number>, scrollRev: number|null }}
+ */
+export function unreadMarks(save) {
+  const unseen = unseenNews(save);
+  if (!unseen.length || unseen.length === NEWS.length) return { revs: new Set(), scrollRev: null };
+  return { revs: new Set(unseen.map((n) => n.rev)), scrollRev: unseen[0].rev };
+}
+
 /** Mark everything read — called when the splash is opened. */
 export function markNewsSeen(save) {
   if (save?.settings) save.settings.newsSeen = NEWS_MAX_REV;
