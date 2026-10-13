@@ -4,6 +4,7 @@
 // here without a browser.
 
 import test from 'node:test';
+import { HINT_FILLS, hintFillById, hintFillCharge, pickFillCells, canAffordFill, openCellCount } from '../src/hintfills.js';
 import { shareUrl, shareUrlLabel, needsOwnLabel, canShowPicture, wrapLines, fitInside, renderShareCard, shareCanvas, OWN_LABEL, AWARD_RIBBON, PICTURE_RIBBON, CARD_W, CARD_H } from '../src/share.js';
 import { TIER_POINTS, SHAREABLE } from '../src/achievements.js';
 import { prepareShape, shapeMatches, prepareAllShapes, matchedShapeIds, orderAchievements, orderCorrelation, SHAPE_ACHIEVEMENTS, MIN_SHAPE_CELLS } from '../src/shapes.js';
@@ -4307,4 +4308,74 @@ test('without file sharing the card is saved instead', async () => {
 test('a failed save reports an error rather than pretending it shared', async () => {
   assert.equal(await shareCanvas(fakeShareCanvas(), { filename: 'a.png', save: async () => ({ error: 'nope' }), nav: undefined }), 'error');
   assert.equal(await shareCanvas(fakeShareCanvas(), { filename: 'a.png', save: async () => { throw new Error('x'); }, nav: undefined }), 'error');
+});
+
+/* ------------------------------------------------------------- hint fills */
+
+test('hint fills run 10 / 25 / 50 / 75 / 100 hints for 1 / 5 / 10 / 15 / 25 cells', () => {
+  assert.deepEqual(HINT_FILLS.map((f) => f.cost), [10, 25, 50, 75, 100]);
+  assert.deepEqual(HINT_FILLS.map((f) => f.cells), [1, 5, 10, 15, 25]);
+  assert.equal(new Set(HINT_FILLS.map((f) => f.id)).size, HINT_FILLS.length);
+  assert.equal(hintFillById('fill-10').cost, 50);
+  assert.equal(hintFillById('nope'), null);
+});
+
+test('a fill costs full price when full, and a fair share when fewer cells are left', () => {
+  const f = hintFillById('fill-25');
+  assert.equal(hintFillCharge(f, 25), 100);
+  assert.equal(hintFillCharge(f, 40), 100);
+  assert.equal(hintFillCharge(f, 5), 20);
+  assert.equal(hintFillCharge(f, 1), 4);
+  assert.equal(hintFillCharge(hintFillById('fill-5'), 1), 5);
+  assert.equal(hintFillCharge(f, 0), 0);
+  assert.equal(hintFillCharge(null, 3), 0);
+});
+
+test('pickFillCells takes the biggest unfilled cells of the held colour, biggest first', () => {
+  const cells = [
+    { id: 0, colour: 1, area: 5 }, { id: 1, colour: 1, area: 50 }, { id: 2, colour: 2, area: 99 },
+    { id: 3, colour: 1, area: 20 }, { id: 4, colour: 1, area: 20 }, { id: 5, colour: 1, area: 1 },
+  ];
+  assert.deepEqual(pickFillCells(cells, new Set(), new Set(), 1, 3).map((c) => c.id), [1, 3, 4]);
+  // Ties break by id; other colours are never touched.
+  assert.ok(pickFillCells(cells, new Set(), new Set(), 1, 9).every((c) => c.colour === 1));
+});
+
+test('pickFillCells skips filled, in-flight and locked cells, and bad input yields nothing', () => {
+  const cells = [
+    { id: 0, colour: 1, area: 9 }, { id: 1, colour: 1, area: 8 },
+    { id: 2, colour: 1, area: 7 }, { id: 3, colour: 1, area: 6 },
+  ];
+  const got = pickFillCells(cells, new Set([0]), new Set([1]), 1, 5, (id) => id === 2).map((c) => c.id);
+  assert.deepEqual(got, [3]);
+  assert.deepEqual(pickFillCells(cells, new Set(), new Set(), -1, 5), []);
+  assert.deepEqual(pickFillCells(cells, new Set(), new Set(), 1, 0), []);
+});
+
+test('canAffordFill needs a real charge and enough hints', () => {
+  assert.equal(canAffordFill({ hints: 50 }, 50), true);
+  assert.equal(canAffordFill({ hints: 49 }, 50), false);
+  assert.equal(canAffordFill({}, 10), false);
+  assert.equal(canAffordFill({ hints: 99 }, 0), false);
+});
+
+test('a hint fill never takes the last open cell, so it can never finish the picture', () => {
+  const cells = [0, 1, 2, 3].map((id) => ({ id, colour: 1, area: 10 - id }));
+  assert.equal(openCellCount(cells, new Set(), new Set()), 4);
+  // Asking for more than is open still leaves one.
+  assert.deepEqual(pickFillCells(cells, new Set(), new Set(), 1, 25).map((c) => c.id), [0, 1, 2]);
+  // With one open cell left there is nothing to take at all.
+  assert.deepEqual(pickFillCells(cells, new Set([0, 1, 2]), new Set(), 1, 5), []);
+  // A cell in flight is not "open", so it cannot be the one that is left over.
+  assert.deepEqual(pickFillCells(cells, new Set([0, 1]), new Set([2]), 1, 5), []);
+});
+
+test('the reserve counts open cells of every colour, not just the held one', () => {
+  const cells = [
+    { id: 0, colour: 1, area: 9 }, { id: 1, colour: 1, area: 8 }, { id: 2, colour: 2, area: 7 },
+  ];
+  // Two colour-1 cells, one other-colour cell open: both colour-1 cells can go.
+  assert.deepEqual(pickFillCells(cells, new Set(), new Set(), 1, 5).map((c) => c.id), [0, 1]);
+  // Reserve 0 restores the old behaviour for a caller that wants it.
+  assert.deepEqual(pickFillCells(cells.slice(0, 2), new Set(), new Set(), 1, 5, () => false, 0).map((c) => c.id), [0, 1]);
 });
