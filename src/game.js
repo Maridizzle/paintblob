@@ -2157,7 +2157,7 @@ $('board').addEventListener('pointermove', (e) => {
     board.setLiftFrom(e.clientX, e.clientY);
     if (S.finished || e.pointerType === 'touch') return;
     const { cell } = pointerToCell(e.clientX, e.clientY);
-    // Idle frames are throttled to 30fps; force the next one so the hover
+    // Idle frames are throttled (IDLE_FRAME_MS); force the next one so the hover
     // outline tracks the cursor rather than lagging behind it.
     if (board.setHover(cell && !S.filled.has(cell.id) ? cell.id : -1)) lastDraw = 0;
     return;
@@ -3189,6 +3189,11 @@ function renderHintsPanel(body) {
 let frameHandle = null;
 let last = 0;
 let lastDraw = 0;
+// Idle redraw cadence. Nothing on an idle board moves faster than the slow
+// selected-colour breath (a ~4s sine), so 10fps reads the same as 30fps did
+// at a third of the work; the desktop build renders on the CPU, so this is
+// most of what an open-but-idle window costs. Hover and taps force a frame.
+const IDLE_FRAME_MS = 100;
 let secondsCarry = 0;
 
 function ensureFrame() {
@@ -3245,13 +3250,13 @@ function frame(now) {
     if (t >= 1) S.revealFrom = 0;
   }
 
-  // Full rate while anything is moving, a lazy 30fps for the idle pulse.
+  // Full rate while anything is moving, a lazy 10fps for the idle pulse.
   // numberOverride is deliberately excluded: it's now an indefinite,
   // static colour choice rather than a timed effect counting down, so
   // pinning the loop to full framerate for it would never stop once the
   // ability is used even once. drawBase() already redraws it correctly the
   // instant it changes (setNumberOverride() sets dirty = true itself); the
-  // ordinary lazy 30fps idle cadence below covers the rest.
+  // ordinary lazy idle cadence below covers the rest.
   // board.living is safe to include where numberOverride was not: it counts
   // down and drawLiving() clears it the moment its window closes, so the
   // loop drops back to the idle cadence by itself.
@@ -3263,7 +3268,7 @@ function frame(now) {
     || board.fx.size > 0 // special paints animate every frame while any is on screen
     || board.stickersAnimate // animated stickers (bob/spin/pulse/flip) keep the loop alive
     || board.replaying; // a replay reveals cells every frame until it finishes
-  if (busy || now - lastDraw > 33) {
+  if (busy || now - lastDraw > IDLE_FRAME_MS) {
     lastDraw = now;
     board.draw(S.bursts, now);
   }

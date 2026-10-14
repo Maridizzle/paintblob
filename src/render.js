@@ -923,7 +923,7 @@ export class Board {
     // The resting hatch is on the base layer; this deepens the same diagonal
     // lines in place (a transparent-gap tile at the same phase), so the
     // highlight stays hatch-shaded and never washes the cells with flat colour.
-    // The lazy 30fps idle redraw (frame() in game.js) animates it for free.
+    // The lazy 10fps idle redraw (frame() in game.js) animates it for free.
     // A finished picture (reveal === 1) has no unpainted cells of any colour, so
     // the loop below simply finds none — no separate guard needed for it.
     if (this.selected >= 0) {
