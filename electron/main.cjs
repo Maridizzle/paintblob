@@ -189,7 +189,9 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      backgroundThrottling: false, // keep animating while it sits behind things
+      // Let Chromium slow timers and frames while the window is hidden
+      // (minimised or fully covered), so an idle desk toy stops costing CPU.
+      backgroundThrottling: true,
     },
   });
 
