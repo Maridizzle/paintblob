@@ -3267,7 +3267,11 @@ function frame(now) {
     || board.colourFlash || board.focus || board.shock || board.living || board.liftMoving()
     || board.fx.size > 0 // special paints animate every frame while any is on screen
     || board.stickersAnimate // animated stickers (bob/spin/pulse/flip) keep the loop alive
-    || board.replaying; // a replay reveals cells every frame until it finishes
+    || board.replaying // a replay reveals cells every frame until it finishes
+    // A pending base redraw (pan, pinch, wheel zoom, arrow-pad glide all set
+    // it) draws now rather than waiting out the idle cadence; drawBase()
+    // clears it, so it never pins the loop.
+    || board.dirty;
   if (busy || now - lastDraw > IDLE_FRAME_MS) {
     lastDraw = now;
     board.draw(S.bursts, now);
