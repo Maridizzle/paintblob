@@ -18,6 +18,25 @@
     ]
   },
   {
+    "id": "aurora-ice-citadel",
+    "title": "Aurora Ice Citadel",
+    "cells": 650,
+    "colours": 37,
+    "thumb": [
+      "#7c2218",
+      "#b6310b",
+      "#f8b692",
+      "#e55c0a",
+      "#f8c1a1"
+    ],
+    "difficulty": "detailed",
+    "themes": [
+      "Fantasy",
+      "Landscape"
+    ],
+    "blind": true
+  },
+  {
     "id": "aurora-over-ice",
     "title": "Aurora Over Ice",
     "cells": 500,
@@ -468,6 +487,24 @@
     "blind": true
   },
   {
+    "id": "dragons-ember-keep",
+    "title": "Dragon's Ember Keep",
+    "cells": 650,
+    "colours": 32,
+    "thumb": [
+      "#651717",
+      "#723737",
+      "#8d2623",
+      "#aa221d",
+      "#d1261c"
+    ],
+    "difficulty": "detailed",
+    "themes": [
+      "Fantasy"
+    ],
+    "blind": true
+  },
+  {
     "id": "dusk-harbour",
     "title": "Dusk Harbour",
     "cells": 23,
@@ -597,6 +634,25 @@
     ]
   },
   {
+    "id": "harbour-citadel",
+    "title": "Harbour Citadel",
+    "cells": 1200,
+    "colours": 39,
+    "thumb": [
+      "#af2924",
+      "#df362d",
+      "#37251f",
+      "#523423",
+      "#654229"
+    ],
+    "difficulty": "insane",
+    "themes": [
+      "Landscape",
+      "Fantasy"
+    ],
+    "blind": true
+  },
+  {
     "id": "harbour-row",
     "title": "Harbour Row",
     "cells": 88,
@@ -668,6 +724,25 @@
       "Animals",
       "Water"
     ]
+  },
+  {
+    "id": "ivy-ruins",
+    "title": "Ivy Ruins",
+    "cells": 500,
+    "colours": 37,
+    "thumb": [
+      "#341f1d",
+      "#f35b39",
+      "#f9774a",
+      "#513828",
+      "#d1753d"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Landscape"
+    ],
+    "blind": true
   },
   {
     "id": "jellyfish-drift",
@@ -912,6 +987,24 @@
     ]
   },
   {
+    "id": "palace-of-golden-domes",
+    "title": "Palace of Golden Domes",
+    "cells": 500,
+    "colours": 33,
+    "thumb": [
+      "#762f2f",
+      "#3c2523",
+      "#ea6559",
+      "#dd4319",
+      "#9c4f1c"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy"
+    ],
+    "blind": true
+  },
+  {
     "id": "peacock",
     "title": "Peacock",
     "cells": 1200,
@@ -1043,6 +1136,24 @@
       "Food",
       "Spooky"
     ]
+  },
+  {
+    "id": "riverside-market-town",
+    "title": "Riverside Market Town",
+    "cells": 1200,
+    "colours": 40,
+    "thumb": [
+      "#5d2523",
+      "#5c4036",
+      "#86452b",
+      "#c15b32",
+      "#ec8650"
+    ],
+    "difficulty": "insane",
+    "themes": [
+      "Landscape"
+    ],
+    "blind": true
   },
   {
     "id": "silent-e",
@@ -1214,6 +1325,42 @@
       "Landscape",
       "Trees"
     ]
+  },
+  {
+    "id": "stormwrack-tower",
+    "title": "Stormwrack Tower",
+    "cells": 500,
+    "colours": 32,
+    "thumb": [
+      "#a71910",
+      "#ec3106",
+      "#eb4308",
+      "#f9530b",
+      "#f77b0a"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy"
+    ],
+    "blind": true
+  },
+  {
+    "id": "sugarplum-castle",
+    "title": "Sugarplum Castle",
+    "cells": 38,
+    "colours": 19,
+    "thumb": [
+      "#b34c47",
+      "#e66b61",
+      "#dcc4c0",
+      "#5d7728",
+      "#719a34"
+    ],
+    "difficulty": "chunky",
+    "themes": [
+      "Fantasy"
+    ],
+    "blind": true
   },
   {
     "id": "sunset-tidepool",
@@ -1455,6 +1602,24 @@
     ]
   },
   {
+    "id": "twin-moon-manor",
+    "title": "Twin Moon Manor",
+    "cells": 37,
+    "colours": 10,
+    "thumb": [
+      "#cbdda8",
+      "#99d4c7",
+      "#80cac8",
+      "#6fc1c3",
+      "#5db2ba"
+    ],
+    "difficulty": "chunky",
+    "themes": [
+      "Fantasy"
+    ],
+    "blind": true
+  },
+  {
     "id": "violet-vapour",
     "title": "Violet Vapour",
     "cells": 500,
@@ -1470,6 +1635,25 @@
     "themes": [
       "Elements",
       "Fantasy"
+    ],
+    "blind": true
+  },
+  {
+    "id": "waterfall-keep",
+    "title": "Waterfall Keep",
+    "cells": 650,
+    "colours": 34,
+    "thumb": [
+      "#94201f",
+      "#a3452d",
+      "#d28671",
+      "#d24f23",
+      "#e59d76"
+    ],
+    "difficulty": "detailed",
+    "themes": [
+      "Fantasy",
+      "Landscape"
     ],
     "blind": true
   },
