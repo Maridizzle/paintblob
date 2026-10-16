@@ -565,5 +565,69 @@
     "themes": [
       "Flowers"
     ]
+  },
+  "waterfall-keep": {
+    "difficulty": "detailed",
+    "themes": [
+      "Fantasy",
+      "Landscape"
+    ]
+  },
+  "stormwrack-tower": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy"
+    ]
+  },
+  "riverside-market-town": {
+    "difficulty": "insane",
+    "themes": [
+      "Landscape"
+    ]
+  },
+  "ivy-ruins": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Landscape"
+    ]
+  },
+  "aurora-ice-citadel": {
+    "difficulty": "detailed",
+    "themes": [
+      "Fantasy",
+      "Landscape"
+    ]
+  },
+  "palace-of-golden-domes": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy"
+    ]
+  },
+  "twin-moon-manor": {
+    "difficulty": "chunky",
+    "themes": [
+      "Fantasy"
+    ]
+  },
+  "sugarplum-castle": {
+    "difficulty": "chunky",
+    "themes": [
+      "Fantasy"
+    ]
+  },
+  "harbour-citadel": {
+    "difficulty": "insane",
+    "themes": [
+      "Landscape",
+      "Fantasy"
+    ]
+  },
+  "dragons-ember-keep": {
+    "difficulty": "detailed",
+    "themes": [
+      "Fantasy"
+    ]
   }
 }
