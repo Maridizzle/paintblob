@@ -188,9 +188,9 @@ export const CHAPTERS = [
     // plays over the already-dark board: first the shock, then Ee.
     actBreak: 'the-hoarder',
     theme2: 'nightcut',
-    // Act I reuses The Swap for now; the dusk-flavoured "Last Light" round (and
-    // the storyRound dispatch that reads this field) land in the next drop.
-    storyRound: 'swap',
+    // The chapter's own round: Last Light (lastlight.js) — keep the windows
+    // lit. game.js maybeOfferStoryRound reads this to pick which chip to offer.
+    storyRound: 'lastlight',
     blurb: 'Out past the frame, where the light is going and the wild keeps its own names.',
     // Ten stones climb the board in a zigzag: Act I up to the Hoarder in the
     // middle, Act II on into the dark above it.

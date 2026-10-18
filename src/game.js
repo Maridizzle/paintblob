@@ -59,8 +59,12 @@ import {
 } from './story.js';
 import {
   regenCount, pickWipeTargets, pickLockTargets, chooseAttack, difficultyMult,
-  healthFraction, bossKit,
+  healthFraction, bossKit, fadeStartLit, fadeRevealAround, fadePickRefog,
 } from './boss.js';
+import {
+  WINDOWS as LL_WINDOWS, SECONDS as LL_SECONDS, newStreet as llNewStreet, step as llStep,
+  relight as llRelight, litCount as llLitCount,
+} from './lastlight.js';
 import { letterSVG } from './letters.js';
 import {
   ROOMS, HOUSE_ITEMS, LIGHTING, PETS, PROP_SLOTS, SLOT_LABEL,
@@ -140,6 +144,7 @@ const S = {
   // fill themselves with their own colour, the colours answering again.
   swap: null,
   swapOffered: false,
+  lastLightOffered: false,
   named: 0,
   // The free-mode bonus rounds beyond Overtime — Shade Match, Colour Mixer, Drip
   // Catch, Palette Memory. Each is a running session or null, same per-picture,
@@ -2044,6 +2049,7 @@ async function loadPuzzle(id) {
   closeOvertime();
   S.swap = null;
   S.swapOffered = false;
+  S.lastLightOffered = false;
   S.named = 0;
   closeSwap();
   syncNamed();
@@ -2376,6 +2382,9 @@ function tryPaint(clientX, clientY, pointerType) {
   // froze cannot be laid down. Either just buzzes — the ✕ on the cell and the
   // frozen tub already say why.
   if (cellLocked(target.id) || isColourDisabled(target.colour)) { sfx.play('nope'); return; }
+  // The Fade's blank is a wall too: you can only paint what is lit. Paint
+  // nearer the dark and the light spreads to it (see fadeLight).
+  if (cellFogged(target.id)) { sfx.play('nope'); return; }
 
   launch(target, point);
 }
@@ -2466,6 +2475,8 @@ function commitFill(burst) {
   S.pending.delete(cell.id);
   S.remaining[cell.colour]--;
   board.markFilled(cell.id);
+  // Against The Fade, every stroke is a lamp: the light spreads out from it.
+  if (S.boss?.fade) fadeLight(cell.id);
 
   // A won bonus round's perk: for its next few fills, each cell you paint also
   // lays down ONE more, chosen by the perk (perks.js) — the twin beside it, the
@@ -2556,7 +2567,7 @@ function commitFill(burst) {
   persist();
 
   if (S.filled.size === S.cells.length) finish();
-  else if (S.inStory && isStoryPuzzle(S.puzzle.id)) maybeOfferSwap();
+  else if (S.inStory && isStoryPuzzle(S.puzzle.id)) maybeOfferStoryRound();
   else maybeOfferBonus();
 }
 
@@ -2579,7 +2590,8 @@ function applyPaint(cell) {
   if (!isPaint(paintId) || paintCount(S.save, paintId) <= 0) { sfx.play('nope'); return; }
   if (S.pending.has(cell.id)) return; // a burst already has this cell in flight
   // X's freeze walls bind the special paint too — a locked cell can't be touched.
-  if (cellLocked(cell.id)) { sfx.play('nope'); return; }
+  // Nor can a cell The Fade has left blank.
+  if (cellLocked(cell.id) || cellFogged(cell.id)) { sfx.play('nope'); return; }
 
   const wasFilled = S.filled.has(cell.id);
   const prevFx = board.fx.get(cell.id) ?? null;
@@ -3091,6 +3103,9 @@ function useHint() {
   const target = pickHintTarget(S.cells, S.filled, S.selected);
   S.hintsThisPuzzle++;
   board.showHint(target.id, performance.now());
+  // A hint is a look: against The Fade it lights the cell it points at, so the
+  // hint is never a flash in a blank you cannot then paint.
+  if (S.boss?.fade) fadeLight(target.id);
   sfx.play('hint');
   achSync();
   syncHints();
@@ -5146,8 +5161,9 @@ function renderDevPanel(body) {
 
   // The five free-mode bonus rounds, straight off the registry.
   for (const r of BONUS_ROUNDS) launch(r.mark, r.label, r.tag, r.start);
-  // Story mode's own round — startSwap only needs a loaded picture, not story mode.
+  // Story mode's own rounds — each only needs a loaded picture, not story mode.
   launch('✦', 'The Swap', 'give the colours their names back', startSwap);
+  launch('🕯', 'Last Light', 'keep the windows lit', startLastLight);
   // The instant-complete, mirrored from the on-canvas dev pill for convenience.
   launch('🛠', 'Complete picture', 'fill every cell and finish, to see what unlocks next', devComplete);
 
@@ -6874,6 +6890,208 @@ function tapSwatch(i) {
   if (swapSolved(sw.order)) endSwap(true);
 }
 
+/* ------------------------------------------------------------ last light */
+
+// Chapter Two's round (lastlight.js), offered the way the Swap is: one chip,
+// once per picture, ten cells in, opt-out-able, never under low-stim. Which of
+// the two story rounds a stone offers is the chapter's `storyRound`
+// (story.js) — see maybeOfferStoryRound.
+
+function maybeOfferStoryRound() {
+  const round = getChapter(S.save.story.chapter)?.storyRound;
+  if (round === 'lastlight') maybeOfferLastLight();
+  else maybeOfferSwap();
+}
+
+function maybeOfferLastLight() {
+  if (S.lastLightOffered || S.ll || S.named > 0 || S.finished) return;
+  if (S.save.settings.lowStim) return; // a bonus round is an extra low-stim hides
+  if (S.save.settings.overtime === false) return; // the shared bonus-round opt-out
+  if (S.filled.size < 10) return;
+  S.lastLightOffered = true;
+  $('lastLightChip').classList.remove('hidden');
+}
+
+function closeLastLight() {
+  const el = $('lastLight');
+  if (el) {
+    el.classList.add('hidden');
+    el.textContent = '';
+  }
+  $('lastLightChip')?.classList.add('hidden');
+  if (S.ll?.timer) clearInterval(S.ll.timer);
+  S.ll = null;
+}
+
+// The how-to panel first, clock stopped; the street only starts going dark
+// when the player taps Begin (beginLastLight).
+function startLastLight() {
+  if (S.ll || !S.puzzle) return;
+  $('lastLightChip').classList.add('hidden');
+  S.ll = { street: llNewStreet(), startedAt: 0, lastTick: 0, timer: 0, started: false };
+  renderLastLight();
+}
+
+function beginLastLight() {
+  if (!S.ll || S.ll.started) return;
+  S.ll.started = true;
+  S.ll.startedAt = Date.now();
+  S.ll.lastTick = S.ll.startedAt;
+  renderLastLight();
+  S.ll.timer = setInterval(tickLastLight, 100);
+}
+
+function tickLastLight() {
+  const ll = S.ll;
+  if (!ll) return;
+  const now = Date.now();
+  const dt = Math.min(0.5, (now - ll.lastTick) / 1000); // a background tab's gap never drains the street in one go
+  ll.lastTick = now;
+  const elapsed = now - ll.startedAt;
+  const total = LL_SECONDS * 1000;
+  const left = Math.max(0, total - elapsed);
+  const out = llStep(ll.street, dt, elapsed / total, !!S.save.settings.lowStim);
+  ll.street = out.street;
+  const bar = $('lastLight').querySelector('.ot-time i');
+  if (bar) bar.style.width = `${(left / total) * 100}%`;
+  const clock = $('lastLight').querySelector('.ot-clock');
+  if (clock) clock.textContent = clockText(left);
+  paintStreet();
+  if (out.lost) endLastLight(false);
+  else if (left <= 0) endLastLight(true);
+}
+
+function endLastLight(won) {
+  if (!S.ll) return;
+  clearInterval(S.ll.timer);
+  S.ll.timer = 0;
+  const card = $('lastLight').querySelector('.ot-card');
+  card?.classList.add(won ? 'won' : 'lost');
+  paintStreet();
+  const hint = $('lastLight').querySelector('.ot-hint');
+  if (hint) hint.textContent = won ? 'The street stays lit.' : 'One went out, and nobody was looking.';
+  sfx.play(won ? 'achievement' : 'nope');
+  setTimeout(() => {
+    closeLastLight();
+    noteBonus('lastlight', won);
+    if (won) awardLastLight();
+  }, won ? 1500 : 2600);
+}
+
+// The boon is the Swap's: the colours answer for a stretch. Same mechanic,
+// the chapter's own words for it — the light you kept is the light you paint by.
+function awardLastLight() {
+  S.named = NAMED_CELLS;
+  syncNamed();
+  toast({ icon: '🕯', name: 'Lit',
+    desc: `The light holds. The next ${NAMED_CELLS} cells you tap fill themselves.` },
+  '', { sticky: true });
+}
+
+function renderLastLight() {
+  const el = $('lastLight');
+  el.textContent = '';
+  el.classList.remove('hidden');
+
+  const card = document.createElement('div');
+  card.className = 'ot-card ll-card';
+
+  if (!S.ll.started) {
+    const h = document.createElement('div');
+    h.className = 'swap-how';
+    h.innerHTML =
+      '<div class="swap-how-title">Last Light</div>' +
+      '<div class="swap-how-body"></div>' +
+      '<div class="swap-how-demo"></div>' +
+      '<div class="swap-how-body two"></div>';
+    h.querySelector('.swap-how-body').textContent =
+      'A street of windows, every lamp in them going out. A light stays on only while somebody is looking at it.';
+    h.querySelector('.swap-how-body.two').textContent =
+      `Tap a window to turn its lamp back up. Keep all ${LL_WINDOWS} burning until the clock runs out. Let one go dark and stay dark, and the street is lost.`;
+    // A two-window demo: one lit, one nearly out — the thing to tap.
+    const demo = h.querySelector('.swap-how-demo');
+    demo.classList.add('ll-street');
+    demo.style.gridTemplateColumns = 'repeat(2, 56px)';
+    for (const lit of [1, 0.15]) {
+      const w = document.createElement('div');
+      w.className = 'll-window';
+      w.style.setProperty('--lit', String(lit));
+      demo.append(w);
+    }
+    const begin = document.createElement('button');
+    begin.className = 'primary';
+    begin.textContent = 'Begin';
+    begin.addEventListener('click', beginLastLight);
+    const quit = document.createElement('button');
+    quit.className = 'tour-skip';
+    quit.textContent = 'Not now';
+    quit.addEventListener('click', closeLastLight);
+    const foot = document.createElement('div');
+    foot.className = 'swap-how-foot';
+    foot.append(quit, begin);
+    card.append(h, foot);
+    el.append(card);
+    return;
+  }
+
+  const head = document.createElement('div');
+  head.className = 'ot-head';
+  const title = document.createElement('div');
+  title.className = 'ot-title';
+  title.textContent = 'Last Light';
+  const clock = document.createElement('div');
+  clock.className = 'ot-clock';
+  clock.textContent = clockText(LL_SECONDS * 1000);
+  const quit = document.createElement('button');
+  quit.className = 'icon';
+  quit.textContent = '✕';
+  quit.title = 'Leave it';
+  quit.addEventListener('click', () => endLastLight(false));
+  head.append(title, clock, quit);
+
+  const time = document.createElement('div');
+  time.className = 'ot-time';
+  time.append(document.createElement('i'));
+
+  const street = document.createElement('div');
+  street.className = 'll-street';
+  for (let i = 0; i < LL_WINDOWS; i++) {
+    const w = document.createElement('button');
+    w.className = 'll-window';
+    w.type = 'button';
+    w.title = 'Turn the lamp up';
+    w.addEventListener('click', () => tapWindow(i));
+    street.append(w);
+  }
+
+  const hint = document.createElement('div');
+  hint.className = 'ot-hint';
+  hint.textContent = 'Tap the window that is going out.';
+
+  card.append(head, time, street, hint);
+  el.append(card);
+  paintStreet();
+}
+
+/** Writes each window's lamp level into its `--lit`, and flags the dark ones. */
+function paintStreet() {
+  const street = $('lastLight').querySelector('.ll-street');
+  if (!street || !S.ll) return;
+  [...street.children].forEach((w, i) => {
+    const lit = S.ll.street.light[i];
+    w.style.setProperty('--lit', lit.toFixed(3));
+    w.classList.toggle('dark', lit <= 0);
+  });
+}
+
+function tapWindow(i) {
+  const ll = S.ll;
+  if (!ll || !ll.timer) return;
+  ll.street = llRelight(ll.street, i);
+  sfx.play('pick', llLitCount(ll.street) === LL_WINDOWS ? 3 : 0);
+  paintStreet();
+}
+
 /** The little counter that shows Named is running, and hides when it is spent. */
 function syncNamed() {
   const pill = $('namedPill');
@@ -6981,6 +7199,7 @@ function startBoss(id) {
     bossAttackTick();
     S.boss.timers.push(setInterval(bossAttackTick, kit.attackIntervalMs));
   }, kit.firstAttackMs));
+  if (kit.mode === 'fade') startFade(kit);
   syncBossHud();
 }
 
@@ -6989,8 +7208,78 @@ function stopBoss() {
   for (const t of S.boss.timers) { clearInterval(t); clearTimeout(t); }
   S.boss = null;
   board.bossLocks = null;
+  board.fog = null;
+  board.dirty = true;
   $('bossHud')?.classList.add('hidden');
   syncTubs();
+}
+
+/* ----------------------------------------------------------- the fade */
+
+// The Fade's fight: the board is blank except what is lit, and only a lit cell
+// can be painted. `litAt` is the one source of truth — cell id → when it was
+// lit (0 for the opening band) — mirrored on board.fog so the renderer can
+// draw the blank. Painted cells are never in question: a named thing stays
+// named, so the fog only ever covers UNpainted cells, and re-opening a
+// half-done stone re-lights everything around what is already painted.
+function startFade(kit) {
+  const { width, height } = S.puzzle;
+  // The pure maths works on plain points; the cells' label anchors are those.
+  const points = S.cells.map((c) => ({ id: c.id, x: c.anchor.x, y: c.anchor.y }));
+  const litAt = new Map();
+  for (const id of fadeStartLit(points, height, kit.startBand)) litAt.set(id, 0);
+  for (const id of S.filled) {
+    for (const n of fadeRevealAround(points, id, kit.revealRadius, width, height)) {
+      if (!litAt.has(n)) litAt.set(n, 0);
+    }
+  }
+  S.boss.fade = {
+    points, litAt,
+    revealRadius: kit.revealRadius,
+    refogFraction: kit.refogFraction,
+    // Cells lit this recently are never re-fogged: the light you are working
+    // in holds while you work in it.
+    graceMs: kit.refogIntervalMs * 2,
+  };
+  board.fog = litAt;
+  board.dirty = true;
+  S.boss.timers.push(setInterval(fadeRefogTick, kit.refogIntervalMs));
+}
+
+function cellFogged(id) {
+  const f = S.boss?.fade;
+  return !!f && !f.litAt.has(id);
+}
+
+/** Lights everything within reach of `id` (a stroke, or a hint) and stamps the
+ *  time, so the refog leaves it alone for a grace beat. */
+function fadeLight(id) {
+  const f = S.boss?.fade;
+  if (!f) return;
+  const { width, height } = S.puzzle;
+  const now = performance.now();
+  for (const n of fadeRevealAround(f.points, id, f.revealRadius, width, height)) f.litAt.set(n, now);
+  board.dirty = true;
+  ensureFrame();
+}
+
+// The dark pressing back in: a share of the lit-but-unpainted cells goes blank
+// again, scaled by the boss's health (boss.js) so it fades to nothing as the
+// picture nears done. Low-stim never re-fogs — the light only ever spreads —
+// so the fight there is the reveal alone, calm and un-losable.
+function fadeRefogTick() {
+  if (!bossActive() || !S.boss.fade) return;
+  if (S.save.settings.lowStim) return;
+  const f = S.boss.fade;
+  const now = performance.now();
+  const candidates = [...f.litAt.keys()].filter((id) => !S.filled.has(id) && !S.pending.has(id));
+  const health = healthFraction(S.filled.size, S.cells.length);
+  const gone = fadePickRefog(candidates, f.litAt, now - f.graceMs, f.refogFraction, health);
+  if (!gone.length) return;
+  for (const id of gone) f.litAt.delete(id);
+  S.boss.refogs = (S.boss.refogs ?? 0) + 1;
+  board.dirty = true;
+  ensureFrame();
 }
 
 // X takes some painted cells back — chosen at random, un-filled, so the board
@@ -7022,7 +7311,7 @@ function bossRegenTick() {
 function bossAttackTick() {
   if (!bossActive()) return;
   if (S.boss.mode === 'hoarder') hoarderAttack();
-  else if (S.boss.mode === 'fade') return; // the reveal fight lands in the next drop; no freezes meanwhile
+  else if (S.boss.mode === 'fade') return; // no spells: the Fade's whole pressure is the refog (fadeRefogTick)
   else attritionAttack();
 }
 
@@ -7091,6 +7380,12 @@ function syncBossHud() {
   const parts = [];
   if (S.boss.disabled && now < S.boss.disabled.end) parts.push(`colour frozen ${Math.ceil((S.boss.disabled.end - now) / 1000)}s`);
   if (board.bossLocks && now < board.bossLocks.end) parts.push(`board frozen ${Math.ceil((board.bossLocks.end - now) / 1000)}s`);
+  if (S.boss.fade) {
+    // How much of what is left to paint you can actually see right now.
+    const unfilled = S.cells.length - S.filled.size;
+    const lit = [...S.boss.fade.litAt.keys()].filter((id) => !S.filled.has(id)).length;
+    parts.push(`${lit} of ${unfilled} lit`);
+  }
   hud.querySelector('.boss-status').textContent = parts.join(' · ');
 }
 
@@ -7644,6 +7939,9 @@ document.addEventListener('click', async (e) => {
       break;
     case 'swap':
       startSwap();
+      break;
+    case 'lastlight':
+      startLastLight();
       break;
     case 'pictures': case 'trophies': case 'settings': case 'avatar':
       if (S.panel === act) closePanel();

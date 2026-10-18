@@ -69,7 +69,7 @@ diminishes, give it **one fear, one gimmick, one glyph** in the X idiom
 |---|---|---|---|---|---|
 | ✕ | **X** | crosses it out — the thing stays, the *ask* dies | being asked for | `attrition`: drains painted cells; freezes a colour or a share of the board | Ch1 boss — shipped |
 | ( ) | **the Hoarder** | sets it aside and *keeps* it | losing things | `hoarder`: always grabs the colour in your hand, and its cells; never your last | Ch2 mid-boss — shipped |
-| ___ | **The Fade** (the Blank) | leaves a blank where it was | being filled in | `fade`: fog of war — paint what you can see; what you stop looking at goes blank again | Ch2 chapter boss — next drop |
+| ___ | **The Fade** (the Blank) | leaves a blank where it was | being filled in | `fade`: fog of war — paint what you can see; what you stop looking at goes blank again | Ch2 chapter boss — built, gated with Act II |
 | … | **the Ellipsis** | trails it off | mornings | the climax: everything you look away from un-paints | the hand — far off |
 | . | **the Full Stop** | ends it | continuation | Book Two | past the hand |
 | bench | `?` the Doubt (which tub is which?) · `" "` the So-Called (paints the *wrong* colour now and then) · `*` the Footnote (the real thing hidden in a note) · `;` the Pause (a board that stalls) · `—` the Dash (cuts a picture off mid—) | | | | future mini-bosses |
@@ -109,9 +109,12 @@ winning*).
 ## 5. Chapter map
 
 - **Ch1 — The Sampler.** Look: `fae`. Boss: X → earns `cobalt`. Shipped.
-- **Ch2 — Into the Dusk.** Act I look `bloom` → Act II look `nightcut`, flipping
+- **Ch2 — Into the Dusk.** Act I look `cobalt` → Act II look `nightcut`, flipping
   at the act break (beating the Hoarder). Act I shipped with its prose. Act II
-  below, staged.
+  wired (§6), gated until its real art. The chapter's own round is **Last
+  Light** (`lastlight.js`): a black street of eight windows going out; tap to
+  turn a lamp back up; keep them all lit till the clock runs out. Attention as
+  the muscle, which is what The Fade asks for too.
 - **Ch3 — a town that trades names** (sketch). A market where names are bartered,
   hoarded, counterfeited. Marks: the Doubt (`?` — you are never sure which tub is
   which) and the So-Called (`" "` — a mimic that lays the wrong colour now and

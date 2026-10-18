@@ -3169,6 +3169,57 @@ body.privacy { display: block; overflow: auto; background: var(--bg, #121216); c
 .swatch.demo { aspect-ratio: 3 / 2; width: 96px; cursor: default; }
 .swatch.demo:hover { transform: none; }
 
+/* Last Light — a black street of windows. Each window's lamp is a custom
+   property `--lit` (0..1) set from game.js; the pane mixes from soot up to
+   warm lamp-light on it, and the glow under it follows. A dark window
+   (`.dark`) sets the frame flickering so the eye goes to it; low-stim drops
+   the flicker and the transitions both. */
+.ll-street {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  width: 100%;
+  padding: 12px 10px 8px;
+  border-radius: 10px;
+  background: #0b0b0f;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.ll-window {
+  --lit: 1;
+  position: relative;
+  aspect-ratio: 3 / 4;
+  border: 2px solid #2a2a30;
+  border-radius: 7px 7px 3px 3px;
+  cursor: pointer;
+  padding: 0;
+  background: color-mix(in srgb, #f2b544 calc(var(--lit) * 100%), #141416);
+  box-shadow: 0 0 calc(var(--lit) * 18px) calc(var(--lit) * 3px) rgba(242, 181, 68, calc(var(--lit) * 0.55));
+  transition: background 120ms linear, box-shadow 120ms linear, transform 120ms;
+}
+.ll-window::before, .ll-window::after {
+  /* the mullions, so it reads as a window and not a tile */
+  content: '';
+  position: absolute;
+  background: #1c1c21;
+  pointer-events: none;
+}
+.ll-window::before { left: 50%; top: 0; bottom: 0; width: 2px; transform: translateX(-50%); }
+.ll-window::after { top: 50%; left: 0; right: 0; height: 2px; transform: translateY(-50%); }
+.ll-window:hover { transform: translateY(-2px); }
+.ll-window:active { transform: scale(0.96); }
+.ll-window.dark { animation: ll-flicker 360ms ease-in-out infinite alternate; }
+@keyframes ll-flicker { from { border-color: #2a2a30; } to { border-color: #e05070; } }
+.ll-card.lost .ll-window:not(.dark) { opacity: 0.45; transition: opacity 300ms ease; }
+.ll-card.won .ll-window { --lit: 1; }
+/* The how-to's two-window demo: the shared demo row is a flex box, so the
+   street has to be re-asserted as a grid and its windows given a real size. */
+.swap-how-demo.ll-street { display: grid; width: auto; padding: 10px 12px; }
+.swap-how-demo .ll-window { width: 56px; height: 74px; cursor: default; }
+.swap-how-demo .ll-window:hover { transform: none; }
+html.low-stim .ll-window { transition: none; }
+html.low-stim .ll-window.dark { animation: none; border-color: #e05070; }
+@media (prefers-reduced-motion: reduce) { .ll-window.dark { animation: none; border-color: #e05070; } }
+
 /* The how-to panel, shown once before the clock starts. */
 /* The bonus-round how-to panel, shared by the Swap and by Overtime — the same
    shown-before-the-clock card, so the same styling under two names. */
@@ -3402,6 +3453,7 @@ body.privacy { display: block; overflow: auto; background: var(--bg, #121216); c
 html.low-stim [data-act="mode-swap"],
 html.low-stim #bonusChip,
 html.low-stim #swapChip,
+html.low-stim #lastLightChip,
 html.low-stim #bossHud,
 html.low-stim #storyPill,
 html.low-stim #devPill {
