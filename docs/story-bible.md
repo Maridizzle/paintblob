@@ -123,18 +123,25 @@ winning*).
   world un-trails. Then the dot. → the cliffhanger.
 - **Book Two — the Comma.**
 
-## 6. Chapter Two, Act II — written, waiting for The Fade
+## 6. Chapter Two, Act II — wired, gated until its real art
 
-**Stones to bake** (ids fixed here so the scenes can name them):
+**Status:** the five stones are baked as PLACEHOLDER art
+(`tools/make-ch2-act2-puzzles.mjs`, the nightcut register: black, carved greys,
+and the one warm light each), the three scenes below are pasted into
+`src/story.js`, and The Fade has its glyph (`letters.js` `drawFade`, a low
+flat bar wearing `--muted`). Every Act II node carries `released: false`, so a
+plain player who beats the Hoarder sees the five dark stones teased-but-shut
+on the board (`nodeReleased` / `renderStoryBoard`); dev mode plays the act.
+**Baking the real art is the release trigger:** that PR drops the five flags
+and the "act two stays shut" test in the same diff. The prose below is kept
+here as the reference copy; `story.js` is the shipped truth.
+
+**Stone ids** (fixed, so a re-bake under the same id touches no story code):
 `signpost-that-points` — *The Signpost That Points*;
 `last-lit-window` — *The Last Lit Window*;
 `half-bridge` — *The Half-Bridge*;
 `well-of-echoes` — *The Well of Echoes*;
-`the-fade` — *The Fade* (boss, `kit: 'fade'`). Add five `spots` to Chapter
-Two; `theme2: 'nightcut'` and `actBreak: 'the-hoarder'` are already set.
-**The Fade needs a speaker glyph** in `letters.js`: a low flat bar — the blank
-line in a form — `Fade: drawFade`, `.lt-fade { --lt-body: var(--muted); }`.
-Its kit's `name` in `boss.js` is already `'The Fade'`.
+`the-fade` — *The Fade* (boss, `kit: 'fade'`).
 
 ### `deeper` — `afterDone: 'last-lit-window'`
 

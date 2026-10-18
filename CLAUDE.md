@@ -123,18 +123,26 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
   **The whole saga's shape is in `docs/story-bible.md`** — the marks are
   punctuation (X the cross-out, the Hoarder's parentheses, The Fade's blank, the
   Ellipsis as the patient hand, the Full Stop past it), the character arcs, and
-  Act II's prose already written and staged for The Fade. **Keep the bible and
-  `story.js` in step.** Speakers are `letters.js` glyphs: Y, Ee, X, and now the
-  Hoarder (`( )`); The Fade will need one. The Fade + the *Last Light* story
-  round land next.
-  **Chapter Two is gated shut until its real art is baked** — the chapter
-  carries `released: false`, `game.js` `canEnterChapter` refuses a non-dev player
-  (arrows, the Begin-Chapter button, and `goToChapter` all route through it), and
-  boot clamps a stray save off it. The board *teases* Chapter Two; the door stays
-  closed. **Baking the real art is the release trigger:** that PR flips
-  `released` and updates the "chapter two stays locked until its art ships"
-  tripwire test in the same diff. Dev mode (`?dev`) ignores the gate so the art
-  and Act II stay buildable.
+  Act II's prose now wired into `story.js`. **Keep the bible and `story.js` in
+  step.** Speakers are `letters.js` glyphs: Y, Ee, X, the Hoarder (`( )`) and
+  The Fade (`___`). The Fade's fight + the *Last Light* story round land next.
+  **Chapter Two Act I is live** (its real art is baked, so the chapter carries
+  no `released` flag). **Act II is wired but gated one stone at a time:** its
+  five stones (`signpost-that-points` … `the-fade`) wear placeholder art from
+  `tools/make-ch2-act2-puzzles.mjs` and each carries `released: false`;
+  `nodeReleased` (story.js) reads it and `renderStoryBoard` locks such a stone
+  for a non-dev player whatever the stone before it says, so a player who beats
+  the Hoarder sees the dark act teased-but-shut. The chapter-level gate still
+  exists for a future chapter: `released: false` on a chapter makes
+  `canEnterChapter` refuse a non-dev player (arrows, the Begin-Chapter button and
+  `goToChapter` all route through it) and boot clamps a stray save off it.
+  **Baking real art is the release trigger** for either gate: that PR drops the
+  flags and the matching tripwire test in the same diff. Dev mode (`?dev`)
+  ignores both gates so the art and the acts stay buildable. Act II's three
+  scenes (`deeper` / `the-blank` / `close`) ship in `story.js`; The Fade speaks
+  through `letters.js` `drawFade` (`.lt-fade`, wears `--muted`). Its fight (the
+  `fade` kit, fog of war) is the next drop; until then `bossAttackTick` no-ops
+  on that kit.
 - **Boss fight** — `boss.js` (pure math) + `game.js`. **The picture is the health
   bar** (health = unpainted / total); **no-lose** (drain fades to 0 as you near
   done). Now a **registry of kits** (`BOSS_KITS`): a boss node names a `kit`,

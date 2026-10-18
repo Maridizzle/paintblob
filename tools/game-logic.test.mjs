@@ -73,7 +73,7 @@ import {
   CHAPTERS, DEFAULT_CHAPTER, getChapter, chapterOr, defaultStory, nodeState,
   isStoryPuzzle, isBossPuzzle, openingSeen, sceneSeen, sceneKey,
   onEnterScene, beforeStoneScene, pendingBoardScene,
-  bossKitFor, chapterUnlocked, chapterTheme, chapterReleased, isChapter,
+  bossKitFor, chapterUnlocked, chapterTheme, chapterReleased, nodeReleased, isChapter,
 } from '../src/story.js';
 import {
   healthFraction, regenCount, pickWipeTargets, pickLockTargets, chooseAttack, difficultyMult,
@@ -1319,22 +1319,76 @@ test('chapter two is shipped now its real art is baked', () => {
 
 // ---- Chapter Two + the saga backbone (M1) ------------------------------------
 
-test('chapter two is a coherent, built Act-I path that names its boss kit', () => {
+test('chapter two is a coherent, built two-act path that names both boss kits', () => {
   const ch = getChapter(2);
   assert.equal(ch.id, 2);
   assert.ok(ch.title && ch.label && ch.place, 'a chapter needs a title, a label and a place');
   assert.ok(isTheme(ch.theme), `chapter theme "${ch.theme}" is not a real theme`);
   const ids = ch.nodes.map((n) => n.id);
   assert.equal(new Set(ids).size, ids.length, 'stone ids must be unique');
-  assert.equal(ch.nodes.at(-1).kind, 'boss', 'the act ends on a boss');
-  // The mid-boss carries a NON-default kit — the whole point of Act I.
+  assert.equal(ch.nodes.length, 10, 'two acts of five stones');
+  // Act I ends on the mid-boss at the act break; Act II ends on the chapter
+  // boss. Each carries a NON-default kit — the whole point of the chapter.
+  const mid = ch.nodes[4];
+  assert.equal(mid.id, ch.actBreak, 'the fifth stone is the act break');
+  assert.equal(mid.kind, 'boss');
+  assert.equal(mid.kit, 'hoarder', 'the Hoarder runs the hoarder kit');
   const boss = ch.nodes.at(-1);
-  assert.equal(boss.kit, 'hoarder', 'the Hoarder runs the hoarder kit');
+  assert.equal(boss.kind, 'boss', 'the chapter ends on a boss');
+  assert.equal(boss.id, 'the-fade');
+  assert.equal(boss.kit, 'fade', 'The Fade runs the fade kit');
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles/manifest.json'), 'utf8'));
   const built = new Set(manifest.map((p) => p.id));
   for (const node of ch.nodes) {
     assert.ok(node.puzzle && built.has(node.puzzle), `stone "${node.id}" names a missing puzzle "${node.puzzle}"`);
   }
+});
+
+test('chapter two, act two stays shut until its art ships — one stone at a time', () => {
+  // Act I is live for everyone (chapter two carries no `released` flag). Act II
+  // wears placeholder art, so every one of its five stones carries
+  // `released: false`; nodeReleased reads it the way chapterReleased reads the
+  // chapter's. The PR that bakes the real art drops the flags and this test.
+  const ch = getChapter(2);
+  const actTwo = ch.nodes.slice(5);
+  assert.deepEqual(actTwo.map((n) => n.id),
+    ['signpost-that-points', 'last-lit-window', 'half-bridge', 'well-of-echoes', 'the-fade'],
+    'the bible fixes these five ids');
+  for (const node of actTwo) assert.equal(nodeReleased(node), false, `${node.id} is still placeholder art`);
+  for (const node of ch.nodes.slice(0, 5)) assert.equal(nodeReleased(node), true, `${node.id} shipped with Act I`);
+  assert.equal(nodeReleased({}), true, 'a node with no flag is released');
+  // The board honours it: a plain player sees an unreleased stone locked whatever
+  // the stone before it says; dev walks on.
+  const game = readSource('src/game.js');
+  const body = game.slice(game.indexOf('function renderStoryBoard'), game.indexOf('async function openStone'));
+  assert.match(body, /!S\.dev && !nodeReleased\(node\) \? 'locked'/, 'the board locks an unreleased stone for a non-dev player');
+});
+
+test('act two carries its three scenes, with The Fade drawn and given the last word', () => {
+  const ch = getChapter(2);
+  const byId = (id) => ch.scenes.find((s) => s.id === id);
+  assert.equal(byId('deeper')?.trigger?.afterDone, 'last-lit-window');
+  assert.equal(byId('the-blank')?.trigger?.beforeStone, 'the-fade');
+  assert.equal(byId('close')?.trigger?.afterDone, 'the-fade');
+  assert.equal(ch.scenes.at(-1).id, 'close', 'the close sits last so earlier interstitials play first');
+  const blank = byId('the-blank');
+  assert.equal(blank.beats[0].speaker, 'Fade', 'The Fade opens its own intro');
+  assert.equal(blank.beats.at(-1).speaker, 'Fade', 'and has the last word before the fight');
+  assert.ok(isSpeaker('Fade'), 'The Fade is a drawable speaker');
+  assert.match(letterSVG('Fade'), /lt-fade/, 'drawn as its own glyph, not the fallback');
+  // The close is owed once the chapter boss is beaten, and the act-break scene
+  // (afterDone the Hoarder) is owed first if it has not played.
+  const doneAll = {
+    progress: { 'the-hoarder': { done: true }, 'last-lit-window': { done: true }, 'the-fade': { done: true } },
+    story: { seen: {} },
+  };
+  assert.equal(pendingBoardScene(ch, doneAll)?.id, 'act-break');
+  doneAll.story.seen[sceneKey(2, 'act-break')] = true;
+  assert.equal(pendingBoardScene(ch, doneAll)?.id, 'deeper', 'deeper is owed too (the window is on the way)');
+  doneAll.story.seen[sceneKey(2, 'deeper')] = true;
+  assert.equal(pendingBoardScene(ch, doneAll)?.id, 'close');
+  doneAll.story.seen[sceneKey(2, 'close')] = true;
+  assert.equal(pendingBoardScene(ch, doneAll), null, 'then nothing is owed');
 });
 
 test('every chapter lays out one board spot per stone', () => {
@@ -1464,7 +1518,7 @@ test('opening a free picture in story mode drops cleanly back to free mode', () 
 });
 
 test('the letters are drawable, wash-shaded, and never do colour maths', () => {
-  for (const id of ['Y', 'Ee', 'X', 'Hoarder']) {
+  for (const id of ['Y', 'Ee', 'X', 'Hoarder', 'Fade']) {
     assert.ok(isSpeaker(id), `${id} should be a known speaker`);
     const svg = letterSVG(id);
     assert.match(svg, /^<svg/, `${id} must render an svg`);

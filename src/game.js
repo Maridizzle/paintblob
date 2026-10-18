@@ -55,7 +55,7 @@ import { Tour } from './tour.js';
 import {
   getChapter, chapterOr, defaultStory, nodeState, isStoryPuzzle, isBossPuzzle,
   onEnterScene, beforeStoneScene, pendingBoardScene, sceneKey, sceneSeen,
-  bossKitFor, chapterUnlocked, chapterTheme, chapterReleased, isChapter, DEFAULT_CHAPTER, CHAPTERS,
+  bossKitFor, chapterUnlocked, chapterTheme, chapterReleased, nodeReleased, isChapter, DEFAULT_CHAPTER, CHAPTERS,
 } from './story.js';
 import {
   regenCount, pickWipeTargets, pickLockTargets, chooseAttack, difficultyMult,
@@ -7022,6 +7022,7 @@ function bossRegenTick() {
 function bossAttackTick() {
   if (!bossActive()) return;
   if (S.boss.mode === 'hoarder') hoarderAttack();
+  else if (S.boss.mode === 'fade') return; // the reveal fight lands in the next drop; no freezes meanwhile
   else attritionAttack();
 }
 
@@ -7459,10 +7460,13 @@ function renderStoryBoard() {
   // path is finished. prevDone walks forward down the list — true for the first
   // stone, then whatever the last stone's state came out as. Developer mode
   // forces every predecessor "done", so every built stone opens at once.
+  // A stone whose art has not shipped (nodeReleased) is drawn but stays shut
+  // for a plain player — the act is teased, not playable — while dev mode
+  // walks straight onto it, which is how its real art gets built.
   let prevDone = true;
   ch.nodes.forEach((node, i) => {
     const [x, y] = spots[i];
-    const state = nodeState(node, S.save, S.dev || prevDone);
+    const state = !S.dev && !nodeReleased(node) ? 'locked' : nodeState(node, S.save, S.dev || prevDone);
     prevDone = state === 'done';
     const wrap = document.createElement('div');
     wrap.className = 'stone-wrap';

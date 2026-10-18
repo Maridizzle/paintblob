@@ -2788,6 +2788,7 @@ button {
 .lt-ee { --lt-body: var(--accent); }
 .lt-x { --lt-body: var(--muted); } /* the un-namer: drained grey, no colour of its own */
 .lt-hoarder { --lt-body: var(--hot); } /* the grabby one: the colour of whatever it is clutching */
+.lt-fade { --lt-body: var(--muted); } /* the blank: the colour of nothing filled in */
 .lt-body { fill: var(--lt-body); }
 .lt-white { fill: rgba(var(--sheen-rgb), 0.92); }
 .lt-eye { fill: rgba(var(--shade-rgb), 0.9); }

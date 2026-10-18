@@ -2264,6 +2264,19 @@
     "speed": 1,
     "amplitude": 1
   },
+  "half-bridge": {
+    "effect": "glow",
+    "cells": [
+      16,
+      25,
+      94,
+      95,
+      96,
+      97
+    ],
+    "speed": 0.7,
+    "amplitude": 1
+  },
   "harbour-citadel": {
     "effect": "ripple",
     "cells": [
@@ -2951,6 +2964,17 @@
     ],
     "speed": 0.8,
     "amplitude": 1.4
+  },
+  "last-lit-window": {
+    "effect": "glow",
+    "cells": [
+      38,
+      116,
+      117,
+      118
+    ],
+    "speed": 0.6,
+    "amplitude": 1
   },
   "library-in-the-clouds": {
     "effect": "ripple",
@@ -4288,6 +4312,16 @@
     "speed": 0.6,
     "amplitude": 1
   },
+  "signpost-that-points": {
+    "effect": "glow",
+    "cells": [
+      20,
+      27,
+      79
+    ],
+    "speed": 0.7,
+    "amplitude": 1
+  },
   "silent-e": {
     "effect": "shimmer",
     "cells": [
@@ -5390,6 +5424,15 @@
     "speed": 1,
     "amplitude": 1
   },
+  "the-fade": {
+    "effect": "glow",
+    "cells": [
+      94,
+      95
+    ],
+    "speed": 0.7,
+    "amplitude": 1.4
+  },
   "the-hoarder": {
     "effect": "glow",
     "cells": [
@@ -5677,6 +5720,16 @@
       627,
       636,
       642
+    ],
+    "speed": 0.7,
+    "amplitude": 1
+  },
+  "well-of-echoes": {
+    "effect": "glow",
+    "cells": [
+      32,
+      57,
+      113
     ],
     "speed": 0.7,
     "amplitude": 1

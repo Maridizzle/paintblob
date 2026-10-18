@@ -629,5 +629,40 @@
     "themes": [
       "Fantasy"
     ]
+  },
+  "signpost-that-points": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
+  "last-lit-window": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
+  "half-bridge": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
+  "well-of-echoes": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
+  },
+  "the-fade": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Abstract"
+    ]
   }
 }
