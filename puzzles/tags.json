@@ -664,5 +664,74 @@
       "Fantasy",
       "Abstract"
     ]
+  },
+  "koi-lantern-pond": {
+    "difficulty": "normal",
+    "themes": [
+      "Animals",
+      "Water"
+    ]
+  },
+  "glass-terrarium": {
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Landscape"
+    ]
+  },
+  "ship-in-a-bottle": {
+    "difficulty": "insane",
+    "themes": [
+      "Water",
+      "Fantasy"
+    ]
+  },
+  "firefly-jar": {
+    "difficulty": "chunky",
+    "themes": [
+      "Flowers",
+      "Fantasy"
+    ]
+  },
+  "snow-globe-village": {
+    "difficulty": "detailed",
+    "themes": [
+      "Landscape",
+      "Fantasy"
+    ]
+  },
+  "reef-aquarium": {
+    "difficulty": "normal",
+    "themes": [
+      "Animals",
+      "Water"
+    ]
+  },
+  "floating-island": {
+    "difficulty": "chunky",
+    "themes": [
+      "Fantasy",
+      "Landscape"
+    ]
+  },
+  "mushroom-cloche": {
+    "difficulty": "detailed",
+    "themes": [
+      "Fantasy"
+    ]
+  },
+  "amethyst-geode": {
+    "difficulty": "insane",
+    "themes": [
+      "Fantasy",
+      "Space"
+    ]
+  },
+  "teacup-garden": {
+    "difficulty": "normal",
+    "themes": [
+      "Flowers",
+      "Landscape"
+    ]
   }
 }
