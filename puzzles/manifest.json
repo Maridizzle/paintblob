@@ -801,6 +801,25 @@
     ]
   },
   {
+    "id": "koi-lantern-pond",
+    "title": "Koi Beneath the Maple",
+    "cells": 500,
+    "colours": 23,
+    "thumb": [
+      "#df6f6d",
+      "#f88b88",
+      "#802215",
+      "#421a12",
+      "#eb3d1d"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Animals",
+      "Water"
+    ],
+    "blind": true
+  },
+  {
     "id": "koi-pond",
     "title": "Koi Pond",
     "cells": 21,
@@ -1156,6 +1175,25 @@
     "blind": true
   },
   {
+    "id": "ship-in-a-bottle",
+    "title": "Ship in a Bottle",
+    "cells": 1200,
+    "colours": 36,
+    "thumb": [
+      "#130b0b",
+      "#3d1609",
+      "#612c13",
+      "#84461d",
+      "#a45b24"
+    ],
+    "difficulty": "insane",
+    "themes": [
+      "Water",
+      "Fantasy"
+    ],
+    "blind": true
+  },
+  {
     "id": "silent-e",
     "title": "Silent E Has The Last Word",
     "cells": 107,
@@ -1189,6 +1227,25 @@
     "themes": [
       "Elements",
       "Space"
+    ],
+    "blind": true
+  },
+  {
+    "id": "snow-globe-village",
+    "title": "Snow Globe Village",
+    "cells": 650,
+    "colours": 32,
+    "thumb": [
+      "#873021",
+      "#c64f0c",
+      "#b45d1e",
+      "#eb7727",
+      "#46270f"
+    ],
+    "difficulty": "detailed",
+    "themes": [
+      "Landscape",
+      "Fantasy"
     ],
     "blind": true
   },
@@ -1401,6 +1458,25 @@
     ]
   },
   {
+    "id": "amethyst-geode",
+    "title": "The Amethyst Geode",
+    "cells": 1200,
+    "colours": 37,
+    "thumb": [
+      "#624441",
+      "#bea29c",
+      "#c05e45",
+      "#986555",
+      "#cdaba0"
+    ],
+    "difficulty": "insane",
+    "themes": [
+      "Fantasy",
+      "Space"
+    ],
+    "blind": true
+  },
+  {
     "id": "the-chemistry-set",
     "title": "The Chemistry Set",
     "cells": 500,
@@ -1454,6 +1530,63 @@
       "Fantasy",
       "Abstract"
     ]
+  },
+  {
+    "id": "firefly-jar",
+    "title": "The Firefly Jar",
+    "cells": 38,
+    "colours": 20,
+    "thumb": [
+      "#8f4835",
+      "#f89d81",
+      "#d97c55",
+      "#f6a84f",
+      "#cfac5c"
+    ],
+    "difficulty": "chunky",
+    "themes": [
+      "Flowers",
+      "Fantasy"
+    ],
+    "blind": true
+  },
+  {
+    "id": "floating-island",
+    "title": "The Floating Island",
+    "cells": 38,
+    "colours": 14,
+    "thumb": [
+      "#853a25",
+      "#fa7d4a",
+      "#d1712f",
+      "#fdc62c",
+      "#e7bf54"
+    ],
+    "difficulty": "chunky",
+    "themes": [
+      "Fantasy",
+      "Landscape"
+    ],
+    "blind": true
+  },
+  {
+    "id": "glass-terrarium",
+    "title": "The Glass Terrarium",
+    "cells": 500,
+    "colours": 36,
+    "thumb": [
+      "#f62b27",
+      "#1b0403",
+      "#ca1f17",
+      "#3a110d",
+      "#fa4a33"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Fantasy",
+      "Landscape"
+    ],
+    "blind": true
   },
   {
     "id": "glowvine-path",
@@ -1564,6 +1697,43 @@
     ]
   },
   {
+    "id": "mushroom-cloche",
+    "title": "The Mushroom Cloche",
+    "cells": 650,
+    "colours": 36,
+    "thumb": [
+      "#401010",
+      "#d61c15",
+      "#ec5638",
+      "#8c6c63",
+      "#642917"
+    ],
+    "difficulty": "detailed",
+    "themes": [
+      "Fantasy"
+    ],
+    "blind": true
+  },
+  {
+    "id": "reef-aquarium",
+    "title": "The Reef Aquarium",
+    "cells": 500,
+    "colours": 39,
+    "thumb": [
+      "#e24022",
+      "#632b17",
+      "#f46734",
+      "#a47b67",
+      "#fb8d51"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Animals",
+      "Water"
+    ],
+    "blind": true
+  },
+  {
     "id": "rhyme-that-stopped",
     "title": "The Rhyme That Stopped",
     "cells": 74,
@@ -1598,6 +1768,25 @@
       "Fantasy",
       "Abstract"
     ]
+  },
+  {
+    "id": "teacup-garden",
+    "title": "The Teacup Garden",
+    "cells": 500,
+    "colours": 29,
+    "thumb": [
+      "#633224",
+      "#9c5c39",
+      "#ce814e",
+      "#e07d19",
+      "#e4ddd6"
+    ],
+    "difficulty": "normal",
+    "themes": [
+      "Flowers",
+      "Landscape"
+    ],
+    "blind": true
   },
   {
     "id": "thread-cupboard",
