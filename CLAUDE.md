@@ -123,18 +123,32 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
   **The whole saga's shape is in `docs/story-bible.md`** — the marks are
   punctuation (X the cross-out, the Hoarder's parentheses, The Fade's blank, the
   Ellipsis as the patient hand, the Full Stop past it), the character arcs, and
-  Act II's prose already written and staged for The Fade. **Keep the bible and
-  `story.js` in step.** Speakers are `letters.js` glyphs: Y, Ee, X, and now the
-  Hoarder (`( )`); The Fade will need one. The Fade + the *Last Light* story
-  round land next.
-  **Chapter Two is gated shut until its real art is baked** — the chapter
-  carries `released: false`, `game.js` `canEnterChapter` refuses a non-dev player
-  (arrows, the Begin-Chapter button, and `goToChapter` all route through it), and
-  boot clamps a stray save off it. The board *teases* Chapter Two; the door stays
-  closed. **Baking the real art is the release trigger:** that PR flips
-  `released` and updates the "chapter two stays locked until its art ships"
-  tripwire test in the same diff. Dev mode (`?dev`) ignores the gate so the art
-  and Act II stay buildable.
+  Act II's prose now wired into `story.js`. **Keep the bible and `story.js` in
+  step.** Speakers are `letters.js` glyphs: Y, Ee, X, the Hoarder (`( )`) and
+  The Fade (`___`). The Fade's fight and the *Last Light* round are built (below).
+  **Chapter Two Act I is live** (its real art is baked, so the chapter carries
+  no `released` flag). **Act II is wired but gated one stone at a time:** its
+  five stones (`signpost-that-points` … `the-fade`) wear placeholder art from
+  `tools/make-ch2-act2-puzzles.mjs` and each carries `released: false`;
+  `nodeReleased` (story.js) reads it and `renderStoryBoard` locks such a stone
+  for a non-dev player whatever the stone before it says, so a player who beats
+  the Hoarder sees the dark act teased-but-shut. The chapter-level gate still
+  exists for a future chapter: `released: false` on a chapter makes
+  `canEnterChapter` refuse a non-dev player (arrows, the Begin-Chapter button and
+  `goToChapter` all route through it) and boot clamps a stray save off it.
+  **Baking real art is the release trigger** for either gate: that PR drops the
+  flags and the matching tripwire test in the same diff. Dev mode (`?dev`)
+  ignores both gates so the art and the acts stay buildable. Act II's three
+  scenes (`deeper` / `the-blank` / `close`) ship in `story.js`; The Fade speaks
+  through `letters.js` `drawFade` (`.lt-fade`, wears `--muted`).
+  **Chapter Two's own round is Last Light** (`lastlight.js`, pure): a black
+  street of eight windows whose lamps drain on their own jittered clocks; tap
+  to turn one back up; keep all eight lit for 50 s while the street speeds up
+  (`RAMP`); a lamp dark past `DARK_GRACE` loses. Low-stim: a flat slower drain
+  that never ramps, no flicker. Wired Swap-shaped in game.js (`#lastLightChip`
+  / `#lastLight`, start→how-to→begin→tick→end→award, the boon is the Swap's
+  Named). **Which story round a stone offers is the chapter's `storyRound`**
+  (`maybeOfferStoryRound`): `swap` for Chapter One, `lastlight` for Two.
 - **Boss fight** — `boss.js` (pure math) + `game.js`. **The picture is the health
   bar** (health = unpainted / total); **no-lose** (drain fades to 0 as you near
   done). Now a **registry of kits** (`BOSS_KITS`): a boss node names a `kit`,
@@ -143,8 +157,18 @@ judged by eye. Scratchpad harnesses are throwaway; keep them out of the repo.
   unchanged (drain + two spells: freeze held colour / freeze a board share; the
   *freeze* is what made it brutal). `hoarder` (Ch2 mid-boss) never drains — it
   always grabs the colour in your HAND (freezes that tub + its cells), interrupting
-  rather than attriting, and never your last colour. `fade` (Ch2 chapter boss) is
-  declared, wired next. Per-kit cadence/strength lives on the kit, not module
+  rather than attriting, and never your last colour. `fade` (Ch2 chapter boss)
+  is **fog of war**: the board is blank (not dimmed, BLANK, `render.js` FOG over
+  every unlit unpainted cell) except a band across the middle (`startBand`);
+  only a lit cell can be painted (`cellFogged` in `tryPaint` / `applyPaint`);
+  every stroke and every hint lights a disc around it (`fadeLight`,
+  `revealRadius`); every `refogIntervalMs` a health-scaled `refogFraction` of
+  the lit, unpainted cells goes blank again (`fadeRefogTick`), sparing anything
+  lit inside a grace window and never the last lit cell. Painted cells are
+  never fogged. The maths is pure (`fadeStartLit` / `fadeRevealAround` /
+  `fadePickRefog` in boss.js); `S.boss.fade.litAt` (id → time lit) is the one
+  source of truth, mirrored on `board.fog`. **Low-stim never re-fogs**: the
+  light only ever spreads. Per-kit cadence/strength lives on the kit, not module
   constants.
 - **Abilities** — `abilities.js`. Six: Beacon, Focus, Prism, Explode, Floodgate,
   and (restored) Steady Hand. Pure charge economy, charges refill on level-up.

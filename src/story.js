@@ -188,11 +188,13 @@ export const CHAPTERS = [
     // plays over the already-dark board: first the shock, then Ee.
     actBreak: 'the-hoarder',
     theme2: 'nightcut',
-    // Act I reuses The Swap for now; the dusk-flavoured "Last Light" round (and
-    // the storyRound dispatch that reads this field) land in the next drop.
-    storyRound: 'swap',
+    // The chapter's own round: Last Light (lastlight.js) — keep the windows
+    // lit. game.js maybeOfferStoryRound reads this to pick which chip to offer.
+    storyRound: 'lastlight',
     blurb: 'Out past the frame, where the light is going and the wild keeps its own names.',
-    spots: [[28, 88], [62, 76], [36, 60], [66, 46], [46, 26]],
+    // Ten stones climb the board in a zigzag: Act I up to the Hoarder in the
+    // middle, Act II on into the dark above it.
+    spots: [[26, 92], [60, 84], [34, 74], [66, 64], [48, 54], [24, 44], [62, 36], [36, 27], [68, 18], [48, 9]],
 
     nodes: [
       { id: 'dusk-gate', title: 'The Dusk Gate', kind: 'stone', puzzle: 'dusk-gate',
@@ -208,6 +210,26 @@ export const CHAPTERS = [
         // mode + tuning are the `hoarder` kit in boss.js.
         kit: 'hoarder',
         note: 'Something out here has been collecting colours it can no longer name — and it does not share.' },
+
+      // ---- Act II: the dark road. The colour has gone out of the world; what is
+      // left is black, white, and the one light somebody left on. These five
+      // wear PLACEHOLDER art (tools/make-ch2-act2-puzzles.mjs) and carry
+      // `released: false`, so a plain player sees them teased-but-shut past the
+      // Hoarder while dev mode plays the act. The PR that bakes their real art
+      // drops the flags (see nodeReleased).
+      { id: 'signpost-that-points', title: 'The Signpost That Points', kind: 'stone', puzzle: 'signpost-that-points', released: false,
+        note: 'A fork in the black road. The arms still point. The boards have nothing left to say.' },
+      { id: 'last-lit-window', title: 'The Last Lit Window', kind: 'stone', puzzle: 'last-lit-window', released: false,
+        note: 'A whole street gone dark but for one square of light somebody meant to come back to.' },
+      { id: 'half-bridge', title: 'The Half-Bridge', kind: 'stone', puzzle: 'half-bridge', released: false,
+        note: 'A bridge that stops halfway across. Not broken. Stopped.' },
+      { id: 'well-of-echoes', title: 'The Well of Echoes', kind: 'stone', puzzle: 'well-of-echoes', released: false,
+        note: 'A well that still answers, if you call down it. It just answers with your own voice.' },
+      { id: 'the-fade', title: 'The Fade', kind: 'boss', puzzle: 'the-fade', released: false,
+        // The reveal fight: paint what you can see, and what you stop looking
+        // at goes blank again. Its mode + tuning are the `fade` kit in boss.js.
+        kit: 'fade',
+        note: 'Nothing to see on the last stone. That is the whole of it.' },
     ],
 
     scenes: [
@@ -291,6 +313,55 @@ export const CHAPTERS = [
             body: '“It’s why I’m short, if you were wondering. Not X — X only did the tidying. Him.” Ee’s voice is very level. “People started saying me and not finishing. Ee-… eh. Trailing off in the middle of a letter. And a letter nobody finishes gets a little shorter every year, until one morning it’s this.” A pause the length of a short vowel. “I don’t tell you for pity. I tell you so you know what we’re painting against.”' },
           { speaker: 'Y', title: 'Then we finish',
             body: '“Then we finish.” Y says it before Y has decided to. “That’s the whole plan, isn’t it? It always was. We finish things. Every cell, every name, all the way to the end of the sentence — no dots.” Y looks down the black road at the one thin light on it. “We paint what we can see. And we keep looking.” Then, because it is still Y: “I’d also like it noted that I’m now frightened of punctuation. New low. Even for a letter. Come on.”' },
+        ],
+      },
+      {
+        // Act II, two stones in. The window: a light nobody is looking at, still
+        // on. Ee names the rule of the dark road, and Y takes the half-bridge
+        // personally.
+        id: 'deeper', trigger: { afterDone: 'last-lit-window' },
+        beats: [
+          { speaker: 'Y', title: 'Somebody meant to come back',
+            body: 'The window. One square of light in a whole black street, and somebody lit it. Somebody put a lamp in a window and meant to come back, and hasn’t yet, and the lamp is still doing its job — which is more than the road managed. “I keep thinking about that,” Y says. “A light nobody’s looking at, still on. That’s the whole fight, isn’t it. Somewhere, somebody left a light on for us.”' },
+          { speaker: 'Ee', title: 'Keep looking',
+            body: '“Out here the rule is simple and it’s hard. You can only paint what you can see, and you can only see what you’re looking at, and the moment you look away it starts to go.” Ee is watching the dark, not you. “That’s Him. Not a monster. A habit. The world’s worst habit — starting a thing and drifting off. We don’t drift. Cell, cell, cell. Bridge next. Mind the gap. I mean that literally.”' },
+          { speaker: 'Y', title: 'The bridge',
+            body: '“There’s a bridge ahead that stops halfway across. Not broken — STOPPED. Like somebody was building it and went for a cup of tea in the middle of a plank.” A beat. “Everything out here is a sentence somebody didn’t finish. I’m starting to take it personally.”' },
+        ],
+      },
+      {
+        // The chapter-boss intro. The Fade gets its own voice and the last word,
+        // the way X and the Hoarder did — and Ee explains the fight in character.
+        id: 'the-blank', trigger: { beforeStone: 'the-fade' },
+        beats: [
+          { speaker: 'Fade', title: 'Nothing to see',
+            body: 'There is nothing on the last stone. That is the first thing you notice: a blank where the thing should be, a low flat line like the space in a form where a name goes. Then the blank speaks, and it sounds tired. “Nothing to see here,” it says. “Genuinely. That’s the whole of me. I’m the line you leave for the word you’ll fill in later.”' },
+          { speaker: 'Fade', title: 'Later',
+            body: '“You know how many laters there are? The grabby one had a few. I’ve got ALL of them. Every sentence anyone ever stopped in the middle of — I’m where it stopped. Every picture somebody put down to finish tomorrow.” The line sags. “Tomorrow’s my busiest day. It never comes, and I’m always in.”' },
+          { speaker: 'Ee', title: 'What you can see',
+            body: '“Here it is, then. Its trick is simple.” Ee’s voice is close and low. “You’ll only see what’s near you. The rest is blank — not hidden, BLANK, like it was never coloured in. Paint a cell and the light spreads out from it, a little. Stop, and whatever you’ve stopped looking at fills back in with nothing. So you don’t go by number. You go by what’s lit. And you never, ever stop.”' },
+          { speaker: 'Y', title: 'Fill in the blank',
+            body: '“Fill in the blank,” Y says. “That’s all it is. It’s a form. It wants us to leave it empty, and it’ll wait forever for us to do that, and we’re not going to.” Y picks the brush up. “Every cell we paint is one word finished. We’re going to finish the whole page. In the dark. With it watching.” Quieter: “I’m allowed to be scared. I’m going anyway. Both.”' },
+          { speaker: 'Fade', title: 'Take your time',
+            body: 'The blank settles, patient as a Monday. “Take your time,” it says. “No, really. Take all of it. I’ll be here.” And it is.' },
+        ],
+      },
+      {
+        // The chapter lands. The Full Stop is seeded, Y knows what it is, and
+        // Chapter Three is hooked. Sits LAST so pendingBoardScene finds the
+        // earlier interstitials first.
+        id: 'close', trigger: { afterDone: 'the-fade' },
+        beats: [
+          { speaker: 'Y', title: 'The whole page',
+            body: 'You painted the whole page. In the dark, with it watching, one lit cell at a time, and when the last one went in the road came back — all of it, every name down the length of it, the window and the bridge and the well, up out of the black like a thing surfacing. “There,” Y says, and has to sit down. “There. Filled in. No blanks. Read it back to me, somebody. I want to hear it finished.”' },
+          { speaker: 'Fade', title: 'One after',
+            body: 'The blank is nearly gone, a faint line on the stone, and it isn’t sorry, exactly. “You finished it,” it says. “Good for you. Doesn’t matter. He’s still out there, waiting for you to look away — and I’ll tell you something for free, since I’m nearly free myself.” The line thins. “There’s one after Him. Not a dot-dot-dot. ONE dot. The one that doesn’t trail off. It just … stops.” And it goes.' },
+          { speaker: 'Ee', title: 'Still short',
+            body: 'Ee is still short. You knew it would be. “Not this cloth either,” it says, before you can ask. “A road’s not the last of anything. But you got the names back on it, out here where He’d already been, and that’s a thing nobody has done before.” A breath. “He’ll have noticed. Good.”' },
+          { speaker: 'Y', title: 'What I am',
+            body: '“I know what I am now,” Y says. It says it plainly, no joke ready, which for Y is the rarest thing there is. “Two things at once, like always. But I know which two. I’m the one who keeps looking. And I’m the one who finishes.” A beat. “I can live with that. I can probably even spell it.”' },
+          { speaker: 'Ee', title: 'The road goes on',
+            body: '“The road goes on,” Ee says. “It always did — that was its trouble. He’s somewhere down it, in the evening, waiting for the world to drift off. And past Him there’s the dot the blank was talking about, and I’ll be honest with you: I don’t like the sound of it. A full stop is a hard thing to argue with.” Ee draws itself up as tall as short will let it. “But we’ve got a brush. And you’ve got a habit now — a good one. Come on. Chapter Three is a town, and towns have a great many names to lose.”' },
         ],
       },
     ],
@@ -452,6 +523,17 @@ export function chapterUnlocked(id, save) {
  */
 export function chapterReleased(chapter) {
   return chapter?.released !== false;
+}
+
+/**
+ * The same gate one stone at a time: a chapter can ship its first act while a
+ * later act still wears placeholder art. A node with no `released` flag is
+ * released; one carrying `released: false` is shown on the board but stays
+ * shut for a plain player (dev mode ignores it — see game.js renderStoryBoard)
+ * until the PR that bakes its art drops the flag.
+ */
+export function nodeReleased(node) {
+  return node?.released !== false;
 }
 
 /**

@@ -108,6 +108,7 @@ export const ACHIEVEMENTS = [
   { id: 'bonus-drips', icon: '🎣', name: 'Catch of the Day', desc: 'Win a Drip Catch round.', event: true, tier: 'small' },
   { id: 'bonus-recall', icon: '🐘', name: 'Elephant Memory', desc: 'Win a Palette Memory round.', event: true, tier: 'small' },
   { id: 'bonus-swap', icon: '🔄', name: 'Quick Switch', desc: 'Win The Swap in story mode.', event: true, tier: 'small' },
+  { id: 'bonus-lastlight', icon: '🕯️', name: 'Keep the Lights On', desc: 'Win Last Light in story mode.', event: true, tier: 'small' },
   { id: 'bonus-all', icon: '🎪', name: 'Round Robin', desc: 'Win every kind of bonus round at least once.', event: true, tier: 'big' },
   { id: 'bonus-streak-3', icon: '🎰', name: 'Hot Streak', desc: 'Win 3 bonus rounds in a row.', event: true, tier: 'mid' },
   { id: 'bonus-25', icon: '🎲', name: 'Bonus Fan', desc: 'Win 25 bonus rounds.', track: 'bonusWins', goal: 25, tier: 'mid' },

@@ -20,6 +20,9 @@ import { replayReveal } from './replay.js';
 const PAPER = '#faf7f2';
 const BLANK = '#edeae4';
 const BLANK_EDGE = 'rgba(38, 34, 48, 0.34)';
+// The Fade's blank — not a theme colour: it is the same dark whatever the
+// picture wears, because it is the absence of the picture, not a part of it.
+const FOG = '#0b0b0f';
 const NUMBER = 'rgba(56, 50, 68, 0.66)';
 const NUMBER_ACTIVE = 'rgba(30, 26, 40, 0.9)'; // the number on the in-hand colour's cells
 
@@ -125,6 +128,7 @@ export class Board {
     this.shock = null;          // { x, y, start } — Explode's expanding ring
     this.bossLocks = null;      // { cells:Set, end } — boss freeze: these cells wear X's mark and can't be filled
     this.bossPulse = 0;         // performance.now() of the last regen — a red flinch when X takes cells back
+    this.fog = null;            // Map of lit cell ids (The Fade): every other unpainted cell draws as blank
 
     this.sourceBitmap = null; // the real photo, once decoded — see setPuzzle()
     this.showSource = false;  // true = showing it instead of the painted cells
@@ -256,6 +260,7 @@ export class Board {
     this.shock = null;
     this.bossLocks = null;
     this.bossPulse = 0;
+    this.fog = null;
 
     this.showSource = false;
     this.living = null;
@@ -893,7 +898,9 @@ export class Board {
     // laid down. The subject is already baked flat into the base, so it greys
     // correctly with everything else; it just loses its parallax for the
     // twelve-second window, which no one will miss with the board desaturated.
-    const lifted = (this.liftCells && !this.focus) ? this.drawLift(sx, sy) : null;
+    // Also suppressed under The Fade's fog: drawLift re-blits the raised subject
+    // displaced, which would leak a blank cell's colour past its own outline.
+    const lifted = (this.liftCells && !this.focus && !this.fog) ? this.drawLift(sx, sy) : null;
 
     this.applyTransform(ctx, sx, sy);
 
@@ -1101,6 +1108,26 @@ export class Board {
         ctx.stroke();
         ctx.restore();
       }
+    }
+
+    // The Fade's blank: every unpainted cell that is not lit is painted out,
+    // numbers and all — not dimmed, BLANK, as if it were never coloured in.
+    // Drawn AFTER every per-cell overlay above (the selected-colour breath, the
+    // Beacon flash, the hover ring, the golden cell, the hint) so none of them
+    // can show a cell the dark has taken; a hint still reads because game.js
+    // lights the hinted cell first (fadeLight), and the lift is suppressed
+    // for the whole fight (see drawLift's guard) so no displaced copy of a
+    // blank cell leaks past its own outline. game.js owns which cells are lit
+    // (board.fog is its litAt map) and sets dirty when that changes.
+    if (this.fog) {
+      this.applyTransform(ctx, sx, sy);
+      ctx.save();
+      ctx.fillStyle = FOG;
+      for (const cell of this.cells) {
+        if (this.filled.has(cell.id) || this.fog.has(cell.id)) continue;
+        ctx.fill(cell.path);
+      }
+      ctx.restore();
     }
 
     // Boss freeze: X's own mark — a grey cross — over every cell it has locked

@@ -73,13 +73,18 @@ import {
   CHAPTERS, DEFAULT_CHAPTER, getChapter, chapterOr, defaultStory, nodeState,
   isStoryPuzzle, isBossPuzzle, openingSeen, sceneSeen, sceneKey,
   onEnterScene, beforeStoneScene, pendingBoardScene,
-  bossKitFor, chapterUnlocked, chapterTheme, chapterReleased, isChapter,
+  bossKitFor, chapterUnlocked, chapterTheme, chapterReleased, nodeReleased, isChapter,
 } from '../src/story.js';
 import {
   healthFraction, regenCount, pickWipeTargets, pickLockTargets, chooseAttack, difficultyMult,
   BOSS_KITS, bossKit, DEFAULT_KIT,
   REGEN_INTERVAL_MS, ATTACK_INTERVAL_MS, FIRST_ATTACK_MS, COLOUR_DISABLE_MS, CELL_LOCK_MS, LOCK_FRACTION,
+  fadeStartLit, fadeRevealAround, fadePickRefog,
 } from '../src/boss.js';
+import {
+  WINDOWS as LL_WINDOWS, SECONDS as LL_SECONDS, DARK_GRACE, RELIGHT, RAMP, LOW_STIM_DRAIN,
+  newStreet, step as llStep, relight, litCount, rampAt,
+} from '../src/lastlight.js';
 import { letterSVG, isSpeaker } from '../src/letters.js';
 import {
   COLOURS as SWAP_COLOURS, PAIRS as SWAP_PAIRS, scramble as swapScramble,
@@ -1319,22 +1324,76 @@ test('chapter two is shipped now its real art is baked', () => {
 
 // ---- Chapter Two + the saga backbone (M1) ------------------------------------
 
-test('chapter two is a coherent, built Act-I path that names its boss kit', () => {
+test('chapter two is a coherent, built two-act path that names both boss kits', () => {
   const ch = getChapter(2);
   assert.equal(ch.id, 2);
   assert.ok(ch.title && ch.label && ch.place, 'a chapter needs a title, a label and a place');
   assert.ok(isTheme(ch.theme), `chapter theme "${ch.theme}" is not a real theme`);
   const ids = ch.nodes.map((n) => n.id);
   assert.equal(new Set(ids).size, ids.length, 'stone ids must be unique');
-  assert.equal(ch.nodes.at(-1).kind, 'boss', 'the act ends on a boss');
-  // The mid-boss carries a NON-default kit — the whole point of Act I.
+  assert.equal(ch.nodes.length, 10, 'two acts of five stones');
+  // Act I ends on the mid-boss at the act break; Act II ends on the chapter
+  // boss. Each carries a NON-default kit — the whole point of the chapter.
+  const mid = ch.nodes[4];
+  assert.equal(mid.id, ch.actBreak, 'the fifth stone is the act break');
+  assert.equal(mid.kind, 'boss');
+  assert.equal(mid.kit, 'hoarder', 'the Hoarder runs the hoarder kit');
   const boss = ch.nodes.at(-1);
-  assert.equal(boss.kit, 'hoarder', 'the Hoarder runs the hoarder kit');
+  assert.equal(boss.kind, 'boss', 'the chapter ends on a boss');
+  assert.equal(boss.id, 'the-fade');
+  assert.equal(boss.kit, 'fade', 'The Fade runs the fade kit');
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'puzzles/manifest.json'), 'utf8'));
   const built = new Set(manifest.map((p) => p.id));
   for (const node of ch.nodes) {
     assert.ok(node.puzzle && built.has(node.puzzle), `stone "${node.id}" names a missing puzzle "${node.puzzle}"`);
   }
+});
+
+test('chapter two, act two stays shut until its art ships — one stone at a time', () => {
+  // Act I is live for everyone (chapter two carries no `released` flag). Act II
+  // wears placeholder art, so every one of its five stones carries
+  // `released: false`; nodeReleased reads it the way chapterReleased reads the
+  // chapter's. The PR that bakes the real art drops the flags and this test.
+  const ch = getChapter(2);
+  const actTwo = ch.nodes.slice(5);
+  assert.deepEqual(actTwo.map((n) => n.id),
+    ['signpost-that-points', 'last-lit-window', 'half-bridge', 'well-of-echoes', 'the-fade'],
+    'the bible fixes these five ids');
+  for (const node of actTwo) assert.equal(nodeReleased(node), false, `${node.id} is still placeholder art`);
+  for (const node of ch.nodes.slice(0, 5)) assert.equal(nodeReleased(node), true, `${node.id} shipped with Act I`);
+  assert.equal(nodeReleased({}), true, 'a node with no flag is released');
+  // The board honours it: a plain player sees an unreleased stone locked whatever
+  // the stone before it says; dev walks on.
+  const game = readSource('src/game.js');
+  const body = game.slice(game.indexOf('function renderStoryBoard'), game.indexOf('async function openStone'));
+  assert.match(body, /!S\.dev && !nodeReleased\(node\) \? 'locked'/, 'the board locks an unreleased stone for a non-dev player');
+});
+
+test('act two carries its three scenes, with The Fade drawn and given the last word', () => {
+  const ch = getChapter(2);
+  const byId = (id) => ch.scenes.find((s) => s.id === id);
+  assert.equal(byId('deeper')?.trigger?.afterDone, 'last-lit-window');
+  assert.equal(byId('the-blank')?.trigger?.beforeStone, 'the-fade');
+  assert.equal(byId('close')?.trigger?.afterDone, 'the-fade');
+  assert.equal(ch.scenes.at(-1).id, 'close', 'the close sits last so earlier interstitials play first');
+  const blank = byId('the-blank');
+  assert.equal(blank.beats[0].speaker, 'Fade', 'The Fade opens its own intro');
+  assert.equal(blank.beats.at(-1).speaker, 'Fade', 'and has the last word before the fight');
+  assert.ok(isSpeaker('Fade'), 'The Fade is a drawable speaker');
+  assert.match(letterSVG('Fade'), /lt-fade/, 'drawn as its own glyph, not the fallback');
+  // The close is owed once the chapter boss is beaten, and the act-break scene
+  // (afterDone the Hoarder) is owed first if it has not played.
+  const doneAll = {
+    progress: { 'the-hoarder': { done: true }, 'last-lit-window': { done: true }, 'the-fade': { done: true } },
+    story: { seen: {} },
+  };
+  assert.equal(pendingBoardScene(ch, doneAll)?.id, 'act-break');
+  doneAll.story.seen[sceneKey(2, 'act-break')] = true;
+  assert.equal(pendingBoardScene(ch, doneAll)?.id, 'deeper', 'deeper is owed too (the window is on the way)');
+  doneAll.story.seen[sceneKey(2, 'deeper')] = true;
+  assert.equal(pendingBoardScene(ch, doneAll)?.id, 'close');
+  doneAll.story.seen[sceneKey(2, 'close')] = true;
+  assert.equal(pendingBoardScene(ch, doneAll), null, 'then nothing is owed');
 });
 
 test('every chapter lays out one board spot per stone', () => {
@@ -1464,7 +1523,7 @@ test('opening a free picture in story mode drops cleanly back to free mode', () 
 });
 
 test('the letters are drawable, wash-shaded, and never do colour maths', () => {
-  for (const id of ['Y', 'Ee', 'X', 'Hoarder']) {
+  for (const id of ['Y', 'Ee', 'X', 'Hoarder', 'Fade']) {
     assert.ok(isSpeaker(id), `${id} should be a known speaker`);
     const svg = letterSVG(id);
     assert.match(svg, /^<svg/, `${id} must render an svg`);
@@ -1817,11 +1876,196 @@ test('a swap is pure and undoes itself; solved and placed agree', () => {
 test('the Swap is story mode’s bonus, and Overtime is free mode’s', () => {
   const game = readSource('src/game.js');
   // One or the other is offered, never both, and the split is on the story.
-  assert.match(game, /else if \(S\.inStory && isStoryPuzzle\(S\.puzzle\.id\)\) maybeOfferSwap\(\);\s*\n\s*else maybeOfferBonus\(\);/,
-    'commitFill must offer the Swap on a story stone and a free-mode bonus otherwise');
+  // Within story mode the chapter picks its round (storyRound): the Swap for
+  // chapter one, Last Light for chapter two.
+  assert.match(game, /else if \(S\.inStory && isStoryPuzzle\(S\.puzzle\.id\)\) maybeOfferStoryRound\(\);\s*\n\s*else maybeOfferBonus\(\);/,
+    'commitFill must offer the story round on a story stone and a free-mode bonus otherwise');
+  const pick = game.slice(game.indexOf('function maybeOfferStoryRound'), game.indexOf('function maybeOfferLastLight'));
+  assert.match(pick, /\.storyRound/, 'the chapter\'s storyRound decides which round is offered');
+  assert.match(pick, /round === 'lastlight'\) maybeOfferLastLight\(\);\s*\n\s*else maybeOfferSwap\(\);/, 'lastlight → Last Light, anything else → the Swap');
+  assert.equal(getChapter(1).storyRound, 'swap');
+  assert.equal(getChapter(2).storyRound, 'lastlight');
   const offer = game.slice(game.indexOf('function maybeOfferSwap'), game.indexOf('function closeSwap'));
   assert.match(offer, /S\.filled\.size < 10/, 'the Swap waits until the player is into the picture');
   assert.match(offer, /S\.save\.settings\.overtime === false/, 'the Swap honours the bonus-round opt-out');
+  const offerLL = game.slice(game.indexOf('function maybeOfferLastLight'), game.indexOf('function closeLastLight'));
+  assert.match(offerLL, /S\.filled\.size < 10/, 'Last Light waits until the player is into the picture');
+  assert.match(offerLL, /S\.save\.settings\.overtime === false/, 'Last Light honours the bonus-round opt-out');
+  assert.match(offerLL, /if \(S\.save\.settings\.lowStim\) return;/, 'Last Light never offers under low-stim');
+});
+
+/* ------------------------------------------------------------ last light */
+
+// Last Light — chapter two's round. Eight lamps going out; tap to turn one up;
+// keep them all lit till the clock runs out. Pure, so the drain, the ramp, the
+// relight and the loss rule run here; the street is drawn in game.js.
+
+const seededRngLL = (seed) => () => {
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+test('a fresh street is fully lit, with every window on its own clock', () => {
+  const s = newStreet(seededRngLL(3));
+  assert.equal(s.light.length, LL_WINDOWS);
+  assert.ok(s.light.every((l) => l === 1), 'every lamp opens full');
+  assert.ok(s.dark.every((d) => d === 0), 'nothing has been dark yet');
+  assert.equal(litCount(s), LL_WINDOWS);
+  assert.ok(new Set(s.rates).size > 1, 'the windows do not drain in step');
+  assert.ok(s.rates.every((r) => r > 0), 'every lamp is going out');
+});
+
+test('lamps drain, the street speeds up, and low-stim never accelerates', () => {
+  const s = newStreet(() => 0.5); // no jitter: every rate is BASE_DRAIN
+  const early = llStep(s, 1, 0).street;
+  const late = llStep(s, 1, 1).street;
+  assert.ok(early.light[0] < 1 && early.light[0] > 0.8, 'a second at the open costs a little light');
+  assert.ok(late.light[0] < early.light[0], 'the same second near the end costs more');
+  assert.ok(Math.abs((1 - late.light[0]) / (1 - early.light[0]) - RAMP) < 1e-9, 'exactly RAMP times more');
+  assert.equal(rampAt(0), 1);
+  assert.equal(rampAt(1), RAMP);
+  assert.equal(rampAt(0.5, true), LOW_STIM_DRAIN, 'low-stim is a flat, slower drain');
+  assert.equal(rampAt(1, true), LOW_STIM_DRAIN, 'and it never ramps');
+  assert.equal(llStep(s, 1, 0).lost, false);
+});
+
+test('relight pours light back, capped at full, and resets the dark clock', () => {
+  let s = newStreet(() => 0.5);
+  s = llStep(s, 30, 0).street; // long enough to go out
+  assert.equal(s.light[2], 0, 'untended, a lamp goes out');
+  assert.ok(s.dark[2] > 0, 'and its dark clock runs');
+  const back = relight(s, 2);
+  assert.equal(back.light[2], RELIGHT, 'one tap is a pour, not a reset');
+  assert.equal(back.dark[2], 0, 'the dark clock resets');
+  assert.equal(s.light[2], 0, 'relight is pure: the old street is untouched');
+  assert.equal(relight(back, 2).light[2], 1, 'a second tap tops it out at full');
+  assert.strictEqual(relight(s, 99), s, 'an out-of-range tap is a no-op');
+});
+
+test('the loss is a lamp that STAYS dark, not one that merely goes out', () => {
+  let s = newStreet(() => 0.5);
+  s = llStep(s, 30, 0).street;
+  assert.ok(s.light.every((l) => l === 0), 'everything is out');
+  // Dark but inside the grace: still alive.
+  let out = llStep({ ...s, dark: new Array(LL_WINDOWS).fill(0) }, DARK_GRACE - 0.1, 0);
+  assert.equal(out.lost, false, 'inside the grace it is not lost yet');
+  out = llStep(out.street, 0.2, 0);
+  assert.equal(out.lost, true, 'past the grace it is');
+  assert.ok(out.darkest >= 0 && out.darkest < LL_WINDOWS, 'darkest names a real window');
+});
+
+test('darkest points at the lowest lamp, for the HUD', () => {
+  const s = newStreet(() => 0.5);
+  const dim = { ...s, light: s.light.map((l, i) => (i === 5 ? 0.2 : 1)) };
+  assert.equal(llStep(dim, 0.01, 0).darkest, 5);
+});
+
+test('Last Light is wired like the Swap: a chip, a how-to, a clock, a boon', () => {
+  const game = readSource('src/game.js');
+  assert.match(game, /case 'lastlight':\s*\n\s*startLastLight\(\);/, 'the chip is wired');
+  const start = game.slice(game.indexOf('function startLastLight'), game.indexOf('function beginLastLight'));
+  assert.match(start, /started: false/, 'opens on the how-to panel, clock not running');
+  const begin = game.slice(game.indexOf('function beginLastLight'), game.indexOf('function tickLastLight'));
+  assert.match(begin, /setInterval\(tickLastLight/, 'the clock only ticks once begun');
+  const tick = game.slice(game.indexOf('function tickLastLight'), game.indexOf('function endLastLight'));
+  assert.match(tick, /llStep\(ll\.street, dt, elapsed \/ total, !!S\.save\.settings\.lowStim\)/, 'the tick steps the pure street, low-stim aware');
+  assert.match(tick, /if \(out\.lost\) endLastLight\(false\);\s*\n\s*else if \(left <= 0\) endLastLight\(true\);/, 'lost on a dark window, won on the clock');
+  // A hidden tab pauses the round rather than deciding it: the deadline slides
+  // by the gap, so backgrounding can neither win (clock run out) nor lose it.
+  assert.match(tick, /if \(dt > LL_PAUSE_GAP\) \{\s*\n\s*ll\.startedAt \+= now - ll\.lastTick;/, 'a long tick gap slides the deadline instead of counting');
+  // Leaving the picture tears the street down with every other round.
+  const load = game.slice(game.indexOf('async function loadPuzzle'), game.indexOf('async function loadPuzzle') + 4000);
+  assert.match(load, /closeLastLight\(\);/, 'loadPuzzle closes a running Last Light');
+  const end = game.slice(game.indexOf('function endLastLight'), game.indexOf('function awardLastLight'));
+  assert.match(end, /noteBonus\('lastlight', won\)/, 'the round counts as a bonus round');
+  assert.match(game, /launch\('🕯', 'Last Light',[^)]*startLastLight\)/, 'the dev menu launches it');
+  assert.match(readSource('src/index.html'), /id="lastLightChip"[\s\S]*?data-act="lastlight"/, 'the chip is in the DOM');
+  assert.match(readSource('src/styles.css'), /html\.low-stim #lastLightChip/, 'the chip hides under low-stim');
+  assert.ok(ACHIEVEMENTS.some((a) => a.id === 'bonus-lastlight'), 'winning it has an achievement, like every round');
+  assert.equal(LL_SECONDS, 50);
+});
+
+/* --------------------------------------------------------- the fade's fog */
+
+const fogCells = (n = 10, size = 100) => {
+  // n×n grid of anchors over a size×size picture, ids row-major.
+  const out = [];
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) out.push({ id: out.length, x: (c + 0.5) * size / n, y: (r + 0.5) * size / n });
+  return out;
+};
+
+test('the fade opens lit in a band across the middle', () => {
+  const cells = fogCells();
+  const lit = fadeStartLit(cells, 100, 0.22);
+  assert.ok(lit.length > 0 && lit.length < cells.length, 'some but not all');
+  for (const id of lit) assert.ok(cells[id].y >= 39 && cells[id].y <= 61, `cell ${id} is outside the band`);
+  assert.equal(fadeStartLit(cells, 100, 1).length, cells.length, 'a full band lights everything');
+});
+
+test('painting lights a disc around the stroke, itself included', () => {
+  const cells = fogCells();
+  const around = fadeRevealAround(cells, 44, 0.15, 100, 100);
+  assert.ok(around.includes(44), 'the painted cell is lit');
+  assert.ok(around.includes(45) && around.includes(54), 'its neighbours are lit');
+  assert.ok(!around.includes(0) && !around.includes(99), 'the far corners stay blank');
+  assert.deepEqual(fadeRevealAround(cells, 999, 0.15, 100, 100), [], 'an unknown cell lights nothing');
+});
+
+test('the refog takes a health-scaled share, spares the grace, and never the last lamp', () => {
+  const rng = seededRngLL(9);
+  const candidates = [...Array(20).keys()];
+  const litAt = new Map(candidates.map((id) => [id, 0]));
+  const full = fadePickRefog(candidates, litAt, 1000, 0.5, 1, rng);
+  assert.equal(full.length, 10, 'half the lit cells go at full health');
+  assert.equal(fadePickRefog(candidates, litAt, 1000, 0.5, 0, rng).length, 0, 'nothing at zero health: the fight cannot strand you');
+  // Grace: cells lit after the cutoff are never taken.
+  const recent = new Map(candidates.map((id) => [id, id < 15 ? 2000 : 0]));
+  for (const id of fadePickRefog(candidates, recent, 1000, 1, 1, rng)) assert.ok(id >= 15, `cell ${id} was lit inside the grace`);
+  // Never the whole pool.
+  assert.equal(fadePickRefog([3], new Map([[3, 0]]), 1000, 1, 1, rng).length, 0, 'the last lit cell always stays');
+  assert.deepEqual(fadePickRefog([], litAt, 1000, 1, 1, rng), []);
+});
+
+test('the fade fight is wired: blank cells are walls, strokes and hints light, low-stim never refogs', () => {
+  const game = readSource('src/game.js');
+  assert.match(game, /if \(kit\.mode === 'fade'\) startFade\(kit\);/, 'startBoss starts the fog for the fade kit');
+  const start = game.slice(game.indexOf('function startFade'), game.indexOf('function cellFogged'));
+  assert.match(start, /fadeStartLit\(points, height, kit\.startBand\)/, 'opens on the band');
+  assert.match(start, /for \(const id of S\.filled\)/, 'a half-done stone re-lights around what is painted');
+  assert.match(start, /board\.fog = litAt/, 'the renderer reads the same map');
+  const paint = game.slice(game.indexOf('function tryPaint'), game.indexOf('function launch('));
+  assert.match(paint, /if \(cellFogged\(target\.id\)\) \{ sfx\.play\('nope'\); return; \}/, 'a blank cell cannot be painted');
+  const commit = game.slice(game.indexOf('function commitFill'), game.indexOf('function commitFill') + 600);
+  assert.match(commit, /if \(S\.boss\?\.fade\) fadeLight\(cell\.id\);/, 'every stroke spreads the light');
+  const hint = game.slice(game.indexOf('function useHint()'), game.indexOf('function useHintFill'));
+  assert.match(hint, /if \(S\.boss\?\.fade\) fadeLight\(target\.id\);/, 'a hint lights what it points at');
+  const refog = game.slice(game.indexOf('function fadeRefogTick'), game.indexOf('function bossRegenTick'));
+  assert.match(refog, /if \(S\.save\.settings\.lowStim\) return;/, 'low-stim: the light only ever spreads');
+  assert.match(refog, /healthFraction\(S\.filled\.size, S\.cells\.length\)/, 'the refog is health-scaled');
+  const stop = game.slice(game.indexOf('function stopBoss'), game.indexOf('/* ----------------------------------------------------------- the fade */'));
+  assert.match(stop, /board\.fog = null/, 'stopBoss clears the fog');
+  const render = readSource('src/render.js');
+  assert.match(render, /if \(this\.fog\) \{[\s\S]*?this\.filled\.has\(cell\.id\) \|\| this\.fog\.has\(cell\.id\)/, 'the renderer blanks unlit, unpainted cells only');
+  // The blank is the LAST per-cell pass: drawn after the selected-colour breath,
+  // the Beacon flash, the hover ring, the golden cell, the hint and the shock,
+  // so none of them can show a cell the dark has taken; and the lift (a
+  // displaced re-blit of the base) is suppressed for the whole fight.
+  const drawFn = render.slice(render.indexOf('  draw(bursts, timeMs) {'), render.indexOf('/* --------------------------------------------------- the living element */'));
+  const fogAt = drawFn.indexOf('if (this.fog) {');
+  for (const earlier of ['if (this.colourFlash)', 'if (this.goldenCell)', 'if (this.hover >= 0', 'if (this.hintTarget)', 'if (this.shock)']) {
+    assert.ok(drawFn.indexOf(earlier) !== -1 && drawFn.indexOf(earlier) < fogAt, `${earlier} must draw before the fog covers it`);
+  }
+  assert.match(render, /this\.liftCells && !this\.focus && !this\.fog/, 'the lift is suppressed under the fog');
+  // A special-paint fill spreads the light like any stroke.
+  const special = game.slice(game.indexOf('function applyPaint'), game.indexOf('function applyPaint') + 1500);
+  assert.match(special, /board\.markFilled\(cell\.id\);[\s\S]{0,300}if \(S\.boss\?\.fade\) fadeLight\(cell\.id\);/, 'applyPaint lights around a cell it newly fills');
+  assert.match(render, /this\.fog = null;/, 'and forgets it on a new picture');
+  // The kit's numbers are the ones the fight reads.
+  const k = BOSS_KITS.fade;
+  assert.ok(k.revealRadius > 0 && k.refogFraction > 0 && k.refogIntervalMs > 0 && k.startBand > 0);
+  assert.equal(k.regenFrac, 0, 'the Fade never drains');
 });
 
 test('the Swap shows its rules before the clock, and reveals on a loss', () => {
@@ -4052,7 +4296,7 @@ test('glide: saved pad positions are clamped, junk becomes null', () => {
 
 test('tiered achievements pay points by tier and no hints', () => {
   const tiered = ACHIEVEMENTS.filter((a) => a.tier);
-  assert.equal(tiered.length, 108);
+  assert.equal(tiered.length, 109); // +1: Keep the Lights On (Last Light)
   for (const a of tiered) {
     assert.equal(a.points, TIER_POINTS[a.tier], a.id);
     assert.equal(a.hint, 0, a.id);

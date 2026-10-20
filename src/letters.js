@@ -125,7 +125,25 @@ function drawHoarder() {
   </svg>`;
 }
 
-const DRAW = { Y: drawY, Ee: drawEe, X: drawX, Hoarder: drawHoarder };
+// The Fade — the blank. A low flat bar, the line in a form where the word goes
+// and never went: one long stroke lying across the bottom of the box, a touch
+// thicker at the ends the way a drawn rule is, with the eyes set IN it, low and
+// tired, and no mouth at all (a flat line already is one). It wears --muted,
+// the colour of nothing filled in, where the Hoarder wore the gold it clutched.
+function drawFade() {
+  const line = bar(12, 62, 88, 62, 13) + bar(12, 62, 17, 62, 16) + bar(83, 62, 88, 62, 16);
+  return `<svg class="lt lt-fade" viewBox="0 0 100 100" width="96" height="96" aria-hidden="true">
+    <g class="lt-flip">
+      <path class="lt-body" d="${line}"/>
+      <!-- a shadow along the underside, a thin light along the top edge -->
+      <path d="${bar(14, 66, 86, 66, 4)}" fill="rgba(0,0,0,0.18)"/>
+      <path d="${bar(14, 57.5, 86, 57.5, 2.5)}" fill="rgba(255,255,255,0.14)"/>
+      ${face(50, 62, 9, 4.2)}
+    </g>
+  </svg>`;
+}
+
+const DRAW = { Y: drawY, Ee: drawEe, X: drawX, Hoarder: drawHoarder, Fade: drawFade };
 
 export function isSpeaker(id) {
   return Object.prototype.hasOwnProperty.call(DRAW, id);

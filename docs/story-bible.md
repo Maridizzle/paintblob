@@ -69,7 +69,7 @@ diminishes, give it **one fear, one gimmick, one glyph** in the X idiom
 |---|---|---|---|---|---|
 | ✕ | **X** | crosses it out — the thing stays, the *ask* dies | being asked for | `attrition`: drains painted cells; freezes a colour or a share of the board | Ch1 boss — shipped |
 | ( ) | **the Hoarder** | sets it aside and *keeps* it | losing things | `hoarder`: always grabs the colour in your hand, and its cells; never your last | Ch2 mid-boss — shipped |
-| ___ | **The Fade** (the Blank) | leaves a blank where it was | being filled in | `fade`: fog of war — paint what you can see; what you stop looking at goes blank again | Ch2 chapter boss — next drop |
+| ___ | **The Fade** (the Blank) | leaves a blank where it was | being filled in | `fade`: fog of war — paint what you can see; what you stop looking at goes blank again | Ch2 chapter boss — built, gated with Act II |
 | … | **the Ellipsis** | trails it off | mornings | the climax: everything you look away from un-paints | the hand — far off |
 | . | **the Full Stop** | ends it | continuation | Book Two | past the hand |
 | bench | `?` the Doubt (which tub is which?) · `" "` the So-Called (paints the *wrong* colour now and then) · `*` the Footnote (the real thing hidden in a note) · `;` the Pause (a board that stalls) · `—` the Dash (cuts a picture off mid—) | | | | future mini-bosses |
@@ -109,9 +109,12 @@ winning*).
 ## 5. Chapter map
 
 - **Ch1 — The Sampler.** Look: `fae`. Boss: X → earns `cobalt`. Shipped.
-- **Ch2 — Into the Dusk.** Act I look `bloom` → Act II look `nightcut`, flipping
+- **Ch2 — Into the Dusk.** Act I look `cobalt` → Act II look `nightcut`, flipping
   at the act break (beating the Hoarder). Act I shipped with its prose. Act II
-  below, staged.
+  wired (§6), gated until its real art. The chapter's own round is **Last
+  Light** (`lastlight.js`): a black street of eight windows going out; tap to
+  turn a lamp back up; keep them all lit till the clock runs out. Attention as
+  the muscle, which is what The Fade asks for too.
 - **Ch3 — a town that trades names** (sketch). A market where names are bartered,
   hoarded, counterfeited. Marks: the Doubt (`?` — you are never sure which tub is
   which) and the So-Called (`" "` — a mimic that lays the wrong colour now and
@@ -123,18 +126,25 @@ winning*).
   world un-trails. Then the dot. → the cliffhanger.
 - **Book Two — the Comma.**
 
-## 6. Chapter Two, Act II — written, waiting for The Fade
+## 6. Chapter Two, Act II — wired, gated until its real art
 
-**Stones to bake** (ids fixed here so the scenes can name them):
+**Status:** the five stones are baked as PLACEHOLDER art
+(`tools/make-ch2-act2-puzzles.mjs`, the nightcut register: black, carved greys,
+and the one warm light each), the three scenes below are pasted into
+`src/story.js`, and The Fade has its glyph (`letters.js` `drawFade`, a low
+flat bar wearing `--muted`). Every Act II node carries `released: false`, so a
+plain player who beats the Hoarder sees the five dark stones teased-but-shut
+on the board (`nodeReleased` / `renderStoryBoard`); dev mode plays the act.
+**Baking the real art is the release trigger:** that PR drops the five flags
+and the "act two stays shut" test in the same diff. The prose below is kept
+here as the reference copy; `story.js` is the shipped truth.
+
+**Stone ids** (fixed, so a re-bake under the same id touches no story code):
 `signpost-that-points` — *The Signpost That Points*;
 `last-lit-window` — *The Last Lit Window*;
 `half-bridge` — *The Half-Bridge*;
 `well-of-echoes` — *The Well of Echoes*;
-`the-fade` — *The Fade* (boss, `kit: 'fade'`). Add five `spots` to Chapter
-Two; `theme2: 'nightcut'` and `actBreak: 'the-hoarder'` are already set.
-**The Fade needs a speaker glyph** in `letters.js`: a low flat bar — the blank
-line in a form — `Fade: drawFade`, `.lt-fade { --lt-body: var(--muted); }`.
-Its kit's `name` in `boss.js` is already `'The Fade'`.
+`the-fade` — *The Fade* (boss, `kit: 'fade'`).
 
 ### `deeper` — `afterDone: 'last-lit-window'`
 

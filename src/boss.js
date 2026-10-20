@@ -122,8 +122,9 @@ function sample(ids, n, rng) {
 //   fade      — the picture starts dark but for a strip; painting reveals a
 //               swath around each cell, and the light you are not holding slowly
 //               goes back out, so you paint what you can see rather than by
-//               number. (Wired in a later drop; the kit is declared now so the
-//               registry and its tests are complete from the first stone.)
+//               number. The maths is the fade* functions at the foot of this
+//               file; game.js startFade / fadeLight / fadeRefogTick drive it and
+//               render.js draws the blank (board.fog).
 export const DEFAULT_KIT = 'attrition';
 
 export const BOSS_KITS = {
@@ -144,7 +145,11 @@ export const BOSS_KITS = {
   fade: {
     id: 'fade', mode: 'fade', name: 'The Fade',
     // A reveal fight, not an attrition one. No colour/cell freezes and no drain;
-    // the pressure is the re-fogging (see the reveal constants). Wired later.
+    // the pressure is the re-fogging: every refogIntervalMs a refogFraction
+    // share of the lit, unpainted cells goes blank again (health-scaled), the
+    // light spreads revealRadius of the longer side from each stroke, and the
+    // opening band is startBand of the picture's height. (Low-stim never
+    // re-fogs — game.js.)
     regenIntervalMs: REGEN_INTERVAL_MS, attackIntervalMs: ATTACK_INTERVAL_MS,
     firstAttackMs: FIRST_ATTACK_MS, colourDisableMs: 0,
     cellLockMs: 0, lockFraction: 0, regenFrac: 0,
@@ -156,4 +161,63 @@ export const BOSS_KITS = {
  *  unknown or missing kit can never leave a boss stone with no fight at all. */
 export function bossKit(id) {
   return BOSS_KITS[id] ?? BOSS_KITS[DEFAULT_KIT];
+}
+
+// -------------------------------------------------------- the fade (fog)
+//
+// The Fade's fight is a reveal, not a drain: the board is BLANK (not hidden —
+// blank, as if it were never coloured in) except for what is lit, and only a
+// lit cell can be painted. Three pure pieces, all over cells as {x, y} anchors
+// in picture units, so they run in node:
+//
+//   fadeStartLit   — what is lit at the first stroke: a horizontal band across
+//                    the middle of the picture, `startBand` of its height.
+//   fadeRevealAround — painting a cell lights everything within `revealRadius`
+//                    of it (a fraction of the picture's longer side), so the
+//                    light spreads out from each stroke a little.
+//   fadePickRefog  — on each refog tick, a share of the lit-but-unpainted cells
+//                    goes dark again. Scaled by the boss's health the same way
+//                    regen is, so the re-fogging fades to nothing as the
+//                    picture nears done and the fight can never strand you; and
+//                    cells lit within the grace window are never taken, so the
+//                    light you are working in holds while you work in it.
+//
+// Painted cells are never fogged: a named thing stays named. That is the whole
+// premise of the game, and it is what makes the fight a snowball rather than a
+// treadmill — every cell you paint is one more lamp the dark cannot put out.
+
+/** Cell ids whose anchor lies in the central horizontal band of the picture. */
+export function fadeStartLit(cells, height, band) {
+  const top = height * (0.5 - band / 2);
+  const bottom = height * (0.5 + band / 2);
+  return cells.filter((c) => c.y >= top && c.y <= bottom).map((c) => c.id);
+}
+
+/** Cell ids within `radiusFrac` of the longer side of cell `id`, itself included. */
+export function fadeRevealAround(cells, id, radiusFrac, width, height) {
+  const at = cells[id];
+  if (!at) return [];
+  const r = radiusFrac * Math.max(width, height);
+  const r2 = r * r;
+  const out = [];
+  for (const c of cells) {
+    const dx = c.x - at.x;
+    const dy = c.y - at.y;
+    if (dx * dx + dy * dy <= r2) out.push(c.id);
+  }
+  return out;
+}
+
+/**
+ * The lit, unpainted cells to put out on one refog tick. `candidates` are the
+ * lit-and-unpainted ids; `litAt` maps id → the time it was lit; anything lit
+ * after `graceBefore` is kept. The count is `fraction` of the candidates
+ * scaled by `health` (0..1), rounded, and never the whole pool — one lit cell
+ * is always left, so there is always somewhere to paint.
+ */
+export function fadePickRefog(candidates, litAt, graceBefore, fraction, health, rng = Math.random) {
+  const pool = candidates.filter((id) => (litAt.get(id) ?? 0) <= graceBefore);
+  if (!pool.length) return [];
+  const n = Math.min(pool.length, candidates.length - 1, Math.round(candidates.length * fraction * health));
+  return sample(pool, Math.max(0, n), rng);
 }
