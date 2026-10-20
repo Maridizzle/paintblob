@@ -1972,6 +1972,12 @@ test('Last Light is wired like the Swap: a chip, a how-to, a clock, a boon', () 
   const tick = game.slice(game.indexOf('function tickLastLight'), game.indexOf('function endLastLight'));
   assert.match(tick, /llStep\(ll\.street, dt, elapsed \/ total, !!S\.save\.settings\.lowStim\)/, 'the tick steps the pure street, low-stim aware');
   assert.match(tick, /if \(out\.lost\) endLastLight\(false\);\s*\n\s*else if \(left <= 0\) endLastLight\(true\);/, 'lost on a dark window, won on the clock');
+  // A hidden tab pauses the round rather than deciding it: the deadline slides
+  // by the gap, so backgrounding can neither win (clock run out) nor lose it.
+  assert.match(tick, /if \(dt > LL_PAUSE_GAP\) \{\s*\n\s*ll\.startedAt \+= now - ll\.lastTick;/, 'a long tick gap slides the deadline instead of counting');
+  // Leaving the picture tears the street down with every other round.
+  const load = game.slice(game.indexOf('async function loadPuzzle'), game.indexOf('async function loadPuzzle') + 4000);
+  assert.match(load, /closeLastLight\(\);/, 'loadPuzzle closes a running Last Light');
   const end = game.slice(game.indexOf('function endLastLight'), game.indexOf('function awardLastLight'));
   assert.match(end, /noteBonus\('lastlight', won\)/, 'the round counts as a bonus round');
   assert.match(game, /launch\('🕯', 'Last Light',[^)]*startLastLight\)/, 'the dev menu launches it');
@@ -2042,6 +2048,19 @@ test('the fade fight is wired: blank cells are walls, strokes and hints light, l
   assert.match(stop, /board\.fog = null/, 'stopBoss clears the fog');
   const render = readSource('src/render.js');
   assert.match(render, /if \(this\.fog\) \{[\s\S]*?this\.filled\.has\(cell\.id\) \|\| this\.fog\.has\(cell\.id\)/, 'the renderer blanks unlit, unpainted cells only');
+  // The blank is the LAST per-cell pass: drawn after the selected-colour breath,
+  // the Beacon flash, the hover ring, the golden cell, the hint and the shock,
+  // so none of them can show a cell the dark has taken; and the lift (a
+  // displaced re-blit of the base) is suppressed for the whole fight.
+  const drawFn = render.slice(render.indexOf('  draw(bursts, timeMs) {'), render.indexOf('/* --------------------------------------------------- the living element */'));
+  const fogAt = drawFn.indexOf('if (this.fog) {');
+  for (const earlier of ['if (this.colourFlash)', 'if (this.goldenCell)', 'if (this.hover >= 0', 'if (this.hintTarget)', 'if (this.shock)']) {
+    assert.ok(drawFn.indexOf(earlier) !== -1 && drawFn.indexOf(earlier) < fogAt, `${earlier} must draw before the fog covers it`);
+  }
+  assert.match(render, /this\.liftCells && !this\.focus && !this\.fog/, 'the lift is suppressed under the fog');
+  // A special-paint fill spreads the light like any stroke.
+  const special = game.slice(game.indexOf('function applyPaint'), game.indexOf('function applyPaint') + 1500);
+  assert.match(special, /board\.markFilled\(cell\.id\);[\s\S]{0,300}if \(S\.boss\?\.fade\) fadeLight\(cell\.id\);/, 'applyPaint lights around a cell it newly fills');
   assert.match(render, /this\.fog = null;/, 'and forgets it on a new picture');
   // The kit's numbers are the ones the fight reads.
   const k = BOSS_KITS.fade;

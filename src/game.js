@@ -2052,6 +2052,7 @@ async function loadPuzzle(id) {
   S.lastLightOffered = false;
   S.named = 0;
   closeSwap();
+  closeLastLight(); // a street left running would carry its clock, and its boon, onto this picture
   syncNamed();
   S.sm = null; closeShadeMatch();
   S.mixer = null; closeMixer();
@@ -2605,6 +2606,9 @@ function applyPaint(cell) {
     S.filled.add(cell.id);
     S.remaining[cell.colour]--;
     board.markFilled(cell.id);
+    // A special-paint fill is a stroke too: against The Fade it spreads the
+    // light, or a player could paint out every lit cell and be left in the dark.
+    if (S.boss?.fade) fadeLight(cell.id);
   }
   board.fx.set(cell.id, paintId);
   bumpStat({ rainbow: 'rainbowCells', shimmer: 'shimmerCells', multi: 'oilCells' }[paintId] ?? 'paintCells');
@@ -6932,6 +6936,10 @@ function startLastLight() {
   renderLastLight();
 }
 
+// A tick gap longer than this (seconds) means the page was not running — the
+// interval is 100ms, so even a stalled frame never gets near it.
+const LL_PAUSE_GAP = 1;
+
 function beginLastLight() {
   if (!S.ll || S.ll.started) return;
   S.ll.started = true;
@@ -6945,7 +6953,15 @@ function tickLastLight() {
   const ll = S.ll;
   if (!ll) return;
   const now = Date.now();
-  const dt = Math.min(0.5, (now - ll.lastTick) / 1000); // a background tab's gap never drains the street in one go
+  let dt = (now - ll.lastTick) / 1000;
+  // A hidden tab or a sleeping device stops the ticks. That time is neither
+  // drained nor counted: the deadline slides forward by the gap and the street
+  // takes one ordinary step, so backgrounding the round can neither lose it
+  // (every lamp out at once) nor win it (the clock running out untended).
+  if (dt > LL_PAUSE_GAP) {
+    ll.startedAt += now - ll.lastTick;
+    dt = 0.1;
+  }
   ll.lastTick = now;
   const elapsed = now - ll.startedAt;
   const total = LL_SECONDS * 1000;

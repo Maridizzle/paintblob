@@ -898,24 +898,11 @@ export class Board {
     // laid down. The subject is already baked flat into the base, so it greys
     // correctly with everything else; it just loses its parallax for the
     // twelve-second window, which no one will miss with the board desaturated.
-    const lifted = (this.liftCells && !this.focus) ? this.drawLift(sx, sy) : null;
+    // Also suppressed under The Fade's fog: drawLift re-blits the raised subject
+    // displaced, which would leak a blank cell's colour past its own outline.
+    const lifted = (this.liftCells && !this.focus && !this.fog) ? this.drawLift(sx, sy) : null;
 
     this.applyTransform(ctx, sx, sy);
-
-    // The Fade's blank: every unpainted cell that is not lit is painted out,
-    // numbers and all — not dimmed, BLANK, as if it were never coloured in. Drawn
-    // straight over the base so every overlay below (hint, hover, bursts) still
-    // lands on top, and a hint can point into the dark. game.js owns which cells
-    // are lit (board.fog is its litAt map) and sets dirty when that changes.
-    if (this.fog) {
-      ctx.save();
-      ctx.fillStyle = FOG;
-      for (const cell of this.cells) {
-        if (this.filled.has(cell.id) || this.fog.has(cell.id)) continue;
-        ctx.fill(cell.path);
-      }
-      ctx.restore();
-    }
 
     // Special paints: every cell the player laid a shimmer/rainbow/multi over,
     // redrawn each frame with its animated gradient on top of the base's flat
@@ -1121,6 +1108,26 @@ export class Board {
         ctx.stroke();
         ctx.restore();
       }
+    }
+
+    // The Fade's blank: every unpainted cell that is not lit is painted out,
+    // numbers and all — not dimmed, BLANK, as if it were never coloured in.
+    // Drawn AFTER every per-cell overlay above (the selected-colour breath, the
+    // Beacon flash, the hover ring, the golden cell, the hint) so none of them
+    // can show a cell the dark has taken; a hint still reads because game.js
+    // lights the hinted cell first (fadeLight), and the lift is suppressed
+    // for the whole fight (see drawLift's guard) so no displaced copy of a
+    // blank cell leaks past its own outline. game.js owns which cells are lit
+    // (board.fog is its litAt map) and sets dirty when that changes.
+    if (this.fog) {
+      this.applyTransform(ctx, sx, sy);
+      ctx.save();
+      ctx.fillStyle = FOG;
+      for (const cell of this.cells) {
+        if (this.filled.has(cell.id) || this.fog.has(cell.id)) continue;
+        ctx.fill(cell.path);
+      }
+      ctx.restore();
     }
 
     // Boss freeze: X's own mark — a grey cross — over every cell it has locked
